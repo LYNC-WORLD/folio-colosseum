@@ -7,9 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aditya.folio"
     },
     "android": {
+      "package": "com.aditya.folio",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -20,6 +22,17 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+      "plugins": [
+    [
+      "@react-native-google-signin/google-signin",
+      { "iosUrlScheme": "com.googleusercontent.apps.1037438594396-a10qm1r0p4evjdnptubbj6kk7rbumpta" }
+    ]
+  ],
+    "extra": {
+      "eas": {
+        "projectId": "02a2f198-e25d-4f24-a96a-8ca97f3bd1b8"
+      }
     }
   }
 }
