@@ -1,0 +1,91 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { loginWithGoogle } from "../services/api/auth";
+import {
+  restoreGoogleSession,
+  signInWithGoogle,
+  signOutGoogle,
+} from "../services/googleAuth";
+import type { GoogleSession, GoogleUser, LoginResponse } from "../types/auth";
+
+type AuthState = {
+  user: GoogleUser | null;
+  session: LoginResponse | null;
+  initializing: boolean;
+  busy: boolean;
+  error: string | null;
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthState | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<GoogleUser | null>(null);
+  const [session, setSession] = useState<LoginResponse | null>(null);
+  const [initializing, setInitializing] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Exchange the Google idToken for a backend session
+  const authenticate = useCallback(async (g: GoogleSession) => {
+    const res = await loginWithGoogle(g.idToken);
+    setUser(g.user);
+    setSession(res);
+  }, []);
+
+  // Restore on app launch
+  useEffect(() => {
+    (async () => {
+      try {
+        const g = await restoreGoogleSession();
+        if (g) await authenticate(g);
+      } catch (e) {
+        console.warn("Session restore failed", e);
+      } finally {
+        setInitializing(false);
+      }
+    })();
+  }, [authenticate]);
+
+  const signIn = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const g = await signInWithGoogle();
+      if (!g) return; // user cancelled
+      await authenticate(g);
+    } catch (e) {
+      await signOutGoogle().catch(() => {});
+      setError(e instanceof Error ? e.message : "Sign-in failed");
+    } finally {
+      setBusy(false);
+    }
+  }, [authenticate]);
+
+  const signOut = useCallback(async () => {
+    await signOutGoogle();
+    setUser(null);
+    setSession(null);
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, session, initializing, busy, error, signIn, signOut }),
+    [user, session, initializing, busy, error, signIn, signOut],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
+  return ctx;
+}
