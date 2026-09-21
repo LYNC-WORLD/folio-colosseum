@@ -1,0 +1,79 @@
+generator client {
+    provider = "prisma-client"
+    output   = "../src/generated"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+enum Chain {
+    SOLANA
+}
+
+enum TransactionType {
+    DEPOSIT
+    WITHDRAW
+    TRANSFER
+    SWAP
+    PROGRAM
+}
+
+enum TransactionStatus {
+    PENDING
+    CONFIRMED
+    FAILED
+}
+
+model User {
+    id              String          @id @default(cuid())
+    userId          String          @unique
+    walletId        String          @unique
+    email           String          @unique
+    name            String
+    walletAddress   String          @unique
+    googleSubjectId String          @unique
+    transactions    Transaction[]
+    holdings        HoldingStocks[]
+    createdAt       DateTime        @default(now())
+    updatedAt       DateTime        @updatedAt
+
+    @@index([userId])
+    @@index([walletId])
+}
+
+model Transaction {
+    id        String            @id @default(cuid())
+    userId    String
+    walletId  String
+    signature String?           @unique
+    type      TransactionType
+    status    TransactionStatus @default(PENDING)
+    amount    String
+    token     String
+    recipient String?
+    error     String?
+    user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+    createdAt DateTime          @default(now())
+    updatedAt DateTime          @updatedAt
+
+    @@index([userId])
+    @@index([walletId])
+    @@index([status])
+    @@index([createdAt])
+}
+
+model Stocks {
+    tokenAddress String @id
+    name         String
+    decimals     Int    @default(8)
+}
+
+model HoldingStocks {
+    id            String @id @default(cuid())
+    amount        String
+    tokenAddress  String
+    name          String
+    walletAddress String
+    user          User   @relation(fields: [walletAddress], references: [id], onDelete: Cascade)
+}

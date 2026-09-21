@@ -3,12 +3,20 @@ import { env } from "./config/env";
 import { PrismaClient } from "./generated/client"; 
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
+import { Connection } from "@solana/web3.js";
 
+import {authRoute} from "./routes/auth";
 const app = express();
 
 const pool = new pg.Pool({ connectionString: env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
+
 export const prisma = new PrismaClient({ adapter });
+
+export const solana = new Connection(
+  env.RPC_URL!,
+  "confirmed"
+);
 
 app.use(express.json());
 
@@ -24,3 +32,5 @@ const PORT = env.PORT;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+app.use("/api/auth", authRoute);
