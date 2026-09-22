@@ -1,36 +1,62 @@
-// import { Request, Response, NextFunction } from "express";
-// import { verityPrivyToken } from "../lib/privy";
+import { Request, Response, NextFunction } from "express";
+import { prisma } from "../server";
+import { verifyGoogleIdToken } from "../lib/google";
 
-// export interface AuthRequest extends Request {
-//   privyUserId?: string;
-// }
+export async function authMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const authHeader = req.headers.authorization;
 
-// export async function authMiddleware(
-//   req: AuthRequest,
-//   res: Response,
-//   next: NextFunction
-// ) {
-//   try {
-//     const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      res.status(401).json({
+        success: false,
+        message: "Authorization header is required",
+      });
+      return;
+    }
 
-//     if (!authHeader?.startsWith("Bearer ")) {
-//       return res.status(401).json({
-//         error: "Missing authorization token",
-//       });
-//     }
+    const [scheme, token] = authHeader.split(" ");
 
-//     const token = authHeader.substring(7);
+    if (scheme !== "Bearer" || !token) {
+      res.status(401).json({
+        success: false,
+        message: "Invalid authorization format",
+      });
+      return;
+    }
 
-//     const claims: any = await verityPrivyToken(token);
+    // 1. Verify Google ID token
+    const googleUser = await verifyGoogleIdToken(token);
 
-//     req.privyUserId = claims.userId;
+    // 2. Find your application user
+    const user = await prisma.user.findUnique({
+      where: {
+        googleSubjectId: googleUser.subjectId,
+      },
+    });
 
-//     next();
-//   } catch (error) {
-//     console.error(error);
+    if (!user) {
+      res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
 
-//     return res.status(401).json({
-//       error: "Invalid authentication token",
-//     });
-//   }
-// }
+    // 3. Attach database user to request
+    req.user = user;
+
+    // 4. Continue to controller
+    next();
+  } catch (error) {
+    console.error("Auth middleware error:", error);
+
+    res.status(401).json({
+      success: false,
+      message: "Invalid or expired Google token",
+    });
+  }
+}

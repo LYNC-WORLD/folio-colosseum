@@ -1,8 +1,12 @@
 import { Router } from "express";
-import { PrismaClient } from "../generated/client";
+import { StockController } from "../controllers/stockController";
 
-export function createStockRouter(prisma: PrismaClient) {
-  const router = Router();
+const router = Router();
 
-  router.post("/get-quote", async (req, res) => {});
-}
+const stockController = new StockController();
+
+router.get("/", stockController.getStocks);
+
+router.get("/:stockSymbol", stockController.getStockBySymbol)
+
+export { router as stockRoutes };

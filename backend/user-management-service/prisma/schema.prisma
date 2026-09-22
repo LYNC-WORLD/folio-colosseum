@@ -65,8 +65,11 @@ model Transaction {
 
 model Stocks {
     tokenAddress String @id
+    price        String
     name         String
     decimals     Int    @default(8)
+    symbol       String
+    imageUrl     String
 }
 
 model HoldingStocks {

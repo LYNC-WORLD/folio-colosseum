@@ -8,7 +8,7 @@ interface VerifyGoogleUserResponce {
   username: string;
   email: string;
 }
-export async function verifyAccessToken(
+export async function verifyGoogleIdToken(
   googleIdToken: string,
 ): Promise<VerifyGoogleUserResponce> {
   try {

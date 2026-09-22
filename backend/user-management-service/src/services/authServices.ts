@@ -1,4 +1,4 @@
-import { verifyAccessToken } from "../lib/google";
+import { verifyGoogleIdToken } from "../lib/google";
 import { createUser } from "../lib/privy";
 import { prisma } from "../server";
 
@@ -7,7 +7,7 @@ export class AuthService {
     if (!googleAccessToken) {
       return;
     }
-    const {subjectId, username, email} = await verifyAccessToken(googleAccessToken)
+    const {subjectId, username, email} = await verifyGoogleIdToken(googleAccessToken)
 
     const user = await prisma.user.findUnique({
       where: {

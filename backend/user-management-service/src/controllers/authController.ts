@@ -21,6 +21,7 @@ export class AuthController {
           success: false,
           message: "Wrong Access token"
         });
+        return;
       }
       res.status(200).json({
         success: true,

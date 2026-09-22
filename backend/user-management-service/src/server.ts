@@ -6,6 +6,8 @@ import pg from "pg";
 import { Connection } from "@solana/web3.js";
 
 import {authRoute} from "./routes/auth";
+import { stockRoutes } from "./routes/stock";
+import { tradeRoutes } from "./routes/trade";
 const app = express();
 
 const pool = new pg.Pool({ connectionString: env.DATABASE_URL });
@@ -34,3 +36,6 @@ app.listen(PORT, () => {
 });
 
 app.use("/api/auth", authRoute);
+app.use("/api/stocks", stockRoutes);
+app.use("/api/trade", tradeRoutes);
+app.use("/api/user", tradeRoutes);
