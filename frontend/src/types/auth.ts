@@ -10,7 +10,6 @@ export type GoogleSession = {
   idToken: string;
 };
 
-// Adjust to match what your backend actually returns
 export type LoginResponse = {
   token?: string;
   [key: string]: unknown;

@@ -38,7 +38,7 @@ export async function signInWithGoogle(): Promise<GoogleSession | null> {
 // Returns null if there is no previous session
 export async function restoreGoogleSession(): Promise<GoogleSession | null> {
   const res = await GoogleSignin.signInSilently();
-  return isSuccessResponse(res) ? toSession(res.data) : null;
+  return res.type === "success" ? toSession(res.data) : null;
 }
 
 export const signOutGoogle = () => GoogleSignin.signOut();

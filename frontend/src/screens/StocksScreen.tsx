@@ -1,30 +1,26 @@
-// src/screens/StocksScreen.tsx
-import { useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme/colors";
 import AssetRow from "../components/AssetRow";
-import { MOCK_STOCKS } from "../data/mockStocks";
 import { useAuth } from "../context/AuthContext";
-
-const FILTERS = ["All", "Trending", "Gainers", "Losers"] as const;
-type Filter = (typeof FILTERS)[number];
+import { useStocks } from "../hooks/useStocks";
 
 export default function StocksScreen() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const [filter, setFilter] = useState<Filter>("All");
+  const { stocks, loading, refreshing, error, refresh, reload } = useStocks();
 
   const balance = (user as any)?.balance ?? 0;
   const dayChangePct = (user as any)?.dayChangePct ?? 0;
-
-  const stocks =
-    filter === "Gainers"
-      ? MOCK_STOCKS.filter((s) => s.changePct >= 0)
-      : filter === "Losers"
-        ? MOCK_STOCKS.filter((s) => s.changePct < 0)
-        : MOCK_STOCKS;
 
   return (
     <View
@@ -32,8 +28,11 @@ export default function StocksScreen() {
     >
       <FlatList
         data={stocks}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.tokenAddress}
         contentContainerStyle={s.listContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} />
+        }
         ListHeaderComponent={
           <>
             <View style={s.balanceRow}>
@@ -63,34 +62,34 @@ export default function StocksScreen() {
               </Pressable>
             </View>
 
-            <View style={s.filters}>
-              {FILTERS.map((f) => (
-                <Pressable
-                  key={f}
-                  onPress={() => setFilter(f)}
-                  style={[s.pill, filter === f && s.pillActive]}
-                >
-                  <Text style={[s.pillText, filter === f && s.pillTextActive]}>
-                    {f}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
             <Text style={s.sectionTitle}>Available Stocks</Text>
+
+            {error && (
+              <View style={s.errorBox}>
+                <Text style={s.errorText}>{error}</Text>
+                <Pressable onPress={() => reload()}>
+                  <Text style={s.retryText}>Retry</Text>
+                </Pressable>
+              </View>
+            )}
           </>
         }
         renderItem={({ item }) => (
           <AssetRow
             symbol={item.symbol}
             name={item.name}
-            price={item.price}
-            changePct={item.changePct}
-            marketCap={item.marketCap}
-            color={item.color}
+            price={Number(item.price)}
+            imageUrl={item.imageUrl}
           />
         )}
         ItemSeparatorComponent={() => <View style={s.separator} />}
+        ListEmptyComponent={
+          loading ? (
+            <ActivityIndicator style={{ marginTop: 24 }} />
+          ) : !error ? (
+            <Text style={s.emptyText}>No stocks available</Text>
+          ) : null
+        }
       />
     </View>
   );
@@ -98,7 +97,12 @@ export default function StocksScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
-  listContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 },
+  listContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 32,
+    flexGrow: 1,
+  },
   balanceRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -125,17 +129,6 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   depositText: { color: C.buttonInk, fontSize: 14, fontWeight: "700" },
-  filters: { flexDirection: "row", gap: 8, marginBottom: 20 },
-  pill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.ring,
-  },
-  pillActive: { backgroundColor: C.ink, borderColor: C.ink },
-  pillText: { color: C.muted, fontSize: 13, fontWeight: "600" },
-  pillTextActive: { color: C.buttonInk },
   sectionTitle: {
     color: C.ink,
     fontSize: 16,
@@ -143,4 +136,8 @@ const s = StyleSheet.create({
     marginBottom: 4,
   },
   separator: { height: 1, backgroundColor: C.ring, marginLeft: 52 },
+  errorBox: { paddingVertical: 12, gap: 4 },
+  errorText: { color: C.error, fontSize: 13 },
+  retryText: { color: C.accent, fontSize: 13, fontWeight: "600" },
+  emptyText: { color: C.muted, textAlign: "center", marginTop: 24 },
 });
