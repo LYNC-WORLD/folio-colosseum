@@ -10,8 +10,8 @@ export class TradeController {
 
   public getQuote = async (req: Request, res: Response): Promise<void> => {
     try {
-      const stocks = await this.tradeService.getQuote();
-      if (!stocks) {
+      const quote = await this.tradeService.getQuote();
+      if (!quote) {
         res.status(500).json({
           success: false,
           message: "Internal server error: error fetching stocks",
@@ -20,8 +20,8 @@ export class TradeController {
       }
       res.status(200).json({
         success: true,
-        message: "stocks list",
-        data: stocks,
+        message: "quote details",
+        data: quote,
       });
       return;
     } catch (error) {

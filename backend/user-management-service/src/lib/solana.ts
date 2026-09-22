@@ -1,7 +1,13 @@
-import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { solana } from "../server";
+import { PublicKey, LAMPORTS_PER_SOL, Connection } from "@solana/web3.js";
+import { env } from "../config/env";
+
+export const solana = new Connection(
+  env.RPC_URL!,
+  "confirmed"
+);
 
 export async function getWalletTokens(walletAddress: string) {
+  try {
   const owner = new PublicKey(walletAddress);
 
   const lamports = await solana.getBalance(owner);
@@ -61,4 +67,9 @@ export async function getWalletTokens(walletAddress: string) {
 
     tokens,
   };
+    
+  } catch (error) {
+    console.error(error);
+    return;
+  }
 }

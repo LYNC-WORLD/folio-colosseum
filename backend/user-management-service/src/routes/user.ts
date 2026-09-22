@@ -6,6 +6,6 @@ const router = Router();
 
 const userController = new UserController();
 
-router.post("/get-balance", authMiddleware,  userController.getBalance);
+router.get("/balance", authMiddleware,  userController.getBalance);
 
-export { router as tradeRoutes };
+export { router as userRoutes };

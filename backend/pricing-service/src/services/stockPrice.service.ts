@@ -34,7 +34,7 @@ export async function updateStockPrices(): Promise<void> {
 
         const data = (await response.json()) as XStocksPriceResponse;
 
-        console.log(`${stock.symbol}:`, data);
+        // console.log(`${stock.symbol}:`, data);
 
         if (data.quote === undefined || data.quote === null) {
           console.error(`No price returned for ${stock.symbol}`);
@@ -50,7 +50,7 @@ export async function updateStockPrices(): Promise<void> {
           },
         });
 
-        console.log(`Updated ${stock.symbol} -> ${data.quote}`);
+        // console.log(`Updated ${stock.symbol} -> ${data.quote}`);
       } catch (error) {
         console.error(`Error updating ${stock.symbol}:`, error);
       }

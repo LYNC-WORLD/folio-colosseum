@@ -1,6 +1,6 @@
 import { verifyGoogleIdToken } from "../lib/google";
 import { createUser } from "../lib/privy";
-import { prisma } from "../server";
+import { prisma } from "../lib/prisma";
 
 export class AuthService {
   public async getOrCreateUser(googleAccessToken: string) {

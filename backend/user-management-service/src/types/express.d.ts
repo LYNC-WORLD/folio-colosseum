@@ -1,4 +1,4 @@
-import { User } from "@prisma/client";
+import { User } from "../generated/client";
 
 declare global {
   namespace Express {
@@ -7,5 +7,7 @@ declare global {
     }
   }
 }
-
+export interface AuthenticatedRequest extends Request {
+  user: User;
+}
 export {};
