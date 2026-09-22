@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { C, FONT } from "../theme";
 import { HomeScreen, PreIpoScreen, StocksScreen } from "../screens";
+import StocksStack from "./StocksStack";
 
 export type HomeStackParamList = {
   HomeMain: undefined;
@@ -29,8 +30,8 @@ export function HomeStack() {
       />
       <Stack.Screen
         name="Stocks"
-        component={StocksScreen}
-        options={{ title: "Stocks" }}
+        component={StocksStack}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="PreIPO"

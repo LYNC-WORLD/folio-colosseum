@@ -7,3 +7,4 @@ export * from "./PreIpoScreen";
 export * from "./ProfileScreen";
 export * from "./SignalsScreen";
 export * from "./StocksScreen";
+export * from "./StockDetail";

@@ -13,6 +13,9 @@ import { C } from "../theme/colors";
 import { useAuth } from "../context";
 import { useStocks } from "../hooks";
 import { AssetRow } from "../components";
+import { StocksStackParamList } from "../navigation/types";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 export function StocksScreen() {
   const { user } = useAuth();
@@ -21,6 +24,9 @@ export function StocksScreen() {
 
   const balance = (user as any)?.balance ?? 0;
   const dayChangePct = (user as any)?.dayChangePct ?? 0;
+
+  const navigation =
+    useNavigation<NativeStackNavigationProp<StocksStackParamList, "Stocks">>();
 
   return (
     <View
@@ -80,6 +86,9 @@ export function StocksScreen() {
             name={item.name}
             price={Number(item.price)}
             imageUrl={item.imageUrl}
+            onPress={() =>
+              navigation.navigate("StockDetail", { symbol: item.symbol })
+            }
           />
         )}
         ItemSeparatorComponent={() => <View style={s.separator} />}
