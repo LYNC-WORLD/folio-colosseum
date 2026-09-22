@@ -6,6 +6,7 @@ import { C } from "../theme/colors";
 import StocksScreen from "../screens/StocksScreen";
 import PreIpoScreen from "../screens/PreIpoScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export type TabParamList = {
   Stocks: undefined;
@@ -22,6 +23,7 @@ const ICONS: Record<keyof TabParamList, keyof typeof Ionicons.glyphMap> = {
 };
 
 export default function RootTabs() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -31,9 +33,9 @@ export default function RootTabs() {
         tabBarStyle: {
           backgroundColor: C.bg,
           borderTopColor: C.ring,
-          borderTopWidth: StyleSheetHairline,
-          height: 64,
-          paddingBottom: 10,
+          borderTopWidth: 0.5,
+          height: 56 + insets.bottom,
+          paddingBottom: insets.bottom + 6,
           paddingTop: 8,
         },
         tabBarLabelStyle: { fontSize: 12, fontWeight: "600" },

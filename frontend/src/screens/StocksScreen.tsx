@@ -1,12 +1,7 @@
+// src/screens/StocksScreen.tsx
 import { useState } from "react";
-import {
-  FlatList,
-  Pressable,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme/colors";
 import AssetRow from "../components/AssetRow";
@@ -18,9 +13,9 @@ type Filter = (typeof FILTERS)[number];
 
 export default function StocksScreen() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<Filter>("All");
 
-  // TODO: replace with real balance once wallet/portfolio API is wired up
   const balance = (user as any)?.balance ?? 0;
   const dayChangePct = (user as any)?.dayChangePct ?? 0;
 
@@ -32,7 +27,9 @@ export default function StocksScreen() {
         : MOCK_STOCKS;
 
   return (
-    <SafeAreaView style={s.safe}>
+    <View
+      style={[s.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+    >
       <FlatList
         data={stocks}
         keyExtractor={(item) => item.id}
@@ -95,14 +92,13 @@ export default function StocksScreen() {
         )}
         ItemSeparatorComponent={() => <View style={s.separator} />}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   listContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 },
-
   balanceRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -118,7 +114,6 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   balanceChange: { fontSize: 13, fontWeight: "600", marginTop: 4 },
-
   depositBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -130,7 +125,6 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   depositText: { color: C.buttonInk, fontSize: 14, fontWeight: "700" },
-
   filters: { flexDirection: "row", gap: 8, marginBottom: 20 },
   pill: {
     paddingHorizontal: 14,
@@ -142,7 +136,6 @@ const s = StyleSheet.create({
   pillActive: { backgroundColor: C.ink, borderColor: C.ink },
   pillText: { color: C.muted, fontSize: 13, fontWeight: "600" },
   pillTextActive: { color: C.buttonInk },
-
   sectionTitle: {
     color: C.ink,
     fontSize: 16,
