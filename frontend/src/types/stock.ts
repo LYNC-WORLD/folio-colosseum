@@ -12,3 +12,9 @@ export type StocksResponse = {
   message: string;
   data: Stock[];
 };
+
+export type StockDetailResponse = {
+  success: boolean;
+  message: string;
+  data: Stock;
+};

@@ -1,18 +1,12 @@
-// src/navigation/RootTabs.tsx
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { View } from "react-native";
 import { C } from "../theme/colors";
-import StocksScreen from "../screens/StocksScreen";
+import StocksStack from "./StocksStack";
 import PreIpoScreen from "../screens/PreIpoScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-export type TabParamList = {
-  Stocks: undefined;
-  PreIPO: undefined;
-  Profile: undefined;
-};
+import type { TabParamList } from "./types";
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -63,8 +57,7 @@ export default function RootTabs() {
         ),
       })}
     >
-      {/* Order below = left-to-right order in the tab bar */}
-      <Tab.Screen name="Stocks" component={StocksScreen} />
+      <Tab.Screen name="Stocks" component={StocksStack} />
       <Tab.Screen
         name="PreIPO"
         component={PreIpoScreen}
@@ -74,5 +67,3 @@ export default function RootTabs() {
     </Tab.Navigator>
   );
 }
-
-const StyleSheetHairline = 0.5;
