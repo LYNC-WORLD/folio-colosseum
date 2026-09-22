@@ -3,20 +3,20 @@ import {
   isSuccessResponse,
   isErrorWithCode,
   statusCodes,
-} from '@react-native-google-signin/google-signin';
-import { ENV } from '../config/env';
-import type { GoogleSession } from '../types/auth';
+} from "@react-native-google-signin/google-signin";
+import { ENV } from "../config/env";
+import type { GoogleSession } from "../types/auth";
 
 GoogleSignin.configure({
   webClientId: ENV.GOOGLE_WEB_CLIENT_ID,
   iosClientId: ENV.GOOGLE_IOS_CLIENT_ID,
 });
 
-type SuccessData = { idToken: string | null; user: GoogleSession['user'] };
+type SuccessData = { idToken: string | null; user: GoogleSession["user"] };
 
 function toSession(data: SuccessData): GoogleSession {
   if (!data.idToken) {
-    throw new Error('Google did not return an idToken. Check webClientId.');
+    throw new Error("Google did not return an idToken. Check webClientId.");
   }
   return { user: data.user, idToken: data.idToken };
 }
