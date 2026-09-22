@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.aditya.folio"
@@ -23,12 +23,15 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-      "plugins": [
-    [
-      "@react-native-google-signin/google-signin",
-      { "iosUrlScheme": "com.googleusercontent.apps.1037438594396-a10qm1r0p4evjdnptubbj6kk7rbumpta" }
-    ]
-  ],
+    "plugins": [
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.1037438594396-a10qm1r0p4evjdnptubbj6kk7rbumpta"
+        }
+      ],
+      "expo-font"
+    ],
     "extra": {
       "eas": {
         "projectId": "02a2f198-e25d-4f24-a96a-8ca97f3bd1b8"
