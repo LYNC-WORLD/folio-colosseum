@@ -9,7 +9,7 @@ const tradeController = new TradeController();
 router.post("/get-quote-buy", authMiddleware, tradeController.getQuoteBuy);
 router.post("/get-quote-sell", authMiddleware, tradeController.getQuoteSell);
 
-// router.post("/stock-buy", authMiddleware, tradeController.getQuote);
-// router.post("/stock-sell", authMiddleware, tradeController.getQuote);
+router.post("/stock-buy", authMiddleware, tradeController.buyStocks);
+router.post("/stock-sell", authMiddleware, tradeController.sellStocks);
 
 export { router as tradeRoutes };

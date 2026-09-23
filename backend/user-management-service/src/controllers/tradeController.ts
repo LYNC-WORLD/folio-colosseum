@@ -145,7 +145,7 @@ export class TradeController {
         });
         return;
       }
-      const responce = await this.tradeService.getQuoteBuy(
+      const responce = await this.tradeService.buyStock(
         body.stockAddress,
         body.stockSymbol,
         body.stockAmount,
@@ -197,7 +197,7 @@ export class TradeController {
         });
         return;
       }
-      const responce = await this.tradeService.getQuoteSell(
+      const responce = await this.tradeService.sellStock(
         body.stockAddress,
         body.stockSymbol,
         body.stockAmount,
@@ -207,7 +207,7 @@ export class TradeController {
       );
       if (!responce) {
         res.status(404).json({
-          success: true,
+          success: false,
           message: "can not fetch stocks",
         });
         return;

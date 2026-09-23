@@ -98,7 +98,7 @@ export class TradeService {
       if (stockAmount) {
         usdcAmount = stockAmount * price;
       }
-      const qoute = await privy
+      const responce = await privy
         .wallets()
         .swaps()
         .execute(walletId, {
@@ -111,10 +111,11 @@ export class TradeService {
           },
           base_amount: String(usdcAmount * 1000000),
           amount_type: "exact_input",
-          authorization_context: {authorization_private_keys: [env.PRIVY_AUTH_KEY!]}
+          authorization_context: {authorization_private_keys: [env.PRIVY_AUTH_KEY!]},
+          fee_configuration: {type: "total_fee_bps", value: 0}
         });
       // qoute.
-      return qoute;
+      return responce;
     } catch (error) {
       console.error(error);
       return;
@@ -131,6 +132,7 @@ export class TradeService {
   ) {
     try {
       const price = await getStockPrice(stockSymbol);
+      console.log("price: ", price);
       if (!price) {
         return;
       }
