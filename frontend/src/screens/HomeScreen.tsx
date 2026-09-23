@@ -103,7 +103,11 @@ export function HomeScreen() {
             contentContainerStyle={s.popularRow}
           >
             {popular.map((item) => (
-              <PopularCard key={item.tokenAddress} stock={item} />
+              <PopularCard
+                key={item.tokenAddress}
+                stock={item}
+                navigation={navigation}
+              />
             ))}
           </ScrollView>
         )}
@@ -200,25 +204,42 @@ export function HomeScreen() {
   );
 }
 
-function PopularCard({ stock }: { stock: Stock }) {
+function PopularCard({
+  stock,
+  navigation,
+}: {
+  stock: Stock;
+  navigation: NativeStackNavigationProp<HomeStackParamList>;
+}) {
   return (
-    <View style={s.popularCard}>
+    <Pressable
+      onPress={() =>
+        navigation.navigate("StockDetail", {
+          symbol: stock.symbol,
+        })
+      }
+      style={s.popularCard}
+    >
       <View style={s.popularTop}>
         <View style={s.popularBadge}>
           <Text style={s.popularBadgeLabel}>
             {stock.symbol.charAt(0).toUpperCase()}
           </Text>
         </View>
+
         <Text style={s.popularTicker}>{stock.symbol}</Text>
       </View>
+
       <Text style={s.popularName} numberOfLines={1}>
         {stock.name}
       </Text>
+
       <Text style={s.popularPrice}>{money(Number(stock.price))}</Text>
+
       <View style={s.popularFooter}>
         <Ionicons name="chevron-forward" size={14} color={C.inkMuted} />
       </View>
-    </View>
+    </Pressable>
   );
 }
 

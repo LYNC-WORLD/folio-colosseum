@@ -62,9 +62,7 @@ export function StockDetail() {
   const estUnits = amount / price;
 
   return (
-    <View
-      style={[s.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
-    >
+    <View style={[s.safe, { paddingTop: insets.top }]}>
       <View style={s.topBar}>
         <Pressable style={s.iconBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={20} color={C.bone} />

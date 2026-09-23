@@ -1,12 +1,18 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { C, FONT } from "../theme";
-import { HomeScreen, PreIpoScreen, StocksScreen } from "../screens";
+import {
+  HomeScreen,
+  PreIpoScreen,
+  StockDetail,
+  StocksScreen,
+} from "../screens";
 import StocksStack from "./StocksStack";
 
 export type HomeStackParamList = {
   HomeMain: undefined;
   Stocks: undefined;
   PreIPO: undefined;
+  StockDetail: { symbol: string };
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -28,11 +34,8 @@ export function HomeStack() {
         component={HomeScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
-        name="Stocks"
-        component={StocksStack}
-        options={{ headerShown: false }}
-      />
+      <Stack.Screen name="Stocks" component={StocksScreen} />
+      <Stack.Screen name="StockDetail" component={StockDetail} />
       <Stack.Screen
         name="PreIPO"
         component={PreIpoScreen}
