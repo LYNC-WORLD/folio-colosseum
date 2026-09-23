@@ -1,6 +1,6 @@
 import { env } from "../config/env";
 import { prisma } from "../lib/prisma";
-import { privy } from "../lib/privy";
+import { getTransectionResults, privy } from "../lib/privy";
 
 const XSTOCKS_API = "https://api.xstocks.fi/api/v2";
 
@@ -101,14 +101,21 @@ export class TradeService {
       } else {
         stockAmount = usdcAmount / price;
       }
-      const responce = buyStockOnChain(stockAddress, usdcAmount, walletId);
+      const responce = await buyStockOnChain(
+        stockAddress,
+        usdcAmount,
+        walletId,
+      );
+      const result = await getTransectionResults(walletId, responce.id);
+      if (result == "rejected") {
+        return;
+      }
       const currentInvestedInStock = await prisma.investment.findFirst({
         where: {
           userId: userId,
           stockAddress: stockAddress,
         },
       });
-      // TODO: Add success verification
       if (!currentInvestedInStock) {
         await prisma.investment.create({
           data: {
@@ -134,6 +141,15 @@ export class TradeService {
           },
         });
       }
+      await prisma.trades.create({
+        data: {
+          investmentAmount: usdcAmount,
+          stockAddress: stockAddress,
+          stockPrice: price,
+          tradeType: "BUY",
+          userId: userId,
+        },
+      });
       return { responce };
     } catch (error) {
       console.error(error);
@@ -164,6 +180,10 @@ export class TradeService {
         stockAmount,
         walletId,
       );
+      const result = await getTransectionResults(walletId, responce.id);
+      if (result == "rejected") {
+        return;
+      }
       const currentInvestedInStock = await prisma.investment.findFirst({
         where: {
           userId: userId,
@@ -196,6 +216,15 @@ export class TradeService {
           },
         });
       }
+      await prisma.trades.create({
+        data: {
+          investmentAmount: usdcAmount,
+          stockAddress: stockAddress,
+          stockPrice: price,
+          tradeType: "SELL",
+          userId: userId,
+        },
+      });
       return responce;
     } catch (error) {
       console.error(error);

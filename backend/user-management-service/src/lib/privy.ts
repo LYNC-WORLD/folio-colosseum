@@ -1,5 +1,6 @@
 import { PrivyClient, AuthorizationContext } from "@privy-io/node";
 import { env } from "../config/env";
+import { log } from "node:console";
 
 export const privy = new PrivyClient({
   appId: env.PRIVY_APP_ID!,
@@ -17,7 +18,7 @@ export async function createUser(
   mail: string,
   name: string,
 ): Promise<createUserResponce> {
-  try  {
+  try {
     const user = await privy.users().create({
       linked_accounts: [
         {
@@ -28,27 +29,33 @@ export async function createUser(
         },
       ],
     });
-
     const wallet = await privy.wallets().create({
       chain_type: "solana",
-      owner_id: env.PRIVY_AUTH_ADDRESS!
+      owner_id: env.PRIVY_AUTH_ADDRESS!,
       // owner: { public_key: env.PRIVY_AUTH_ADDRESS! },
-    }); 
+    });
     return { userId: user.id, walletId: wallet.id, address: wallet.address };
   } catch (error) {
     console.log(error);
     throw error;
   }
 }
-// (async () => {
-//   try {
-//     const data = await getQuote(
-//       "REDACTED_PRIVY_WALLET_ID",
-//       10,
-//       "XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX",
-//     );
-//     return;
-//   } catch (error) {
-//     console.error("Error executing async code:", error);
-//   }
-// })();
+
+export async function getTransectionResults(
+  walletId: string,
+  transectionId: string,
+) {
+  while (true) {
+    const data = await privy
+      .wallets()
+      .actions.get(transectionId, {
+        wallet_id: walletId,
+      });
+      if(data.status == "failed"){
+        await sleep(1000);
+      }
+      else return data.status;
+  }
+}
+
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
