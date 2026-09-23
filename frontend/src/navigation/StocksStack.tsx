@@ -1,6 +1,6 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import type { StocksStackParamList } from "./types";
-import StocksScreen from "../screens/StocksScreen";
+import { StocksScreen } from "../screens/StocksScreen";
 import StockDetailScreen from "../screens/StockDetailScreen";
 
 const Stack = createNativeStackNavigator<StocksStackParamList>();

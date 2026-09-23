@@ -11,12 +11,12 @@ import { QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { queryClient } from "./src/lib/queryClient";
-import { AuthProvider, useAuth } from "./src/context/AuthContext";
-import LoginScreen from "./src/screens/LoginScreen";
-import RootTabs from "./src/navigation/RootTabs";
-import OnboardingNavigator from "./src/navigation/OnboardingNavigator";
+import { AuthProvider, useAuth } from "./src/context";
 import { C } from "./src/theme/colors";
 import { fontsToLoad } from "./src/theme/fonts";
+import { LoginScreen } from "./src/screens";
+import { RootTabs } from "./src/navigation";
+import OnboardingNavigator from "./src/navigation/OnboardingNavigator";
 
 const ONBOARDED_KEY = "folio_onboarded_v1";
 

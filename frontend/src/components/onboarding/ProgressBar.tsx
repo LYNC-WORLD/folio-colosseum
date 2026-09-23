@@ -1,9 +1,7 @@
-// src/components/onboarding/ProgressBar.tsx
 import { StyleSheet, Text, View } from "react-native";
-import { C } from "../../theme/colors";
-import { FONT } from "../../theme/fonts";
+import { C, FONT } from "../../theme";
 
-export default function ProgressBar({
+export function ProgressBar({
   step,
   total = 4,
 }: {

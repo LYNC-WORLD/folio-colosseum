@@ -1,16 +1,15 @@
-// src/screens/onboarding/HoldingPeriodScreen.tsx
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import ProgressBar from "../../components/onboarding/ProgressBar";
 import { PrimaryButton } from "../../components/onboarding/OnboardingButton";
-import { HORIZON_DEFS, useOnboarding } from "../../context/OnboardingContext";
-import { C, RADIUS } from "../../theme/colors";
-import { FONT } from "../../theme/fonts";
-import type { OnboardingStackParamList } from "../../navigation/OnboardingNavigator";
+import { HORIZON_DEFS, useOnboarding } from "../../context";
+import { C, RADIUS, FONT } from "../../theme";
+
+import type { OnboardingStackParamList } from "../../navigation";
+import { ProgressBar } from "../../components";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "HoldingPeriod">;
 
-export default function HoldingPeriodScreen({ navigation }: Props) {
+export function HoldingPeriodScreen({ navigation }: Props) {
   const { horizon, setHorizon } = useOnboarding();
   const active = HORIZON_DEFS.find((d) => d.id === horizon) ?? HORIZON_DEFS[2];
 

@@ -1,9 +1,9 @@
 import { StyleSheet, Text, View } from "react-native";
-import { C } from "../theme/colors";
+import { C } from "../theme";
 
 type Props = { label: string; value: string; valueColor?: string };
 
-export default function StatCard({ label, value, valueColor }: Props) {
+export function StatCard({ label, value, valueColor }: Props) {
   return (
     <View style={s.card}>
       <Text style={s.label}>{label}</Text>

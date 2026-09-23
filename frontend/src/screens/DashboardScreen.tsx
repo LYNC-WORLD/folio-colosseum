@@ -6,9 +6,9 @@ import {
   Text,
   View,
 } from "react-native";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context";
 
-export default function DashboardScreen() {
+export function DashboardScreen() {
   const { user, session, signOut } = useAuth();
   if (!user) return null;
 

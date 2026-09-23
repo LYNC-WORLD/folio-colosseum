@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getStockBySymbol } from "../services/stocks";
+import { getStockBySymbol } from "../services";
 
 export function useStockDetail(symbol: string) {
   const query = useQuery({

@@ -1,7 +1,5 @@
-// src/components/onboarding/OnboardingButton.tsx
 import { Pressable, StyleSheet, Text } from "react-native";
-import { C, RADIUS } from "../../theme/colors";
-import { FONT } from "../../theme/fonts";
+import { C, FONT, RADIUS } from "../../theme";
 
 export function PrimaryButton({
   label,

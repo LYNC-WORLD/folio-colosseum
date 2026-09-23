@@ -1,4 +1,4 @@
-import type { StocksResponse, StockDetailResponse } from "../types/stock";
+import { StockDetailResponse, StocksResponse } from "../types";
 import { request } from "./api/client";
 
 export const getStocks = () => request<StocksResponse>("/api/stocks/");

@@ -1,5 +1,5 @@
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { C } from "../theme/colors";
+import { C, RADIUS, FONT } from "../theme";
 
 type Props = {
   symbol: string;
@@ -17,24 +17,24 @@ function formatPrice(n: number) {
   });
 }
 
-export default function AssetRow({
-  symbol,
-  name,
-  price,
-  imageUrl,
-  onPress,
-}: Props) {
+export function AssetRow({ symbol, name, price, imageUrl, onPress }: Props) {
   return (
     <Pressable
       style={({ pressed }) => [s.row, pressed && s.pressed]}
       onPress={onPress}
     >
-      <Image source={{ uri: imageUrl }} style={s.icon} />
+      <View style={s.iconWrap}>
+        {imageUrl ? (
+          <Image source={{ uri: imageUrl }} style={s.icon} />
+        ) : (
+          <Text style={s.iconFallback}>{symbol.charAt(0).toUpperCase()}</Text>
+        )}
+      </View>
       <View style={s.info}>
-        <Text style={s.symbol}>{symbol}</Text>
         <Text style={s.name} numberOfLines={1}>
           {name}
         </Text>
+        <Text style={s.symbol}>{symbol}</Text>
       </View>
       <View style={s.right}>
         <Text style={s.price}>{formatPrice(price)}</Text>
@@ -47,19 +47,32 @@ const s = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
     gap: 12,
   },
-  pressed: { opacity: 0.6 },
-  icon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: C.card,
+  pressed: { opacity: 0.7 },
+  iconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: RADIUS.sm,
+    backgroundColor: C.raised,
+    borderWidth: 1,
+    borderColor: C.hairline,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
-  info: { flex: 1, gap: 2 },
-  symbol: { color: C.ink, fontSize: 15, fontWeight: "700" },
-  name: { color: C.muted, fontSize: 12 },
-  right: { alignItems: "flex-end", gap: 2 },
-  price: { color: C.ink, fontSize: 15, fontWeight: "600" },
+  icon: { width: "100%", height: "100%" },
+  iconFallback: { fontFamily: FONT.mono400, fontSize: 13, color: C.bone },
+  info: { flex: 1, minWidth: 0 },
+  name: { fontFamily: FONT.display600, fontSize: 15, color: C.bone },
+  symbol: {
+    marginTop: 3,
+    fontFamily: FONT.mono400,
+    fontSize: 12,
+    color: C.inkMuted,
+  },
+  right: { alignItems: "flex-end" },
+  price: { fontFamily: FONT.mono400, fontSize: 15, color: C.bone },
 });

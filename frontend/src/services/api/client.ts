@@ -1,4 +1,4 @@
-import { ENV } from '../../config/env';
+import { ENV } from "../../config";
 
 export class ApiError extends Error {
   constructor(
@@ -7,12 +7,12 @@ export class ApiError extends Error {
     public data?: unknown,
   ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
   }
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   token?: string;
   timeoutMs?: number;
@@ -20,7 +20,7 @@ type RequestOptions = {
 
 export async function request<T>(
   path: string,
-  { method = 'GET', body, token, timeoutMs = 15000 }: RequestOptions = {},
+  { method = "GET", body, token, timeoutMs = 15000 }: RequestOptions = {},
 ): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -30,7 +30,7 @@ export async function request<T>(
     const res = await fetch(`${ENV.API_URL}${path}`, {
       method,
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -47,7 +47,7 @@ export async function request<T>(
 
     if (!res.ok) {
       const message =
-        typeof data === 'object' && data !== null && 'message' in data
+        typeof data === "object" && data !== null && "message" in data
           ? String((data as { message: unknown }).message)
           : `Request failed (${res.status})`;
       throw new ApiError(message, res.status, data);
@@ -56,10 +56,10 @@ export async function request<T>(
     return data as T;
   } catch (e) {
     if (e instanceof ApiError) throw e;
-    if (e instanceof Error && e.name === 'AbortError') {
-      throw new ApiError('Request timed out', 0);
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new ApiError("Request timed out", 0);
     }
-    throw new ApiError('Network error', 0);
+    throw new ApiError("Network error", 0);
   } finally {
     clearTimeout(timer);
   }
