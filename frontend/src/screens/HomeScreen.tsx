@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -222,9 +223,18 @@ function PopularCard({
     >
       <View style={s.popularTop}>
         <View style={s.popularBadge}>
-          <Text style={s.popularBadgeLabel}>
-            {stock.symbol.charAt(0).toUpperCase()}
-          </Text>
+          {stock.imageUrl ? (
+            <Image
+              source={{ uri: stock.imageUrl }}
+              style={{ width: "100%", height: "100%" }}
+            />
+          ) : (
+            <Text
+              style={{ fontFamily: FONT.mono400, fontSize: 13, color: C.bone }}
+            >
+              {stock.symbol.charAt(0).toUpperCase()}
+            </Text>
+          )}
         </View>
 
         <Text style={s.popularTicker}>{stock.symbol}</Text>
