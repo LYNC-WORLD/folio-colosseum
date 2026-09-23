@@ -9,7 +9,7 @@ export const env = {
   PRIVY_APP_ID: process.env.PRIVY_APP_ID,
   PRIVY_APP_SECRET: process.env.PRIVY_APP_SECRET,
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-  PRIVY_AUTH_KEY: process.env.PRIVY_AUTH_KEY_2,
+  PRIVY_AUTH_KEY: process.env.PRIVY_AUTH_KEY,
   PRIVY_AUTH_ADDRESS: process.env.PRIVY_AUTH_ADDRESS
 };
 

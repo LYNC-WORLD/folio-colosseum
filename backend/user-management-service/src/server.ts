@@ -1,10 +1,10 @@
 import express from "express";
 import { env } from "./config/env";
 
-import {authRoute} from "./routes/auth";
-import { stockRoutes } from "./routes/stock";
-import { tradeRoutes } from "./routes/trade";
-import { userRoutes } from "./routes/user";
+import {authRoute} from "./routes/authRoutes";
+import { stockRoutes } from "./routes/stockRoutes";
+import { tradeRoutes } from "./routes/tradeRoutes";
+import { userRoutes } from "./routes/userRoutes";
 
 const app = express();
 
