@@ -40,36 +40,6 @@ export async function createUser(
     throw error;
   }
 }
-
-async function getQuote(
-  walletId: string,
-  usdcAmount: number,
-  stockAddress: string,
-) {
-  console.log(env.PRIVY_AUTH_KEY);
-
-  const authorizationContext: AuthorizationContext = {
-    authorization_private_keys: [env.PRIVY_AUTH_KEY!],
-  };
-
-  const responce = await privy
-  .wallets()
-  .swaps()
-  .quote(walletId, {
-    destination: {
-      asset_address: stockAddress,
-    },
-    source: {
-      asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-      caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-    },
-    base_amount: String(usdcAmount * 1000000),
-    amount_type: "exact_input",
-    // authorization_context: authorizationContext,
-  });
-  console.log(responce);
-}
-
 // (async () => {
 //   try {
 //     const data = await getQuote(

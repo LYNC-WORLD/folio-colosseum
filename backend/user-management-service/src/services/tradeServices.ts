@@ -1,3 +1,4 @@
+import { env } from "../config/env";
 import { privy } from "../lib/privy";
 
 const XSTOCKS_API = "https://api.xstocks.fi/api/v2";
@@ -74,6 +75,85 @@ export class TradeService {
         });
       // qoute.
       return qoute;
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
+
+  public async buyStock(
+    stockAddress: string,
+    stockSymbol: string,
+    stockAmount: number | undefined,
+    usdcAmount: number | undefined,
+    walletId: string,
+    userId: string,
+  ) {
+    try {
+      const price = await getStockPrice(stockSymbol);
+      if (!price) {
+        return;
+      }
+      if (!usdcAmount) usdcAmount = 0;
+      if (stockAmount) {
+        usdcAmount = stockAmount * price;
+      }
+      const qoute = await privy
+        .wallets()
+        .swaps()
+        .execute(walletId, {
+          destination: {
+            asset_address: stockAddress,
+          },
+          source: {
+            asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          },
+          base_amount: String(usdcAmount * 1000000),
+          amount_type: "exact_input",
+          authorization_context: {authorization_private_keys: [env.PRIVY_AUTH_KEY!]}
+        });
+      // qoute.
+      return qoute;
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
+
+  public async sellStock(
+    stockAddress: string,
+    stockSymbol: string,
+    stockAmount: number | undefined,
+    usdcAmount: number | undefined,
+    walletId: string,
+    userId: string,
+  ) {
+    try {
+      const price = await getStockPrice(stockSymbol);
+      if (!price) {
+        return;
+      }
+      if (!usdcAmount) usdcAmount = 0;
+      if (!stockAmount) {
+        stockAmount = usdcAmount / price;
+      }
+      const responce = await privy
+        .wallets()
+        .swaps()
+        .execute(walletId, {
+          destination: {
+            asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          },
+          source: {
+            asset_address: stockAddress,
+            caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          },
+          base_amount: String(stockAmount * 100000000),
+          amount_type: "exact_input",
+          authorization_context: {authorization_private_keys: [env.PRIVY_AUTH_KEY!]}
+        });
+      return responce;
     } catch (error) {
       console.error(error);
       return;
