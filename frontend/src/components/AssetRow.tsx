@@ -1,5 +1,5 @@
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { C } from "../theme/colors";
+import { C } from "../theme";
 
 type Props = {
   symbol: string;
@@ -17,13 +17,7 @@ function formatPrice(n: number) {
   });
 }
 
-export default function AssetRow({
-  symbol,
-  name,
-  price,
-  imageUrl,
-  onPress,
-}: Props) {
+export function AssetRow({ symbol, name, price, imageUrl, onPress }: Props) {
   return (
     <Pressable
       style={({ pressed }) => [s.row, pressed && s.pressed]}

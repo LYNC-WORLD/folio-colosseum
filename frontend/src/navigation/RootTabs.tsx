@@ -1,44 +1,51 @@
-// src/navigation/RootTabs.tsx
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import type { NavigatorScreenParams } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { View } from "react-native";
-import { C } from "../theme/colors";
-import StocksScreen from "../screens/StocksScreen";
-import PreIpoScreen from "../screens/PreIpoScreen";
-import ProfileScreen from "../screens/ProfileScreen";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
+import { C } from "../theme";
+import {
+  LeadersScreen,
+  PortfolioScreen,
+  ProfileScreen,
+  SignalsScreen,
+} from "../screens";
+import { HomeStack, HomeStackParamList } from "./HomeStack";
 export type TabParamList = {
-  Stocks: undefined;
-  PreIPO: undefined;
+  Home: NavigatorScreenParams<HomeStackParamList> | undefined;
+  Portfolio: undefined;
+  Signals: undefined;
+  Leaders: undefined;
   Profile: undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
 const ICONS: Record<keyof TabParamList, keyof typeof Ionicons.glyphMap> = {
-  Stocks: "trending-up-outline",
-  PreIPO: "rocket-outline",
+  Home: "home-outline",
+  Portfolio: "pie-chart-outline",
+  Signals: "pulse-outline",
+  Leaders: "podium-outline",
   Profile: "person-outline",
 };
 
-export default function RootTabs() {
+export function RootTabs() {
   const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: C.accent,
-        tabBarInactiveTintColor: C.muted,
+        tabBarActiveTintColor: C.bone,
+        tabBarInactiveTintColor: C.inkMuted,
         tabBarStyle: {
           backgroundColor: C.bg,
-          borderTopColor: C.ring,
+          borderTopColor: C.hairline,
           borderTopWidth: 0.5,
           height: 56 + insets.bottom,
           paddingBottom: insets.bottom + 6,
           paddingTop: 8,
         },
-        tabBarLabelStyle: { fontSize: 12, fontWeight: "600" },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
         tabBarIcon: ({ color, size, focused }) => (
           <View>
             <Ionicons
@@ -55,7 +62,7 @@ export default function RootTabs() {
                   width: 4,
                   height: 4,
                   borderRadius: 2,
-                  backgroundColor: C.accent,
+                  backgroundColor: C.bone,
                 }}
               />
             )}
@@ -63,16 +70,15 @@ export default function RootTabs() {
         ),
       })}
     >
-      {/* Order below = left-to-right order in the tab bar */}
-      <Tab.Screen name="Stocks" component={StocksScreen} />
+      <Tab.Screen name="Home" component={HomeStack} />
+      <Tab.Screen name="Portfolio" component={PortfolioScreen} />
+      <Tab.Screen name="Signals" component={SignalsScreen} />
+      <Tab.Screen name="Leaders" component={LeadersScreen} />
       <Tab.Screen
-        name="PreIPO"
-        component={PreIpoScreen}
-        options={{ title: "Pre-IPO" }}
+        name="Profile"
+        component={ProfileScreen}
+        options={{ tabBarLabel: "You" }}
       />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
-
-const StyleSheetHairline = 0.5;

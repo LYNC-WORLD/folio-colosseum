@@ -7,12 +7,9 @@ import {
   Text,
   View,
 } from "react-native";
-import { useAuth } from "../context/AuthContext";
-import { C, RADIUS } from "../theme/colors";
-import { FONT } from "../theme/fonts";
+import { useAuth } from "../context";
+import { C, RADIUS, FONT } from "../theme";
 
-// Static preview — purely decorative on the sign-in screen, not live data.
-// The real ticker grid lives on the home screen once the user is in.
 const PREVIEW_ASSETS: {
   ticker: string;
   price: string;
@@ -26,7 +23,7 @@ const PREVIEW_ASSETS: {
   { ticker: "TSLA", price: "$402.90", delta: "−1.1%", deltaColor: C.clay },
 ];
 
-export default function LoginScreen() {
+export function LoginScreen() {
   const { signIn, busy, error } = useAuth();
 
   return (

@@ -1,16 +1,14 @@
-// src/screens/onboarding/RiskBehaviorScreen.tsx
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import ProgressBar from "../../components/onboarding/ProgressBar";
-import { PrimaryButton } from "../../components/onboarding/OnboardingButton";
-import { RISK_DEFS, useOnboarding } from "../../context/OnboardingContext";
-import { C, RADIUS } from "../../theme/colors";
-import { FONT } from "../../theme/fonts";
-import type { OnboardingStackParamList } from "../../navigation/OnboardingNavigator";
+import { PrimaryButton } from "../../components";
+import { RISK_DEFS, useOnboarding } from "../../context";
+import { C, RADIUS, FONT } from "../../theme";
+import type { OnboardingStackParamList } from "../../navigation";
+import { ProgressBar } from "../../components";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "RiskBehaviour">;
 
-export default function RiskBehaviorScreen({ navigation }: Props) {
+export function RiskBehaviorScreen({ navigation }: Props) {
   const { risk, setRisk } = useOnboarding();
   const active = RISK_DEFS.find((d) => d.id === risk) ?? RISK_DEFS[1];
 

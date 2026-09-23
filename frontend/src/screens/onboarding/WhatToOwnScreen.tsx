@@ -1,19 +1,14 @@
-// src/screens/onboarding/WhatToOwnScreen.tsx
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import ProgressBar from "../../components/onboarding/ProgressBar";
-import {
-  PrimaryButton,
-  GhostLink,
-} from "../../components/onboarding/OnboardingButton";
-import { ASSET_DEFS, useOnboarding } from "../../context/OnboardingContext";
-import { C, RADIUS } from "../../theme/colors";
-import { FONT } from "../../theme/fonts";
-import type { OnboardingStackParamList } from "../../navigation/OnboardingNavigator";
+import { PrimaryButton, GhostLink } from "../../components/";
+import { ASSET_DEFS, useOnboarding } from "../../context";
+import { C, RADIUS, FONT } from "../../theme";
+import type { OnboardingStackParamList } from "../../navigation";
+import { ProgressBar } from "../../components";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "WhatToOwn">;
 
-export default function WhatToOwnScreen({ navigation }: Props) {
+export function WhatToOwnScreen({ navigation }: Props) {
   const { picked, togglePicked, setShowEverything } = useOnboarding();
   const count = Object.values(picked).filter(Boolean).length;
 

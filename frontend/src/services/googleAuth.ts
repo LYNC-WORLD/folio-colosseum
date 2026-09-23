@@ -4,8 +4,8 @@ import {
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
-import { ENV } from "../config/env";
-import type { GoogleSession } from "../types/auth";
+import type { GoogleSession } from "../types";
+import { ENV } from "../config";
 
 GoogleSignin.configure({
   webClientId: ENV.GOOGLE_WEB_CLIENT_ID,

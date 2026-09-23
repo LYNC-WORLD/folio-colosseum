@@ -1,7 +1,7 @@
 import { SafeAreaView, StyleSheet, Text } from "react-native";
-import { C } from "../theme/colors";
+import { C } from "../theme";
 
-export default function PreIpoScreen() {
+export function PreIpoScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <Text style={s.text}>Pre-IPO — coming soon</Text>

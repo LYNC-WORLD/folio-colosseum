@@ -1,22 +1,24 @@
-// src/screens/onboarding/ProfileSummaryScreen.tsx
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import {
-  GhostLink,
-  PrimaryButton,
-} from "../../components/onboarding/OnboardingButton";
-import { useOnboarding } from "../../context/OnboardingContext";
-import { C, RADIUS } from "../../theme/colors";
-import { FONT } from "../../theme/fonts";
-import type { OnboardingStackParamList } from "../../navigation/OnboardingNavigator";
+import { GhostLink, PrimaryButton } from "../../components";
+import { useOnboarding } from "../../context";
+import { saveOnboardingProfile } from "../../lib";
+import { C, RADIUS, FONT } from "../../theme";
+
+import type { OnboardingStackParamList } from "../../navigation";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "ProfileSummary">;
 
-export default function ProfileSummaryScreen({ navigation, route }: Props) {
+export function ProfileSummaryScreen({ navigation, route }: Props) {
   const { computeProfile } = useOnboarding();
   const profile = computeProfile();
   const onComplete = route.params?.onComplete;
+
+  const handleEnter = () => {
+    saveOnboardingProfile(profile);
+    onComplete?.();
+  };
 
   const rows = [
     {
@@ -73,7 +75,7 @@ export default function ProfileSummaryScreen({ navigation, route }: Props) {
 
         <View style={{ flexGrow: 1 }} />
 
-        <PrimaryButton label="Enter Folio" onPress={() => onComplete?.()} />
+        <PrimaryButton label="Enter Folio" onPress={handleEnter} />
         <GhostLink
           label="Change my answers"
           onPress={() => navigation.navigate("WhatToOwn")}

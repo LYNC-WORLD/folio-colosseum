@@ -7,13 +7,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { loginWithGoogle } from "../services/api/auth";
 import {
   restoreGoogleSession,
   signInWithGoogle,
   signOutGoogle,
-} from "../services/googleAuth";
-import type { GoogleSession, GoogleUser, LoginResponse } from "../types/auth";
+  loginWithGoogle,
+} from "../services";
+import type { GoogleSession, GoogleUser, LoginResponse } from "../types";
 
 type AuthState = {
   user: GoogleUser | null;

@@ -12,10 +12,10 @@ import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { useAuth } from "../context/AuthContext";
-import { C } from "../theme/colors";
-import StatCard from "../components/StatCard";
-import type { TabParamList } from "../navigation/RootTabs";
+import { useAuth } from "../context";
+import { C } from "../theme";
+import type { TabParamList } from "../navigation";
+import { StatCard } from "../components";
 
 const PERIODS = ["24h", "7d", "30d", "All"] as const;
 type Period = (typeof PERIODS)[number];
@@ -33,7 +33,7 @@ function formatCurrency(n: number) {
   });
 }
 
-export default function ProfileScreen() {
+export function ProfileScreen() {
   const { user, signOut } = useAuth();
   const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
   const [period, setPeriod] = useState<Period>("24h");
@@ -140,7 +140,7 @@ export default function ProfileScreen() {
           {totalInvested === 0 && (
             <Pressable
               style={s.exploreBtn}
-              onPress={() => navigation.navigate("Stocks")}
+              onPress={() => navigation.navigate("Home", { screen: "Stocks" })}
             >
               <Text style={s.exploreText}>Explore Stocks</Text>
               <Ionicons name="arrow-forward" size={16} color={C.buttonInk} />

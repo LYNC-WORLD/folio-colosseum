@@ -1,10 +1,3 @@
-// src/context/OnboardingContext.tsx
-//
-// Holds the answers collected across the 4 onboarding screens and derives
-// the "your profile" summary from them. Lives only for the lifetime of the
-// onboarding stack — mount <OnboardingProvider> around the navigator, not
-// around the whole app.
-
 import {
   createContext,
   useCallback,
@@ -13,8 +6,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-
-// ---- static definitions (shared by the screens that render these lists) ----
 
 export type AssetKey =
   | "stocks"
@@ -130,55 +121,65 @@ export const HORIZON_DEFS: {
   },
 ];
 
-const ARCHETYPES: Record<string, { title: string; description: string }> = {
+const ARCHETYPES: Record<
+  string,
+  { title: string; description: string; tagline: string }
+> = {
   "buy-short": {
     title: "The Opportunist",
     description:
       "You want to catch the dip and move again before the next one. Speed matters more than a thesis.",
+    tagline: "Move first, ask later",
   },
   "buy-mid": {
     title: "The Conviction Buyer",
     description:
       "You size up when others panic and give a trade a real quarter to work before you judge it.",
+    tagline: "Size up on weakness",
   },
   "buy-long": {
     title: "The Accumulator",
     description:
       "Drawdowns read as a discount. You keep adding and expect to still be holding this in five years.",
+    tagline: "Every dip is a discount",
   },
   "hold-short": {
     title: "The Tactical Trader",
     description:
       "You move fast but you do not panic. A bad week is data, not a verdict.",
+    tagline: "Fast hands, steady head",
   },
   "hold-mid": {
     title: "The Steady Hand",
     description:
       "You sized it right the first time and you are not in a hurry to prove anything.",
+    tagline: "Sized right, held steady",
   },
   "hold-long": {
     title: "The Patient Builder",
     description:
       "You want equity in things you rate, you can sit through a bad quarter, and you would rather compound than trade.",
+    tagline: "Quality you can sit on",
   },
   "sell-short": {
     title: "The Risk Manager",
     description:
       "You would rather take a small loss on purpose than a large one by accident.",
+    tagline: "Small losses, on purpose",
   },
   "sell-mid": {
     title: "The Capital Protector",
     description:
       "A thesis is good until the price says otherwise. You protect capital first, upside second.",
+    tagline: "Capital first, upside second",
   },
   "sell-long": {
     title: "The Cautious Long-Termer",
     description:
       "You are in this for years, but you sleep better knowing you would get out if it really turned.",
+    tagline: "In for years, ready to exit",
   },
 };
-
-// ---- context ----
 
 type OnboardingState = {
   picked: Record<AssetKey, boolean>;
@@ -189,6 +190,18 @@ type OnboardingState = {
   horizon: HorizonId;
 };
 
+export type OnboardingProfile = {
+  title: string;
+  description: string;
+  tagline: string;
+  feedTitle: string;
+  feedSub: string;
+  amountTitle: string;
+  amountSub: string;
+  chartTitle: string;
+  chartSub: string;
+};
+
 type OnboardingValue = OnboardingState & {
   togglePicked: (key: AssetKey) => void;
   setShowEverything: (v: boolean) => void;
@@ -197,16 +210,7 @@ type OnboardingValue = OnboardingState & {
   setRisk: (v: RiskId) => void;
   setHorizon: (v: HorizonId) => void;
   resolvedAmount: number;
-  computeProfile: () => {
-    title: string;
-    description: string;
-    feedTitle: string;
-    feedSub: string;
-    amountTitle: string;
-    amountSub: string;
-    chartTitle: string;
-    chartSub: string;
-  };
+  computeProfile: () => OnboardingProfile;
 };
 
 const OnboardingContext = createContext<OnboardingValue | null>(null);
@@ -257,6 +261,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     return {
       title: archetype.title,
       description: archetype.description,
+      tagline: archetype.tagline,
       feedTitle,
       feedSub,
       amountTitle: `Default buy size $${resolvedAmount.toLocaleString("en-US")}`,

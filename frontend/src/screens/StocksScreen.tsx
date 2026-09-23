@@ -10,11 +10,11 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme/colors";
-import AssetRow from "../components/AssetRow";
-import { useAuth } from "../context/AuthContext";
-import { useStocks } from "../hooks/useStocks";
+import { useAuth } from "../context";
+import { useStocks } from "../hooks";
+import { AssetRow } from "../components";
 
-export default function StocksScreen() {
+export function StocksScreen() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const { stocks, loading, refreshing, error, refresh, reload } = useStocks();

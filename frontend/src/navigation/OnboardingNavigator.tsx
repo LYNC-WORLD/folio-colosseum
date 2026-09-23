@@ -1,12 +1,13 @@
-// src/navigation/OnboardingNavigator.tsx
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { OnboardingProvider } from "../context/OnboardingContext";
-import { C } from "../theme/colors";
-import WhatToOwnScreen from "../screens/onboarding/WhatToOwnScreen";
-import StartingSizeScreen from "../screens/onboarding/StartingSizeScreen";
-import RiskBehaviorScreen from "../screens/onboarding/RiskBehaviorScreen";
-import HoldingPeriodScreen from "../screens/onboarding/HoldingPeriodScreen";
-import ProfileSummaryScreen from "../screens/onboarding/ProfileSummaryScreen";
+import { OnboardingProvider } from "../context";
+import { C } from "../theme";
+import {
+  HoldingPeriodScreen,
+  ProfileSummaryScreen,
+  RiskBehaviorScreen,
+  StartingSizeScreen,
+  WhatToOwnScreen,
+} from "../screens/onboarding";
 
 export type OnboardingStackParamList = {
   WhatToOwn: undefined;
@@ -18,7 +19,7 @@ export type OnboardingStackParamList = {
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 
-export default function OnboardingNavigator({
+export function OnboardingNavigator({
   onComplete,
 }: {
   onComplete: () => void;

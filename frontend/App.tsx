@@ -11,12 +11,11 @@ import { QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { queryClient } from "./src/lib/queryClient";
-import { AuthProvider, useAuth } from "./src/context/AuthContext";
-import LoginScreen from "./src/screens/LoginScreen";
-import RootTabs from "./src/navigation/RootTabs";
-import OnboardingNavigator from "./src/navigation/OnboardingNavigator";
+import { AuthProvider, useAuth } from "./src/context";
 import { C } from "./src/theme/colors";
 import { fontsToLoad } from "./src/theme/fonts";
+import { LoginScreen } from "./src/screens";
+import { OnboardingNavigator, RootTabs } from "./src/navigation";
 
 const ONBOARDED_KEY = "folio_onboarded_v1";
 
@@ -67,10 +66,6 @@ function Root() {
   if (initializing) return <LoadingScreen />;
   if (!user) return <LoginScreen />;
 
-  // NavigationContainer wraps BOTH navigators below it — OnboardingNavigator
-  // and RootTabs each create their own navigator internally, and every
-  // navigator needs exactly one NavigationContainer somewhere above it in
-  // the tree. Only one per app, wrapping whichever navigator is active.
   return (
     <NavigationContainer>
       {hasOnboarded === null ? (
