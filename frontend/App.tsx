@@ -15,8 +15,8 @@ import { AuthProvider, useAuth } from "./src/context";
 import { C } from "./src/theme/colors";
 import { fontsToLoad } from "./src/theme/fonts";
 import { LoginScreen } from "./src/screens";
-import { RootTabs } from "./src/navigation";
-import OnboardingNavigator from "./src/navigation/OnboardingNavigator";
+import { OnboardingNavigator, RootTabs } from "./src/navigation";
+import { WalletProvider } from "./src/context/WalletContext";
 
 const ONBOARDED_KEY = "folio_onboarded_v1";
 
@@ -93,7 +93,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <AuthProvider>
-          <Root />
+          <WalletProvider>
+            <Root />
+          </WalletProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </QueryClientProvider>

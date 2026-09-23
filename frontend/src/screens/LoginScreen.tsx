@@ -107,7 +107,7 @@ export function LoginScreen() {
           </Text>
         </Pressable>
 
-        <Pressable
+        {/* <Pressable
           onPress={() => {
             // TODO: wire up once wallet-connect is added to AuthContext.
             // Left as a visible, disabled-feeling affordance for now so the
@@ -118,7 +118,7 @@ export function LoginScreen() {
           style={({ pressed }) => [s.secondaryButton, pressed && s.pressed]}
         >
           <Text style={s.secondaryLabel}>Connect a wallet instead</Text>
-        </Pressable>
+        </Pressable> */}
 
         <Text style={s.legal}>
           Non-custodial · settles on-chain · 1% per trade

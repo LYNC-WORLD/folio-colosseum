@@ -19,6 +19,8 @@ import { C, FONT, RADIUS } from "../theme";
 import { OnboardingProfile, useAuth } from "../context";
 import { Stock } from "../types";
 import { getOnboardingProfile } from "../lib";
+import { SafeScreen } from "../components";
+import { useWallet } from "../context/WalletContext";
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -38,6 +40,7 @@ export function HomeScreen() {
   const { stocks, loading, error } = useStocks();
   const [query, setQuery] = useState("");
   const [profile, setProfile] = useState<OnboardingProfile | null>(null);
+  const { usdValue, loading: walletLoading, error: walletError } = useWallet();
 
   useEffect(() => {
     getOnboardingProfile().then(setProfile);
@@ -45,14 +48,14 @@ export function HomeScreen() {
 
   // Placeholder until a real portfolio balance field exists on the user —
   // same pattern StocksScreen already uses for `balance`.
-  const balance = (user as any)?.balance ?? 0;
+  const balance = (user as any)?.balance ?? 100;
   const firstName = user?.name?.split(" ")[0] || "there";
 
   const popular = stocks.slice(0, 4);
   const picks = stocks.length > 4 ? stocks.slice(4, 7) : stocks.slice(0, 3);
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeScreen>
       <ScrollView
         contentContainerStyle={s.container}
         showsVerticalScrollIndicator={false}
@@ -64,10 +67,19 @@ export function HomeScreen() {
             <Text style={s.name}>{firstName}</Text>
           </View>
           <View style={s.balancePill}>
-            <View style={s.balanceDot} />
-            <Text style={s.balanceText}>
-              {Math.round(balance).toLocaleString("en-US")} USDC
-            </Text>
+            <View
+              style={[
+                s.balanceDot,
+                walletError ? { backgroundColor: C.clay } : null,
+              ]}
+            />
+            {walletLoading ? (
+              <ActivityIndicator size="small" color={C.bone} />
+            ) : (
+              <Text style={s.balanceText}>
+                {walletError ? "—" : money(usdValue)}
+              </Text>
+            )}
           </View>
         </View>
 
@@ -201,7 +213,7 @@ export function HomeScreen() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </SafeScreen>
   );
 }
 

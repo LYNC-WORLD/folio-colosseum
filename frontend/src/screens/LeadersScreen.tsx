@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useAuth } from "../context";
 import { FONT, C, RADIUS } from "../theme";
+import { SafeScreen } from "../components";
 
 const TABS = ["This week", "30 days", "All time"] as const;
 type Tab = (typeof TABS)[number];
@@ -151,7 +152,7 @@ export function LeadersScreen() {
   const firstName = user?.name?.split(" ")[0] || "You";
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeScreen>
       <ScrollView
         contentContainerStyle={s.container}
         showsVerticalScrollIndicator={false}
@@ -268,7 +269,7 @@ export function LeadersScreen() {
           automatically — every buy is still your decision.
         </Text>
       </ScrollView>
-    </SafeAreaView>
+    </SafeScreen>
   );
 }
 

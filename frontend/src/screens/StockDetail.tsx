@@ -17,8 +17,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { StocksStackParamList } from "../navigation/types";
 import { useStockDetail } from "../hooks/useStockDetail";
 import { MOCK_DETAIL } from "../data/mockStockDetail";
-import { C, RADIUS } from "../theme/colors";
-import { FONT } from "../theme/fonts";
+import { C, RADIUS, FONT } from "../theme";
+import { BuySheet } from "../components/BuySheet";
 
 function formatPrice(n: number) {
   return n.toLocaleString(undefined, {
@@ -36,7 +36,7 @@ export function StockDetail() {
 
   const [period, setPeriod] =
     useState<(typeof MOCK_DETAIL.periods)[number]>("1Y");
-  const [amount] = useState(250); // static default buy amount for now
+  const [buyOpen, setBuyOpen] = useState(false);
 
   if (loading) {
     return (
@@ -59,7 +59,7 @@ export function StockDetail() {
 
   const price = Number(stock.price);
   const positive = MOCK_DETAIL.changePct >= 0;
-  const estUnits = amount / price;
+  // const estUnits = amount / price;
 
   return (
     <View style={[s.safe, { paddingTop: insets.top }]}>
@@ -140,10 +140,23 @@ export function StockDetail() {
 
         {/* Stats below aren't in the API yet — static placeholders */}
         <View style={s.statsGrid}>
-          {MOCK_DETAIL.stats.map((stat) => (
-            <View key={stat.label} style={s.statCell}>
-              <Text style={s.statLabel}>{stat.label}</Text>
-              <Text style={s.statValue}>{stat.value}</Text>
+          {chunkPairs(MOCK_DETAIL.stats).map((row, rowIndex, rows) => (
+            <View
+              key={rowIndex}
+              style={[
+                s.statsRow,
+                rowIndex < rows.length - 1 && s.statsRowDivider,
+              ]}
+            >
+              {row.map((stat, i) => (
+                <View
+                  key={stat.label}
+                  style={[s.statCell, i < row.length - 1 && s.statCellDivider]}
+                >
+                  <Text style={s.statLabel}>{stat.label}</Text>
+                  <Text style={s.statValue}>{stat.value}</Text>
+                </View>
+              ))}
             </View>
           ))}
         </View>
@@ -181,15 +194,23 @@ export function StockDetail() {
         <Pressable style={s.sellBtn}>
           <Text style={s.sellText}>Sell</Text>
         </Pressable>
-        <Pressable style={s.buyBtn}>
-          <Text style={s.buyText}>Buy {formatPrice(amount)}</Text>
-          <Text style={s.buyEst}>
-            ≈ {estUnits.toFixed(3)} {stock.symbol}
-          </Text>
+        <Pressable style={s.buyBtn} onPress={() => setBuyOpen(true)}>
+          <Text style={s.buyText}>Buy {stock.symbol}</Text>
         </Pressable>
       </View>
+      <BuySheet
+        visible={buyOpen}
+        onClose={() => setBuyOpen(false)}
+        stock={stock}
+      />
     </View>
   );
+}
+
+function chunkPairs<T>(arr: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += 2) out.push(arr.slice(i, i + 2));
+  return out;
 }
 
 const s = StyleSheet.create({
@@ -338,17 +359,17 @@ const s = StyleSheet.create({
   },
 
   statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     marginTop: 14,
-    gap: 1,
-    backgroundColor: C.hairline,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: C.hairline,
-    borderRadius: RADIUS.md,
     overflow: "hidden",
   },
-  statCell: { width: "50%", padding: 14, gap: 4, backgroundColor: C.card },
+  statsRow: { flexDirection: "row" },
+  statsRowDivider: { borderBottomWidth: 1, borderBottomColor: C.hairline },
+  statCell: { flex: 1, padding: 14, gap: 4, backgroundColor: C.card },
+  statCellDivider: { borderRightWidth: 1, borderRightColor: C.hairline },
+
   statLabel: { color: C.inkMuted, fontSize: 12, fontFamily: FONT.display400 },
   statValue: { color: C.bone, fontSize: 15, fontFamily: FONT.mono500 },
 

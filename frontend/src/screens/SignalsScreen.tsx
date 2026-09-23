@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import { C, RADIUS, FONT } from "../theme";
+import { SafeScreen } from "../components";
 
 const REGIME = [
   { label: "Breadth", value: "Narrow", pct: 32, color: C.amber },
@@ -110,7 +111,7 @@ export function SignalsScreen() {
     filter === "All" ? SIGNALS : SIGNALS.filter((s) => s.family === filter);
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeScreen>
       <ScrollView
         contentContainerStyle={s.container}
         showsVerticalScrollIndicator={false}
@@ -254,7 +255,7 @@ export function SignalsScreen() {
           until you tap.
         </Text>
       </ScrollView>
-    </SafeAreaView>
+    </SafeScreen>
   );
 }
 

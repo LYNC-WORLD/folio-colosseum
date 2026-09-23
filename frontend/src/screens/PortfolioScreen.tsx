@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { C, RADIUS, FONT } from "../theme";
+import { SafeScreen } from "../components";
 
 const RANGES = ["Today", "1M", "1Y", "All"] as const;
 type Range = (typeof RANGES)[number];
@@ -67,7 +68,7 @@ export function PortfolioScreen() {
   const [range, setRange] = useState<Range>("All");
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeScreen>
       <ScrollView
         contentContainerStyle={s.container}
         showsVerticalScrollIndicator={false}
@@ -202,7 +203,7 @@ export function PortfolioScreen() {
           <Ionicons name="chevron-forward" size={18} color={C.inkMuted} />
         </Pressable>
       </ScrollView>
-    </SafeAreaView>
+    </SafeScreen>
   );
 }
 

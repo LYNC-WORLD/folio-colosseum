@@ -1,7 +1,9 @@
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,12 +13,10 @@ import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { useAuth } from "../context";
+import { useAuth, useWallet } from "../context";
 import { C } from "../theme";
-import { StatCard } from "../components";
-import { useWalletBalance } from "../hooks/useWalletBalance";
+import { SafeScreen, StatCard } from "../components";
 import { TabParamList } from "../navigation/types";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 const PERIODS = ["24h", "7d", "30d", "All"] as const;
 type Period = (typeof PERIODS)[number];
@@ -36,44 +36,81 @@ function formatCurrency(n: number) {
 
 export function ProfileScreen() {
   const { user, signOut } = useAuth();
-  const { wallet, usdValue } = useWalletBalance();
+  const {
+    walletAddress,
+    usdValue,
+    loading: walletLoading,
+    error: walletError,
+    refresh,
+  } = useWallet();
 
   const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
   const [period, setPeriod] = useState<Period>("24h");
   const [copied, setCopied] = useState(false);
+  const [pulling, setPulling] = useState(false);
 
   if (!user) return null;
 
-  const walletAddress =
-    wallet?.walletAddress ?? "0x0000000000000000000000000000000000dEaD";
   const balance = usdValue;
 
-  // console.log("ProfileScreen: walletAddress", walletAddress);
-  // console.log("ProfileScreen: usdValue", usdValue);
+  const displayAddress = walletAddress
+    ? truncateAddress(walletAddress)
+    : walletLoading
+      ? "Loading wallet…"
+      : "Wallet unavailable";
 
   const totalInvested = (user as any).totalInvested ?? 0;
   const totalPnl = (user as any).totalPnl ?? 0;
   const totalTrades = (user as any).totalTrades ?? 0;
 
   const handleCopy = async () => {
+    if (!walletAddress) return;
     await Clipboard.setStringAsync(walletAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const handlePullRefresh = async () => {
+    setPulling(true);
+    try {
+      await refresh();
+    } finally {
+      setPulling(false);
+    }
+  };
+
+  const balanceSubText = walletLoading
+    ? " "
+    : walletError
+      ? "Couldn't load balance"
+      : balance === 0
+        ? "No balance yet"
+        : `${period} performance`;
+
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeScreen>
       <ScrollView
         contentContainerStyle={s.container}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={pulling}
+            onRefresh={handlePullRefresh}
+            tintColor={C.ink}
+          />
+        }
       >
         <View style={s.topBar}>
           <View style={{ flex: 1 }} />
-          <Pressable style={s.iconBtn} onPress={handleCopy}>
+          <Pressable
+            style={s.iconBtn}
+            onPress={handleCopy}
+            disabled={!walletAddress}
+          >
             <Ionicons
               name={copied ? "checkmark" : "wallet-outline"}
               size={18}
-              color={copied ? C.success : C.ink}
+              color={copied ? C.success : walletAddress ? C.ink : C.muted}
             />
           </Pressable>
           <Pressable style={s.iconBtn}>
@@ -92,13 +129,19 @@ export function ProfileScreen() {
             </View>
           )}
           <Text style={s.name}>{user.name}</Text>
-          <Pressable onPress={handleCopy} style={s.handleRow}>
-            <Text style={s.handle}>{truncateAddress(walletAddress)}</Text>
-            <Ionicons
-              name={copied ? "checkmark" : "copy-outline"}
-              size={14}
-              color={C.muted}
-            />
+          <Pressable
+            onPress={handleCopy}
+            disabled={!walletAddress}
+            style={s.handleRow}
+          >
+            <Text style={s.handle}>{displayAddress}</Text>
+            {walletAddress && (
+              <Ionicons
+                name={copied ? "checkmark" : "copy-outline"}
+                size={14}
+                color={C.muted}
+              />
+            )}
           </Pressable>
           <Text style={s.email}>{user.email}</Text>
         </View>
@@ -119,10 +162,18 @@ export function ProfileScreen() {
               </Pressable>
             ))}
           </View>
-          <Text style={s.balanceValue}>{formatCurrency(balance)}</Text>
-          <Text style={s.balanceSub}>
-            {balance === 0 ? "No balance yet" : `${period} performance`}
-          </Text>
+          {walletLoading ? (
+            <ActivityIndicator
+              size="large"
+              color={C.ink}
+              style={{ height: 46 }}
+            />
+          ) : (
+            <Text style={s.balanceValue}>
+              {walletError ? "—" : formatCurrency(balance)}
+            </Text>
+          )}
+          <Text style={s.balanceSub}>{balanceSubText}</Text>
         </View>
 
         <View style={s.section}>
@@ -139,7 +190,16 @@ export function ProfileScreen() {
             />
           </View>
           <View style={s.statGrid}>
-            <StatCard label="Portfolio Value" value={formatCurrency(balance)} />
+            <StatCard
+              label="Portfolio Value"
+              value={
+                walletLoading
+                  ? "…"
+                  : walletError
+                    ? "—"
+                    : formatCurrency(balance)
+              }
+            />
             <StatCard label="Total Trades" value={String(totalTrades)} />
           </View>
 
@@ -162,16 +222,22 @@ export function ProfileScreen() {
               <Text style={s.rowValue}>{user.email}</Text>
             </View>
           </View>
-          <Pressable style={s.row} onPress={handleCopy}>
+          <Pressable
+            style={s.row}
+            onPress={handleCopy}
+            disabled={!walletAddress}
+          >
             <View style={s.rowLeft}>
               <Ionicons name="wallet-outline" size={18} color={C.accent} />
-              <Text style={s.rowValue}>{truncateAddress(walletAddress)}</Text>
+              <Text style={s.rowValue}>{displayAddress}</Text>
             </View>
-            <Ionicons
-              name={copied ? "checkmark" : "copy-outline"}
-              size={18}
-              color={copied ? C.success : C.muted}
-            />
+            {walletAddress && (
+              <Ionicons
+                name={copied ? "checkmark" : "copy-outline"}
+                size={18}
+                color={copied ? C.success : C.muted}
+              />
+            )}
           </Pressable>
         </View>
 
@@ -183,7 +249,7 @@ export function ProfileScreen() {
           <Text style={s.signOutText}>Sign out</Text>
         </Pressable>
       </ScrollView>
-    </SafeAreaView>
+    </SafeScreen>
   );
 }
 
