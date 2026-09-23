@@ -11,19 +11,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme/colors";
 import AssetRow from "../components/AssetRow";
-import { useAuth } from "../context/AuthContext";
 import { useStocks } from "../hooks/useStocks";
 import { StocksStackParamList } from "../navigation/types";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useWalletBalance } from "../hooks/useWalletBalance";
 
 export default function StocksScreen() {
-  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const { stocks, loading, refreshing, error, refresh, reload } = useStocks();
+  const { usdValue } = useWalletBalance();
 
-  const balance = (user as any)?.balance ?? 0;
-  const dayChangePct = (user as any)?.dayChangePct ?? 0;
+  const balance = usdValue;
+  const dayChangePct = 0;
 
   const navigation =
     useNavigation<NativeStackNavigationProp<StocksStackParamList, "Stocks">>();

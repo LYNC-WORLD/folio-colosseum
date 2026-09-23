@@ -1,3 +1,4 @@
+// src/context/AuthContext.tsx
 import {
   createContext,
   useCallback,
@@ -18,6 +19,7 @@ import type { GoogleSession, GoogleUser, LoginResponse } from "../types/auth";
 type AuthState = {
   user: GoogleUser | null;
   session: LoginResponse | null;
+  idToken: string | null;
   initializing: boolean;
   busy: boolean;
   error: string | null;
@@ -30,6 +32,7 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<GoogleUser | null>(null);
   const [session, setSession] = useState<LoginResponse | null>(null);
+  const [idToken, setIdToken] = useState<string | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await loginWithGoogle(g.idToken);
     setUser(g.user);
     setSession(res);
+    setIdToken(g.idToken);
   }, []);
 
   useEffect(() => {
@@ -58,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const g = await signInWithGoogle();
-      if (!g) return; // user cancelled
+      if (!g) return;
       await authenticate(g);
     } catch (e) {
       await signOutGoogle().catch(() => {});
@@ -72,11 +76,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOutGoogle();
     setUser(null);
     setSession(null);
+    setIdToken(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, session, initializing, busy, error, signIn, signOut }),
-    [user, session, initializing, busy, error, signIn, signOut],
+    () => ({
+      user,
+      session,
+      idToken,
+      initializing,
+      busy,
+      error,
+      signIn,
+      signOut,
+    }),
+    [user, session, idToken, initializing, busy, error, signIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

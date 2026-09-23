@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Image,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +14,9 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { useAuth } from "../context/AuthContext";
 import { C } from "../theme/colors";
 import StatCard from "../components/StatCard";
-import type { TabParamList } from "../navigation/RootTabs";
+import { TabParamList } from "../navigation/types";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useWalletBalance } from "../hooks/useWalletBalance";
 
 const PERIODS = ["24h", "7d", "30d", "All"] as const;
 type Period = (typeof PERIODS)[number];
@@ -35,16 +36,21 @@ function formatCurrency(n: number) {
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
+  const { wallet, usdValue } = useWalletBalance();
+
   const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
   const [period, setPeriod] = useState<Period>("24h");
   const [copied, setCopied] = useState(false);
 
   if (!user) return null;
 
-  // TODO: replace with real values once wallet + portfolio APIs are wired up
   const walletAddress =
-    (user as any).walletAddress ?? "0x0000000000000000000000000000000000dEaD";
-  const balance = (user as any).balance ?? 0;
+    wallet?.walletAddress ?? "0x0000000000000000000000000000000000dEaD";
+  const balance = usdValue;
+
+  // console.log("ProfileScreen: walletAddress", walletAddress);
+  // console.log("ProfileScreen: usdValue", usdValue);
+
   const totalInvested = (user as any).totalInvested ?? 0;
   const totalPnl = (user as any).totalPnl ?? 0;
   const totalTrades = (user as any).totalTrades ?? 0;
