@@ -163,7 +163,7 @@ export class TradeController {
       res.status(200).json({
         success: true,
         message: "Quote details",
-        data: { responce },
+        data: responce,
       });
       return;
     } catch (error) {

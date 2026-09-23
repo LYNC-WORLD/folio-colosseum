@@ -1,4 +1,5 @@
 import { env } from "../config/env";
+import { prisma } from "../lib/prisma";
 import { privy } from "../lib/privy";
 
 const XSTOCKS_API = "https://api.xstocks.fi/api/v2";
@@ -97,25 +98,43 @@ export class TradeService {
       if (!usdcAmount) usdcAmount = 0;
       if (stockAmount) {
         usdcAmount = stockAmount * price;
+      } else {
+        stockAmount = usdcAmount / price;
       }
-      const responce = await privy
-        .wallets()
-        .swaps()
-        .execute(walletId, {
-          destination: {
-            asset_address: stockAddress,
+      const responce = buyStockOnChain(stockAddress, usdcAmount, walletId);
+      const currentInvestedInStock = await prisma.investment.findFirst({
+        where: {
+          userId: userId,
+          stockAddress: stockAddress,
+        },
+      });
+      // TODO: Add success verification
+      if (!currentInvestedInStock) {
+        await prisma.investment.create({
+          data: {
+            stockAddress: stockAddress,
+            stockAmount: stockAmount,
+            stockSymbol: stockSymbol,
+            userId: userId,
+            investmesntAmount: usdcAmount,
           },
-          source: {
-            asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-            caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-          },
-          base_amount: String(usdcAmount * 1000000),
-          amount_type: "exact_input",
-          authorization_context: {authorization_private_keys: [env.PRIVY_AUTH_KEY!]},
-          fee_configuration: {type: "total_fee_bps", value: 0}
         });
-      // qoute.
-      return responce;
+      } else {
+        const investmentUSDCAmount =
+          currentInvestedInStock.investmesntAmount + usdcAmount;
+        const investedStockAmount =
+          currentInvestedInStock.stockAmount + stockAmount;
+        await prisma.investment.update({
+          where: {
+            id: currentInvestedInStock.id,
+          },
+          data: {
+            stockAmount: investedStockAmount,
+            investmesntAmount: investmentUSDCAmount,
+          },
+        });
+      }
+      return { responce };
     } catch (error) {
       console.error(error);
       return;
@@ -140,27 +159,99 @@ export class TradeService {
       if (!stockAmount) {
         stockAmount = usdcAmount / price;
       }
-      const responce = await privy
-        .wallets()
-        .swaps()
-        .execute(walletId, {
-          destination: {
-            asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      const responce = await sellStockOnChain(
+        stockAddress,
+        stockAmount,
+        walletId,
+      );
+      const currentInvestedInStock = await prisma.investment.findFirst({
+        where: {
+          userId: userId,
+          stockAddress: stockAddress,
+        },
+      });
+      // TODO: Add success verification
+      if (!currentInvestedInStock) {
+        await prisma.investment.create({
+          data: {
+            stockAddress: stockAddress,
+            stockAmount: 0,
+            stockSymbol: stockSymbol,
+            userId: userId,
+            investmesntAmount: 0,
           },
-          source: {
-            asset_address: stockAddress,
-            caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-          },
-          base_amount: String(stockAmount * 100000000),
-          amount_type: "exact_input",
-          authorization_context: {authorization_private_keys: [env.PRIVY_AUTH_KEY!]}
         });
+      } else {
+        const investmentUSDCAmount =
+          currentInvestedInStock.investmesntAmount - usdcAmount;
+        const investedStockAmount =
+          currentInvestedInStock.stockAmount - stockAmount;
+        await prisma.investment.update({
+          where: {
+            id: currentInvestedInStock.id,
+          },
+          data: {
+            stockAmount: investedStockAmount,
+            investmesntAmount: investmentUSDCAmount,
+          },
+        });
+      }
       return responce;
     } catch (error) {
       console.error(error);
       return;
     }
   }
+}
+
+async function buyStockOnChain(
+  stockAddress: string,
+  usdcAmount: number,
+  walletId: string,
+) {
+  const responce = await privy
+    .wallets()
+    .swaps()
+    .execute(walletId, {
+      destination: {
+        asset_address: stockAddress,
+      },
+      source: {
+        asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      },
+      base_amount: String(usdcAmount * 1000000),
+      amount_type: "exact_input",
+      authorization_context: {
+        authorization_private_keys: [env.PRIVY_AUTH_KEY!],
+      },
+    });
+  return responce;
+}
+
+async function sellStockOnChain(
+  stockAddress: string,
+  stockAmount: number,
+  walletId: string,
+) {
+  const responce = await privy
+    .wallets()
+    .swaps()
+    .execute(walletId, {
+      destination: {
+        asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      },
+      source: {
+        asset_address: stockAddress,
+        caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      },
+      base_amount: String(stockAmount * 100000000),
+      amount_type: "exact_input",
+      authorization_context: {
+        authorization_private_keys: [env.PRIVY_AUTH_KEY!],
+      },
+    });
+  return responce;
 }
 
 async function getStockPrice(walletSymbol: string) {

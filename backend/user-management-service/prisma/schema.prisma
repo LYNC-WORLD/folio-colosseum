@@ -11,6 +11,11 @@ enum Chain {
     SOLANA
 }
 
+enum TradeType {
+    BUY
+    SELL
+}
+
 enum TransactionType {
     DEPOSIT
     WITHDRAW
@@ -79,4 +84,32 @@ model HoldingStocks {
     name          String
     walletAddress String
     user          User   @relation(fields: [walletAddress], references: [id], onDelete: Cascade)
+}
+
+model Investment {
+    id                String @id @default(cuid())
+    userId            String
+    stockSymbol       String
+    stockAmount       Float
+    stockAddress      String 
+    investmesntAmount Float  @default(0)
+}
+
+model Trades {
+    id               String    @id @default(cuid())
+    userId           String
+    stockAddress     String
+    stockPrice       Float
+    timestamp        DateTime
+    investmentAmount Float
+    tradeType        TradeType
+}
+
+model LoginDetails {
+    id               String   @id @default(cuid())
+    email            String   @unique
+    interestedStocks String[]
+    amountToPutIn    Float
+    positionHold     String
+    expectToHold     String
 }
