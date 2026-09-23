@@ -1,0 +1,22 @@
+services:
+  user-management:
+    build:
+      context: ./user-management-service
+      dockerfile: Dockerfile
+    container_name: user-management-service
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./user-management-service/.env
+    restart: unless-stopped
+
+  pricing:
+    build:
+      context: ./pricing-service
+      dockerfile: Dockerfile
+    container_name: pricing-service
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./pricing-service/.env
+    restart: unless-stopped
