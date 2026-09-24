@@ -53,7 +53,7 @@ export function RootTabs() {
               size={size}
               color={color}
             />
-            {focused && (
+            {/* {focused && (
               <View
                 style={{
                   position: "absolute",
@@ -65,7 +65,7 @@ export function RootTabs() {
                   backgroundColor: C.bone,
                 }}
               />
-            )}
+            )} */}
           </View>
         ),
       })}
