@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
+  Keyboard,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -61,9 +62,39 @@ function formatUsd(n: number) {
 function formatUnits(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
+function useKeyboardHeight() {
+  const [height, setHeight] = useState(0);
+
+  useEffect(() => {
+    const isIOS = Platform.OS === "ios";
+    const showEvt = isIOS ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = isIOS ? "keyboardWillHide" : "keyboardDidHide";
+
+    const show = Keyboard.addListener(showEvt, (e) => {
+      if (isIOS) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+      setHeight(e.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener(hideEvt, () => {
+      if (isIOS) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+      setHeight(0);
+    });
+
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  return height;
+}
 
 export function BuySheet({ visible, onClose, stock }: Props) {
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const { usdc, loading: walletLoading } = useWallet();
   const usdcBalance = usdc?.balance ?? 0;
   const price = Number(stock.price);
@@ -138,6 +169,7 @@ export function BuySheet({ visible, onClose, stock }: Props) {
     if (!request || !canBuy) return;
     try {
       const res = await buy.mutateAsync(request);
+      Keyboard.dismiss();
       onClose();
       Alert.alert(
         "Order placed",
@@ -162,12 +194,20 @@ export function BuySheet({ visible, onClose, stock }: Props) {
       transparent
       animationType="slide"
       onRequestClose={onClose}
+      statusBarTranslucent
     >
-      <Pressable style={s.backdrop} onPress={onClose} />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View style={[s.sheet, { paddingBottom: insets.bottom + 16 }]}>
+      <View style={s.root}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+
+        <View
+          style={[
+            s.sheet,
+            {
+              marginBottom: keyboardHeight,
+              paddingBottom: (keyboardHeight > 0 ? 0 : insets.bottom) + 16,
+            },
+          ]}
+        >
           <View style={s.headerRow}>
             <Text style={s.title}>Buy {stock.symbol}</Text>
             <Pressable onPress={onClose} hitSlop={10}>
@@ -263,13 +303,17 @@ export function BuySheet({ visible, onClose, stock }: Props) {
             )}
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)" },
+  root: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
   sheet: {
     backgroundColor: C.bg,
     borderTopLeftRadius: 20,
