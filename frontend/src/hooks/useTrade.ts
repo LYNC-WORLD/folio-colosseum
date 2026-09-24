@@ -38,8 +38,8 @@ export function useTradeQuote(side: TradeSide, req: TradeRequest | null) {
 
     staleTime: 10_000,
     gcTime: 5 * 60_000,
-    placeholderData: keepPreviousData, 
-    retry: false, 
+    placeholderData: keepPreviousData,
+    retry: false,
   });
 }
 

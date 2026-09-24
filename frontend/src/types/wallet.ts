@@ -34,3 +34,47 @@ export type WalletBalanceResponse = {
   message: string;
   data: WalletBalance;
 };
+
+export type RecurringBuyRequest = {
+  id: string;
+  symbol?: string;
+  stockSymbol?: string;
+  amount?: number | string;
+  amountPerOrder?: number | string;
+  frequency?: string;
+  interval?: string;
+  status?: string;
+  nextExecutionAt?: string;
+  nextBuyAt?: string;
+  createdAt?: string;
+  [key: string]: unknown;
+};
+
+export type UserTransaction = {
+  id: string;
+  type?: string;
+  status?: string;
+  symbol?: string;
+  stockSymbol?: string;
+  amount?: number | string;
+  quantity?: number | string;
+  price?: number | string;
+  createdAt?: string;
+  timestamp?: string;
+  [key: string]: unknown;
+};
+
+export type RecurringBuyResponse =
+  | RecurringBuyRequest[]
+  | {
+      data?: RecurringBuyRequest[];
+      requests?: RecurringBuyRequest[];
+      recurringBuyRequests?: RecurringBuyRequest[];
+    };
+
+export type TransactionsResponse =
+  | UserTransaction[]
+  | {
+      data?: UserTransaction[];
+      transactions?: UserTransaction[];
+    };
