@@ -70,13 +70,15 @@ export class UserService {
   }
   public async setLoginFormData(email: string, data: loginForm) {
     try {
-      const responce = await prisma.loginDetails.create({data: {
-        email: email,
-        amountToPutIn: 0,
-        expectToHold: data.question2,
-        positionHold: data.question1,
-        interestedStocks: data.interestedStocks
-      }});
+      const responce = await prisma.loginDetails.create({
+        data: {
+          email: email,
+          amountToPutIn: 0,
+          expectToHold: data.question2,
+          positionHold: data.question1,
+          interestedStocks: data.interestedStocks,
+        },
+      });
       return responce;
     } catch (error) {
       return;
@@ -92,11 +94,65 @@ export class UserService {
       return;
     }
   }
+  public async getUserTransactions(userId: string) {
+    try {
+      const trades = await prisma.trades.findMany({
+        where: {
+          userId,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+
+      if (!trades.length) {
+        return [];
+      }
+      const stockAddresses = [
+        ...new Set(trades.map((trade) => trade.stockAddress)),
+      ];
+      const stocks = await prisma.stocks.findMany({
+        where: {
+          tokenAddress: {
+            in: stockAddresses,
+          },
+        },
+      });
+
+      const stockMap = new Map(
+        stocks.map((stock) => [stock.tokenAddress, stock]),
+      );
+
+      return trades.map((trade) => {
+        const stock = stockMap.get(trade.stockAddress);
+
+        return {
+          id: trade.id,
+          type: trade.tradeType,
+
+          stock: {
+            address: trade.stockAddress,
+            symbol: stock?.symbol ?? null,
+            name: stock?.name ?? null,
+            imageUrl: stock?.imageUrl ?? null,
+          },
+
+          price: trade.stockPrice,
+          amount: trade.investmentAmount,
+
+          createdAt: trade.createdAt,
+        };
+      });
+    } catch (error) {
+      console.error("Failed to fetch user transactions:", error);
+      throw error;
+    }
+  }
 }
 
-interface loginForm{
+interface loginForm {
   interestedStocks: string[];
   amountToPutIn: number;
   question1: string;
-  question2: string; 
+  question2: string;
 }

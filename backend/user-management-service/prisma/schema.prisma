@@ -37,18 +37,18 @@ enum TransactionStatus {
 }
 
 model User {
-    id              String       @id @default(cuid())
-    userId          String       @unique
-    walletId        String       @unique
-    email           String       @unique
-    name            String
-    walletAddress   String       @unique
-    googleSubjectId String       @unique
-    investments     Investment[]
-    trades          Trades[]
-    recurringBuyRequest          RecurringBuyRequest[]
-    createdAt       DateTime     @default(now())
-    updatedAt       DateTime     @updatedAt
+    id                  String                @id @default(cuid())
+    userId              String                @unique
+    walletId            String                @unique
+    email               String                @unique
+    name                String
+    walletAddress       String                @unique
+    googleSubjectId     String                @unique
+    investments         Investment[]
+    trades              Trades[]
+    recurringBuyRequest RecurringBuyRequest[]
+    createdAt           DateTime              @default(now())
+    updatedAt           DateTime              @updatedAt
 
     @@index([userId])
     @@index([walletId])
@@ -84,6 +84,10 @@ model Trades {
     tradeType        TradeType
     createdAt        DateTime  @default(now()) @db.Timestamp(3)
     user             User      @relation(fields: [userId], references: [userId])
+
+    @@index([userId])
+    @@index([userId, createdAt])
+    @@index([stockAddress])
 }
 
 model LoginDetails {
@@ -95,12 +99,12 @@ model LoginDetails {
     expectToHold     String
 }
 
-model RecurringBuyRequest{
-    id String @id @default(cuid())
+model RecurringBuyRequest {
+    id           String  @id @default(cuid())
     stockAddress String
-    userId String
-    usdcAmount String?
-    stockAmount String?
-    buyDate String
-    user User @relation(fields: [userId], references: [userId])
+    userId       String
+    usdcAmount   String?
+    stockAmount  String?
+    buyDate      String
+    user         User    @relation(fields: [userId], references: [userId])
 }

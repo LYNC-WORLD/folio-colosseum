@@ -60,7 +60,7 @@ export class UserController {
       const formData = req.body as loginForm;
       const data = await this.userService.setLoginFormData(
         req.user.email,
-        formData
+        formData,
       );
       if (!data) {
         res
@@ -118,11 +118,50 @@ export class UserController {
       });
     }
   };
+  public getUserTransactions = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      const userId = req.user.userId;
+
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          message: "User ID not found",
+        });
+        return;
+      }
+
+      const transactions = await this.userService.getUserTransactions(userId);
+
+      res.status(200).json({
+        success: true,
+        message: "User transactions fetched successfully",
+        data: transactions,
+      });
+    } catch (error) {
+      console.error("Get user transactions error:", error);
+
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
 }
 
-interface loginForm{
+interface loginForm {
   interestedStocks: string[];
   amountToPutIn: number;
   question1: string;
-  question2: string; 
+  question2: string;
 }
