@@ -24,4 +24,24 @@ export class StockService {
       return;
     }
   }
+
+  public async getLatestBuy(stockAddress: string) {
+    try {
+      const trades = await prisma.trades.findMany({
+        where: {
+          stockAddress,
+          tradeType: "BUY",
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 3,
+      });
+
+      return trades;
+    } catch (error) {
+      console.error("Failed to fetch latest buys:", error);
+      throw error;
+    }
+  }
 }
