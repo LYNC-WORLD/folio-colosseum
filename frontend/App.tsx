@@ -16,6 +16,7 @@ import { C } from "./src/theme/colors";
 import { fontsToLoad } from "./src/theme/fonts";
 import { LoginScreen } from "./src/screens";
 import { OnboardingNavigator, RootTabs } from "./src/navigation";
+import { WalletProvider } from "./src/context/WalletContext";
 
 const ONBOARDED_KEY = "folio_onboarded_v1";
 
@@ -66,6 +67,10 @@ function Root() {
   if (initializing) return <LoadingScreen />;
   if (!user) return <LoginScreen />;
 
+  // NavigationContainer wraps BOTH navigators below it — OnboardingNavigator
+  // and RootTabs each create their own navigator internally, and every
+  // navigator needs exactly one NavigationContainer somewhere above it in
+  // the tree. Only one per app, wrapping whichever navigator is active.
   return (
     <NavigationContainer>
       {hasOnboarded === null ? (
@@ -88,7 +93,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <AuthProvider>
-          <Root />
+          <WalletProvider>
+            <Root />
+          </WalletProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </QueryClientProvider>

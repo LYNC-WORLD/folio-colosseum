@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
+  Platform,
   Pressable,
-  SafeAreaView,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,269 +12,485 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
-import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { useAuth } from "../context";
+import { useAuth, useWallet } from "../context";
 import { C } from "../theme";
-import type { TabParamList } from "../navigation";
-import { StatCard } from "../components";
+import { SafeScreen } from "../components";
+import {
+  useUserRecurringBuyAssets,
+  useUserTransactions,
+} from "../hooks/useUserRecords";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { ProfileStackParamList } from "../navigation/ProfileStack";
 
-const PERIODS = ["24h", "7d", "30d", "All"] as const;
-type Period = (typeof PERIODS)[number];
+const MONO = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  default: "monospace",
+});
+const APP_VERSION = "0.9.2";
+
+/* ---------------- helpers ---------------- */
 
 function truncateAddress(addr: string) {
-  if (addr.length <= 12) return addr;
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+  if (addr.length <= 10) return addr;
+  return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
+}
+function formatUsdc(n: number) {
+  return `${n.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} USDC`;
 }
 
-function formatCurrency(n: number) {
-  return n.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  });
+function formatUsd(n: number) {
+  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
+
+function formatPct(n: number) {
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+
+function formatShortDate(d?: string | number | Date) {
+  if (!d) return null;
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+/* ---------------- small pieces ---------------- */
+
+/** 2x2 quadrant avatar derived from the wallet address, using theme colors. */
+function WalletAvatar({
+  address,
+  size = 60,
+}: {
+  address?: string | null;
+  size?: number;
+}) {
+  const palette = [C.accent, C.success, C.ink, C.card, C.muted];
+  const seed = (address ?? "0x00000000").replace(/^0x/, "");
+  const colors = [0, 1, 2, 3].map(
+    (i) => palette[parseInt(seed.charAt(i * 2) || "0", 16) % palette.length],
+  );
+  const half = size / 2;
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: half,
+        overflow: "hidden",
+        flexDirection: "row",
+        flexWrap: "wrap",
+      }}
+    >
+      {colors.map((c, i) => (
+        <View
+          key={i}
+          style={{ width: half, height: half, backgroundColor: c }}
+        />
+      ))}
+    </View>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <View style={s.sectionLabelRow}>
+      <Text style={s.sectionLabel}>{children}</Text>
+      <View style={s.sectionLabelLine} />
+    </View>
+  );
+}
+
+function Row({
+  title,
+  subtitle,
+  right,
+  onPress,
+  last,
+}: {
+  title: string;
+  subtitle?: string | null;
+  right?: ReactNode;
+  onPress?: () => void;
+  last?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={({ pressed }) => [s.row, !last && s.divider, pressed && s.pressed]}
+    >
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={s.rowTitle}>{title}</Text>
+        {!!subtitle && <Text style={s.rowSub}>{subtitle}</Text>}
+      </View>
+      {right}
+    </Pressable>
+  );
+}
+
+const Chevron = () => (
+  <Ionicons name="chevron-forward" size={18} color={C.muted} />
+);
+
+/* ---------------- screen ---------------- */
 
 export function ProfileScreen() {
   const { user, signOut } = useAuth();
-  const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
-  const [period, setPeriod] = useState<Period>("24h");
+  const {
+    walletAddress,
+    usdValue,
+    loading: walletLoading,
+    error: walletError,
+    refresh,
+  } = useWallet();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
   const [copied, setCopied] = useState(false);
+  const [pulling, setPulling] = useState(false);
 
   if (!user) return null;
+  const u = user as any;
 
-  // TODO: replace with real values once wallet + portfolio APIs are wired up
-  const walletAddress =
-    (user as any).walletAddress ?? "0x0000000000000000000000000000000000dEaD";
-  const balance = (user as any).balance ?? 0;
-  const totalInvested = (user as any).totalInvested ?? 0;
-  const totalPnl = (user as any).totalPnl ?? 0;
-  const totalTrades = (user as any).totalTrades ?? 0;
+  // ---- data (swap these for real fields once the backend exposes them) ----
+  const pnl30dPct: number = u.pnl30dPct ?? 0;
+  const followers: number = u.followers ?? 0;
+  const following: number = u.following ?? 0;
 
+  const walletProvider: string | undefined = u.walletProvider;
+  const walletChain: string | undefined = u.walletChain ?? "Base";
+  const walletConnectedAt = formatShortDate(u.walletConnectedAt);
+
+  const displayAddress = walletAddress
+    ? truncateAddress(walletAddress)
+    : walletLoading
+      ? "Loading wallet…"
+      : "Wallet unavailable";
+
+  const connectedSub = walletAddress
+    ? [
+        walletProvider,
+        walletChain,
+        walletConnectedAt && `connected ${walletConnectedAt}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "No wallet connected";
+
+  // ---- handlers ----
   const handleCopy = async () => {
+    if (!walletAddress) return;
     await Clipboard.setStringAsync(walletAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const handlePullRefresh = async () => {
+    setPulling(true);
+    try {
+      await refresh();
+    } finally {
+      setPulling(false);
+    }
+  };
+  const { idToken } = useAuth();
+
+  const transactionsQuery = useUserTransactions(idToken!);
+
+  const recurringQuery = useUserRecurringBuyAssets(idToken!);
+
+  const txCount = transactionsQuery.data?.data?.length ?? 0;
+
+  const recurringCount =
+    recurringQuery.data?.data?.filter((item) => item.isActive).length ?? 0;
+
+  const recurringSub =
+    recurringCount > 0
+      ? `${recurringCount} active request${recurringCount === 1 ? "" : "s"}`
+      : "Set up an automatic buy";
+
+  // TODO: wire these to your navigation / flows
+  const onAddFunds = () => {};
+  const onConnectedWallet = () => {};
+  const onRecurringBuys = () => {
+    navigation.navigate("RecurringBuys");
+  };
+
+  const onTransactions = () => {
+    navigation.navigate("Transactions");
+  };
+  const onExportTax = () => {};
+  const onSupport = () => {};
+  const onTerms = () => {};
+
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeScreen>
       <ScrollView
         contentContainerStyle={s.container}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={pulling}
+            onRefresh={handlePullRefresh}
+            tintColor={C.ink}
+          />
+        }
       >
-        <View style={s.topBar}>
-          <View style={{ flex: 1 }} />
-          <Pressable style={s.iconBtn} onPress={handleCopy}>
+        {/* Title */}
+        <Text style={s.title}>You</Text>
+
+        {/* Identity */}
+        <View style={s.identity}>
+          {u.photo ? (
+            <Image source={{ uri: u.photo }} style={s.avatar} />
+          ) : (
+            <WalletAvatar address={walletAddress} size={60} />
+          )}
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={s.address}>{displayAddress}</Text>
+            <Text style={s.signedIn} numberOfLines={1}>
+              Signed in as {user.email}
+            </Text>
+          </View>
+          <Pressable
+            onPress={handleCopy}
+            disabled={!walletAddress}
+            style={({ pressed }) => [s.copyBtn, pressed && s.pressed]}
+            hitSlop={8}
+          >
             <Ionicons
-              name={copied ? "checkmark" : "wallet-outline"}
+              name={copied ? "checkmark" : "copy-outline"}
               size={18}
-              color={copied ? C.success : C.ink}
+              color={copied ? C.success : walletAddress ? C.ink : C.muted}
             />
-          </Pressable>
-          <Pressable style={s.iconBtn}>
-            <Ionicons name="settings-outline" size={18} color={C.ink} />
           </Pressable>
         </View>
 
-        <View style={s.identity}>
-          {user.photo ? (
-            <Image source={{ uri: user.photo }} style={s.avatar} />
-          ) : (
-            <View style={[s.avatar, s.avatarFallback]}>
-              <Text style={s.avatarInitial}>
-                {user.name?.charAt(0).toUpperCase() ?? "?"}
+        {/* Stats */}
+        <View style={s.stats}>
+          <View style={s.stat}>
+            <Text style={s.statLabel}>30-DAY</Text>
+            <Text
+              style={[
+                s.statValue,
+                { color: pnl30dPct >= 0 ? C.success : C.error },
+              ]}
+            >
+              {formatPct(pnl30dPct)}
+            </Text>
+          </View>
+          <View style={s.stat}>
+            <Text style={s.statLabel}>FOLLOWERS</Text>
+            <Text style={s.statValue}>{followers}</Text>
+          </View>
+          <View style={s.stat}>
+            <Text style={s.statLabel}>FOLLOWING</Text>
+            <Text style={s.statValue}>{following}</Text>
+          </View>
+        </View>
+
+        {/* Wallet */}
+        <View>
+          <SectionLabel>WALLET</SectionLabel>
+
+          <View style={[s.row, s.divider]}>
+            <View style={{ flex: 1, gap: 4 }}>
+              {walletLoading ? (
+                <ActivityIndicator
+                  color={C.ink}
+                  style={{ alignSelf: "flex-start", height: 26 }}
+                />
+              ) : (
+                <Text style={s.balance}>
+                  {walletError ? "—" : formatUsdc(usdValue ?? 0)}
+                </Text>
+              )}
+              <Text style={s.rowSub}>
+                {walletError
+                  ? "Couldn't load balance. Pull to retry."
+                  : "Held in your wallet, not by Folio"}
               </Text>
             </View>
-          )}
-          <Text style={s.name}>{user.name}</Text>
-          <Pressable onPress={handleCopy} style={s.handleRow}>
-            <Text style={s.handle}>{truncateAddress(walletAddress)}</Text>
-            <Ionicons
-              name={copied ? "checkmark" : "copy-outline"}
-              size={14}
-              color={C.muted}
-            />
-          </Pressable>
-          <Text style={s.email}>{user.email}</Text>
+            <Pressable
+              onPress={onAddFunds}
+              style={({ pressed }) => [s.pillBtn, pressed && s.pressed]}
+            >
+              <Text style={s.pillBtnText}>Add funds</Text>
+            </Pressable>
+          </View>
+
+          {/* <Row
+            title="Connected wallet"
+            subtitle={connectedSub}
+            onPress={onConnectedWallet}
+            right={<Chevron />}
+          /> */}
+
+          <Row
+            title="Recurring buys"
+            subtitle={recurringQuery.isLoading ? "Loading..." : recurringSub}
+            onPress={onRecurringBuys}
+            right={<Chevron />}
+            last
+          />
         </View>
 
-        <View style={s.balanceSection}>
-          <View style={s.periodTabs}>
-            {PERIODS.map((p) => (
-              <Pressable
-                key={p}
-                onPress={() => setPeriod(p)}
-                style={[s.periodPill, period === p && s.periodPillActive]}
-              >
-                <Text
-                  style={[s.periodText, period === p && s.periodTextActive]}
-                >
-                  {p}
+        {/* Records */}
+        <View>
+          <SectionLabel>RECORDS</SectionLabel>
+          <Row
+            title="Every transaction"
+            onPress={onTransactions}
+            right={
+              <View style={s.rightInline}>
+                <Text style={s.count}>
+                  {transactionsQuery.isLoading ? "..." : txCount}
                 </Text>
-              </Pressable>
-            ))}
+
+                <Chevron />
+              </View>
+            }
+          />
+          {/* <Row
+            title="Export for tax"
+            subtitle="CSV of every buy, sell and fee, by tax year"
+            onPress={onExportTax}
+            right={
+              <Ionicons name="download-outline" size={18} color={C.muted} />
+            }
+          /> */}
+        </View>
+
+        {/* Footer */}
+        <View style={s.footer}>
+          <Text style={s.feeText}>
+            Folio charges <Text style={s.feeBold}>1%</Text> on each buy and sell
+            and <Text style={s.feeBold}>5%</Text> of profit when you exit in the
+            green. No monthly fee, no spread markup, no payment for order flow.
+          </Text>
+
+          <View style={s.links}>
+            <Pressable onPress={onSupport} hitSlop={6}>
+              <Text style={s.link}>Support</Text>
+            </Pressable>
+            <Pressable onPress={onTerms} hitSlop={6}>
+              <Text style={s.link}>Terms & disclosures</Text>
+            </Pressable>
           </View>
-          <Text style={s.balanceValue}>{formatCurrency(balance)}</Text>
-          <Text style={s.balanceSub}>
-            {balance === 0 ? "No balance yet" : `${period} performance`}
+
+          <Pressable
+            onPress={signOut}
+            hitSlop={6}
+            style={({ pressed }) => [
+              { alignSelf: "flex-start" },
+              pressed && s.pressed,
+            ]}
+          >
+            <Text style={s.signOutText}>Sign out</Text>
+          </Pressable>
+
+          <Text style={s.version}>
+            Folio {APP_VERSION} · non-custodial · you hold the keys
           </Text>
         </View>
-
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Dashboard</Text>
-          <View style={s.statGrid}>
-            <StatCard
-              label="Total Invested"
-              value={formatCurrency(totalInvested)}
-            />
-            <StatCard
-              label="Total P&L"
-              value={`${totalPnl >= 0 ? "+" : ""}${formatCurrency(totalPnl)}`}
-              valueColor={totalPnl >= 0 ? C.success : C.error}
-            />
-          </View>
-          <View style={s.statGrid}>
-            <StatCard label="Portfolio Value" value={formatCurrency(balance)} />
-            <StatCard label="Total Trades" value={String(totalTrades)} />
-          </View>
-
-          {totalInvested === 0 && (
-            <Pressable
-              style={s.exploreBtn}
-              onPress={() => navigation.navigate("Home", { screen: "Stocks" })}
-            >
-              <Text style={s.exploreText}>Explore Stocks</Text>
-              <Ionicons name="arrow-forward" size={16} color={C.buttonInk} />
-            </Pressable>
-          )}
-        </View>
-
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Account</Text>
-          <View style={s.row}>
-            <View style={s.rowLeft}>
-              <Ionicons name="mail-outline" size={18} color={C.accent} />
-              <Text style={s.rowValue}>{user.email}</Text>
-            </View>
-          </View>
-          <Pressable style={s.row} onPress={handleCopy}>
-            <View style={s.rowLeft}>
-              <Ionicons name="wallet-outline" size={18} color={C.accent} />
-              <Text style={s.rowValue}>{truncateAddress(walletAddress)}</Text>
-            </View>
-            <Ionicons
-              name={copied ? "checkmark" : "copy-outline"}
-              size={18}
-              color={copied ? C.success : C.muted}
-            />
-          </Pressable>
-        </View>
-
-        <Pressable
-          onPress={signOut}
-          style={({ pressed }) => [s.signOut, pressed && s.signOutPressed]}
-        >
-          <Ionicons name="log-out-outline" size={18} color={C.error} />
-          <Text style={s.signOutText}>Sign out</Text>
-        </Pressable>
       </ScrollView>
-    </SafeAreaView>
+    </SafeScreen>
   );
 }
 
+/* ---------------- styles ---------------- */
+
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
-  container: { paddingHorizontal: 20, paddingBottom: 48, gap: 24 },
+  container: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 48,
+    gap: 28,
+  },
+  pressed: { opacity: 0.6 },
 
-  topBar: { flexDirection: "row", alignItems: "center", paddingTop: 8, gap: 8 },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: C.card,
-    alignItems: "center",
-    justifyContent: "center",
+  title: { color: C.ink, fontSize: 36, fontWeight: "800", letterSpacing: -1 },
+
+  identity: { flexDirection: "row", alignItems: "center", gap: 16 },
+  avatar: { width: 60, height: 60, borderRadius: 30 },
+  address: { color: C.ink, fontSize: 18, fontFamily: MONO },
+  signedIn: { color: C.muted, fontSize: 13 },
+  copyBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: C.ring,
-  },
-
-  identity: { alignItems: "center", gap: 4 },
-  avatar: { width: 84, height: 84, borderRadius: 42 },
-  avatarFallback: {
-    backgroundColor: C.card,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
+  },
+
+  stats: {
+    flexDirection: "row",
+    paddingVertical: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: C.ring,
+    marginTop: -8,
   },
-  avatarInitial: { color: C.ink, fontSize: 30, fontWeight: "700" },
-  name: { color: C.ink, fontSize: 21, fontWeight: "700", marginTop: 10 },
-  handleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  handle: { color: C.accent, fontSize: 14, fontWeight: "600" },
-  email: { color: C.muted, fontSize: 13, marginTop: 2 },
-
-  balanceSection: { alignItems: "center", gap: 6, paddingVertical: 8 },
-  periodTabs: {
-    flexDirection: "row",
-    backgroundColor: C.card,
-    borderRadius: 14,
-    padding: 4,
-    gap: 2,
-    marginBottom: 12,
+  stat: { flex: 1, gap: 6 },
+  statLabel: {
+    color: C.muted,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.5,
   },
-  periodPill: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
-  periodPillActive: { backgroundColor: C.ink },
-  periodText: { color: C.muted, fontSize: 12, fontWeight: "600" },
-  periodTextActive: { color: C.buttonInk },
-  balanceValue: {
-    color: C.ink,
-    fontSize: 38,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-  },
-  balanceSub: { color: C.muted, fontSize: 13 },
+  statValue: { color: C.ink, fontSize: 20, fontFamily: MONO },
 
-  section: { gap: 10 },
-  sectionTitle: { color: C.ink, fontSize: 16, fontWeight: "700" },
-  statGrid: { flexDirection: "row", gap: 12 },
-
-  exploreBtn: {
+  sectionLabelRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: C.accent,
-    borderRadius: 14,
-    paddingVertical: 14,
-    marginTop: 4,
+    gap: 12,
+    marginBottom: 4,
   },
-  exploreText: { color: C.buttonInk, fontSize: 14, fontWeight: "700" },
+  sectionLabel: {
+    color: C.muted,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 2,
+  },
+  sectionLabelLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: C.ring,
+  },
 
   row: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: C.card,
+    gap: 12,
+    paddingVertical: 16,
+  },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: C.ring },
+  rowTitle: { color: C.ink, fontSize: 17, fontWeight: "600" },
+  rowSub: { color: C.muted, fontSize: 13 },
+  rightInline: { flexDirection: "row", alignItems: "center", gap: 10 },
+  count: { color: C.muted, fontSize: 14, fontFamily: MONO },
+
+  balance: { color: C.ink, fontSize: 20, fontFamily: MONO },
+  pillBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: C.ring,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
   },
-  rowLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  rowValue: { color: C.ink, fontSize: 15, fontWeight: "500" },
+  pillBtnText: { color: C.ink, fontSize: 15, fontWeight: "500" },
 
-  signOut: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(255,143,143,0.25)",
-  },
-  signOutPressed: { opacity: 0.7 },
-  signOutText: { color: C.error, fontSize: 15, fontWeight: "600" },
+  footer: { gap: 18 },
+  feeText: { color: C.muted, fontSize: 13, lineHeight: 20 },
+  feeBold: { color: C.ink, fontWeight: "700" },
+  links: { flexDirection: "row", gap: 20 },
+  link: { color: C.ink, fontSize: 15, opacity: 0.85 },
+  signOutText: { color: C.error, fontSize: 15, fontWeight: "500" },
+  version: { color: C.muted, fontSize: 12, fontFamily: MONO },
 });

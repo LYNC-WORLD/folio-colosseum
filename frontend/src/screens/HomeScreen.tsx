@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,6 +17,8 @@ import { C, FONT, RADIUS } from "../theme";
 import { OnboardingProfile, useAuth } from "../context";
 import { Stock } from "../types";
 import { getOnboardingProfile } from "../lib";
+import { SafeScreen } from "../components";
+import { useWallet } from "../context/WalletContext";
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -34,24 +35,22 @@ export function HomeScreen() {
   const { user } = useAuth();
   const navigation =
     useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
-  const { stocks, loading, error } = useStocks();
-  const [query, setQuery] = useState("");
+  const { stocks, loading, error } = useStocks("us-stock");
+  const { stocks: preIpoStocks, loading: preIpoLoading } = useStocks("pre-ipo");
   const [profile, setProfile] = useState<OnboardingProfile | null>(null);
+  const { usdValue, loading: walletLoading, error: walletError } = useWallet();
 
   useEffect(() => {
     getOnboardingProfile().then(setProfile);
   }, []);
 
-  // Placeholder until a real portfolio balance field exists on the user —
-  // same pattern StocksScreen already uses for `balance`.
-  const balance = (user as any)?.balance ?? 0;
   const firstName = user?.name?.split(" ")[0] || "there";
 
   const popular = stocks.slice(0, 4);
   const picks = stocks.length > 4 ? stocks.slice(4, 7) : stocks.slice(0, 3);
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeScreen>
       <ScrollView
         contentContainerStyle={s.container}
         showsVerticalScrollIndicator={false}
@@ -63,25 +62,20 @@ export function HomeScreen() {
             <Text style={s.name}>{firstName}</Text>
           </View>
           <View style={s.balancePill}>
-            <View style={s.balanceDot} />
-            <Text style={s.balanceText}>
-              {Math.round(balance).toLocaleString("en-US")} USDC
-            </Text>
+            <View
+              style={[
+                s.balanceDot,
+                walletError ? { backgroundColor: C.clay } : null,
+              ]}
+            />
+            {walletLoading ? (
+              <ActivityIndicator size="small" color={C.bone} />
+            ) : (
+              <Text style={s.balanceText}>
+                {walletError ? "—" : money(usdValue)}
+              </Text>
+            )}
           </View>
-        </View>
-
-        {/* Search */}
-        <View style={s.searchBar}>
-          <Ionicons name="search" size={18} color={C.inkMuted} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={() => navigation.navigate("Stocks")}
-            placeholder="Search NVDA, SpaceX, gold…"
-            placeholderTextColor={C.inkMuted}
-            style={s.searchInput}
-            returnKeyType="search"
-          />
         </View>
 
         {/* Popular right now */}
@@ -103,7 +97,11 @@ export function HomeScreen() {
             contentContainerStyle={s.popularRow}
           >
             {popular.map((item) => (
-              <PopularCard key={item.tokenAddress} stock={item} />
+              <PopularCard
+                key={item.tokenAddress}
+                stock={item}
+                navigation={navigation}
+              />
             ))}
           </ScrollView>
         )}
@@ -156,7 +154,9 @@ export function HomeScreen() {
             </View>
             <Text style={s.collectionName}>Pre-IPO</Text>
             <Text style={s.collectionNote}>Private names, tokenized</Text>
-            <Text style={s.collectionCount}>Explore</Text>
+            <Text style={s.collectionCount}>
+              {preIpoLoading ? "…" : `${preIpoStocks.length} assets`}
+            </Text>
           </Pressable>
         </View>
 
@@ -196,36 +196,62 @@ export function HomeScreen() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </SafeScreen>
   );
 }
 
-function PopularCard({ stock }: { stock: Stock }) {
+function PopularCard({
+  stock,
+  navigation,
+}: {
+  stock: Stock;
+  navigation: NativeStackNavigationProp<HomeStackParamList>;
+}) {
   return (
-    <View style={s.popularCard}>
+    <Pressable
+      onPress={() =>
+        navigation.navigate("StockDetail", {
+          symbol: stock.symbol,
+          category: "us-stock",
+        })
+      }
+      style={s.popularCard}
+    >
       <View style={s.popularTop}>
         <View style={s.popularBadge}>
-          <Text style={s.popularBadgeLabel}>
-            {stock.symbol.charAt(0).toUpperCase()}
-          </Text>
+          {stock.imageUrl ? (
+            <Image
+              source={{ uri: stock.imageUrl }}
+              style={{ width: "100%", height: "100%" }}
+            />
+          ) : (
+            <Text
+              style={{ fontFamily: FONT.mono400, fontSize: 13, color: C.bone }}
+            >
+              {stock?.symbol?.charAt(0).toUpperCase()}
+            </Text>
+          )}
         </View>
+
         <Text style={s.popularTicker}>{stock.symbol}</Text>
       </View>
+
       <Text style={s.popularName} numberOfLines={1}>
         {stock.name}
       </Text>
+
       <Text style={s.popularPrice}>{money(Number(stock.price))}</Text>
+
       <View style={s.popularFooter}>
         <Ionicons name="chevron-forward" size={14} color={C.inkMuted} />
       </View>
-    </View>
+    </Pressable>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   container: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 32 },
-
   headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   greeting: { fontFamily: FONT.display400, fontSize: 13, color: C.inkMuted },
   name: {
@@ -247,26 +273,6 @@ const s = StyleSheet.create({
   },
   balanceDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.jade },
   balanceText: { fontFamily: FONT.mono400, fontSize: 14, color: C.bone },
-
-  searchBar: {
-    marginTop: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    height: 48,
-    paddingHorizontal: 14,
-    borderRadius: RADIUS.md,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.hairline,
-  },
-  searchInput: {
-    flex: 1,
-    fontFamily: FONT.display400,
-    fontSize: 15,
-    color: C.bone,
-  },
-
   sectionHeaderRow: {
     marginTop: 28,
     flexDirection: "row",
@@ -281,7 +287,6 @@ const s = StyleSheet.create({
     color: C.inkMuted,
   },
   sectionRule: { flexGrow: 1, height: 1, backgroundColor: C.hairline },
-
   errorText: {
     marginTop: 14,
     fontFamily: FONT.display400,
@@ -294,7 +299,6 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: C.inkMuted,
   },
-
   popularRow: { marginTop: 14, gap: 12, paddingRight: 4 },
   popularCard: {
     width: 150,
@@ -314,11 +318,7 @@ const s = StyleSheet.create({
     borderColor: C.hairline,
     alignItems: "center",
     justifyContent: "center",
-  },
-  popularBadgeLabel: {
-    fontFamily: FONT.mono500,
-    fontSize: 12,
-    color: C.inkSecondary,
+    overflow: "hidden",
   },
   popularTicker: {
     fontFamily: FONT.mono400,
@@ -339,7 +339,6 @@ const s = StyleSheet.create({
     color: C.bone,
   },
   popularFooter: { marginTop: 8, alignItems: "flex-end" },
-
   collectionsGrid: { marginTop: 14, flexDirection: "row", gap: 12 },
   collectionTile: {
     flex: 1,
@@ -378,7 +377,6 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: C.inkSecondary,
   },
-
   picksHeader: { marginTop: 28, gap: 8 },
   picksEyebrow: {
     fontFamily: FONT.display600,
@@ -387,7 +385,6 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
     color: C.bone,
   },
-
   picksList: {
     marginTop: 12,
     borderRadius: RADIUS.lg,

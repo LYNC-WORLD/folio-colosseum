@@ -16,7 +16,15 @@ export const MOCK_DETAIL = {
   ],
   buyers: [
     { handle: "0x4f...a29c", detail: "Bought $1,200 · 2h ago", pnl: "+64%" },
-    { handle: "quietcompounder.eth", detail: "Bought $400 · 6h ago", pnl: "+41%" },
-    { handle: "0xb1...7e04", detail: "Added to a 3-month position", pnl: "+28%" },
+    {
+      handle: "quietcompounder.eth",
+      detail: "Bought $400 · 6h ago",
+      pnl: "+41%",
+    },
+    {
+      handle: "0xb1...7e04",
+      detail: "Added to a 3-month position",
+      pnl: "+28%",
+    },
   ],
 };

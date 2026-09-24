@@ -1,152 +1,223 @@
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   RefreshControl,
+  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
-import { C } from "../theme/colors";
-import { useAuth } from "../context";
+import { C, RADIUS, FONT } from "../theme";
 import { useStocks } from "../hooks";
 import { AssetRow } from "../components";
 import { StocksStackParamList } from "../navigation/types";
-import { useNavigation } from "@react-navigation/native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+
+type SortMode = "priceDesc" | "priceAsc" | "name";
+const SORT_LABEL: Record<SortMode, string> = {
+  priceDesc: "Price high\u2013low",
+  priceAsc: "Price low\u2013high",
+  name: "Name",
+};
+const NEXT_SORT: Record<SortMode, SortMode> = {
+  priceDesc: "priceAsc",
+  priceAsc: "name",
+  name: "priceDesc",
+};
 
 export function StocksScreen() {
-  const { user } = useAuth();
-  const insets = useSafeAreaInsets();
-  const { stocks, loading, refreshing, error, refresh, reload } = useStocks();
-
-  const balance = (user as any)?.balance ?? 0;
-  const dayChangePct = (user as any)?.dayChangePct ?? 0;
-
   const navigation =
     useNavigation<NativeStackNavigationProp<StocksStackParamList, "Stocks">>();
+  const { stocks, loading, refreshing, error, refresh, reload } =
+    useStocks("us-stock");
+  const [sort, setSort] = useState<SortMode>("priceDesc");
+
+  const rows = useMemo(() => {
+    return [...stocks].sort((a, b) => {
+      if (sort === "name") return a.name.localeCompare(b.name);
+      const diff = Number(a.price) - Number(b.price);
+      return sort === "priceAsc" ? diff : -diff;
+    });
+  }, [stocks, sort]);
 
   return (
-    <View
-      style={[s.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
-    >
-      <FlatList
-        data={stocks}
-        keyExtractor={(item) => item.tokenAddress}
-        contentContainerStyle={s.listContent}
+    <SafeAreaView style={s.safe}>
+      <ScrollView
+        contentContainerStyle={s.container}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refresh} />
-        }
-        ListHeaderComponent={
-          <>
-            <View style={s.balanceRow}>
-              <View>
-                <Text style={s.balanceLabel}>Your Balance</Text>
-                <Text style={s.balanceValue}>
-                  {balance.toLocaleString(undefined, {
-                    style: "currency",
-                    currency: "USD",
-                    minimumFractionDigits: 2,
-                  })}
-                </Text>
-                <Text
-                  style={[
-                    s.balanceChange,
-                    { color: dayChangePct >= 0 ? C.success : C.error },
-                  ]}
-                >
-                  {dayChangePct === 0
-                    ? "--"
-                    : `${dayChangePct >= 0 ? "▲" : "▼"} ${Math.abs(dayChangePct).toFixed(2)}% today`}
-                </Text>
-              </View>
-              <Pressable style={s.depositBtn}>
-                <Ionicons name="add" size={18} color={C.buttonInk} />
-                <Text style={s.depositText}>Deposit</Text>
-              </Pressable>
-            </View>
-
-            <Text style={s.sectionTitle}>Available Stocks</Text>
-
-            {error && (
-              <View style={s.errorBox}>
-                <Text style={s.errorText}>{error}</Text>
-                <Pressable onPress={() => reload()}>
-                  <Text style={s.retryText}>Retry</Text>
-                </Pressable>
-              </View>
-            )}
-          </>
-        }
-        renderItem={({ item }) => (
-          <AssetRow
-            symbol={item.symbol}
-            name={item.name}
-            price={Number(item.price)}
-            imageUrl={item.imageUrl}
-            onPress={() =>
-              navigation.navigate("StockDetail", { symbol: item.symbol })
-            }
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => refresh()}
+            tintColor={C.bone}
           />
-        )}
-        ItemSeparatorComponent={() => <View style={s.separator} />}
-        ListEmptyComponent={
-          loading ? (
-            <ActivityIndicator style={{ marginTop: 24 }} />
-          ) : !error ? (
-            <Text style={s.emptyText}>No stocks available</Text>
-          ) : null
         }
-      />
-    </View>
+      >
+        <View style={s.topRow}>
+          <Text style={s.h1}>Stocks</Text>
+          <View style={{ flexGrow: 1 }} />
+          <Pressable
+            style={s.sortBtn}
+            onPress={() => setSort((m) => NEXT_SORT[m])}
+          >
+            <Text style={s.sortLabel}>Sort · {SORT_LABEL[sort]}</Text>
+          </Pressable>
+        </View>
+        <Text style={s.sub}>
+          {loading ? "\u2026" : stocks.length} US-listed companies. Bought and
+          settled on-chain with stablecoins, held in a wallet only you control.
+        </Text>
+
+        <View style={s.columnHeaderRow}>
+          <Text style={s.columnHeading}>Company</Text>
+          <Text style={s.columnHeading}>Price</Text>
+        </View>
+
+        {error && (
+          <View style={s.errorBox}>
+            <Text style={s.errorText}>{error}</Text>
+            <Pressable onPress={() => reload()}>
+              <Text style={s.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {loading ? (
+          <ActivityIndicator style={{ marginTop: 24 }} color={C.bone} />
+        ) : !error && rows.length === 0 ? (
+          <View style={s.emptyBox}>
+            <Text style={s.emptyText}>No stocks available</Text>
+          </View>
+        ) : (
+          <View style={s.list}>
+            {rows.map((item, i) => (
+              <View
+                key={item.tokenAddress}
+                style={i > 0 ? s.rowDivider : undefined}
+              >
+                <AssetRow
+                  symbol={item.symbol}
+                  name={item.name}
+                  price={Number(item.price)}
+                  imageUrl={item.imageUrl}
+                  onPress={() =>
+                    navigation.navigate("StockDetail", {
+                      symbol: item.symbol,
+                      category: "us-stock",
+                    })
+                  }
+                />
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={s.infoCard}>
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color={C.inkMuted}
+            style={{ marginTop: 1 }}
+          />
+          <Text style={s.infoText}>
+            Every share settles <Text style={s.infoStrong}>on-chain</Text> and
+            is bought with stablecoins. Prices refresh automatically about once
+            a minute.
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 32,
-    flexGrow: 1,
+  container: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
+  topRow: { flexDirection: "row", alignItems: "center" },
+  sortBtn: {
+    height: 40,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.pill,
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.hairline,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  balanceRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    marginBottom: 20,
+  sortLabel: {
+    fontFamily: FONT.display400,
+    fontSize: 13,
+    color: C.inkSecondary,
   },
-  balanceLabel: { color: C.muted, fontSize: 13, fontWeight: "600" },
-  balanceValue: {
-    color: C.ink,
-    fontSize: 32,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-    marginTop: 4,
+  h1: {
+    marginTop: 8,
+    fontFamily: FONT.display800,
+    fontSize: 40,
+    lineHeight: 38,
+    letterSpacing: -2,
+    color: C.bone,
   },
-  balanceChange: { fontSize: 13, fontWeight: "600", marginTop: 4 },
-  depositBtn: {
+  sub: {
+    marginTop: 10,
+    fontFamily: FONT.display400,
+    fontSize: 14,
+    lineHeight: 21,
+    color: C.inkSecondary,
+  },
+  columnHeaderRow: {
+    marginTop: 22,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: C.accent,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginTop: 4,
   },
-  depositText: { color: C.buttonInk, fontSize: 14, fontWeight: "700" },
-  sectionTitle: {
-    color: C.ink,
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 4,
+  columnHeading: {
+    flex: 1,
+    fontFamily: FONT.display600,
+    fontSize: 10,
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+    color: C.inkMuted,
   },
-  separator: { height: 1, backgroundColor: C.ring, marginLeft: 52 },
-  errorBox: { paddingVertical: 12, gap: 4 },
-  errorText: { color: C.error, fontSize: 13 },
-  retryText: { color: C.accent, fontSize: 13, fontWeight: "600" },
-  emptyText: { color: C.muted, textAlign: "center", marginTop: 24 },
+  errorBox: { marginTop: 12, gap: 4 },
+  errorText: { fontFamily: FONT.display400, fontSize: 13, color: C.clay },
+  retryText: { fontFamily: FONT.display600, fontSize: 13, color: C.bone },
+  list: {
+    marginTop: 10,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: C.hairline,
+    overflow: "hidden",
+  },
+  rowDivider: { borderTopWidth: 1, borderTopColor: C.hairline },
+  emptyBox: {
+    marginTop: 10,
+    padding: 24,
+    alignItems: "center",
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: C.hairline,
+    backgroundColor: C.card,
+  },
+  emptyText: { fontFamily: FONT.display400, fontSize: 13, color: C.inkMuted },
+  infoCard: {
+    marginTop: 18,
+    padding: 16,
+    borderRadius: RADIUS.sm,
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.hairline,
+    flexDirection: "row",
+    gap: 12,
+  },
+  infoText: {
+    flex: 1,
+    fontFamily: FONT.display400,
+    fontSize: 12,
+    lineHeight: 18,
+    color: C.inkMuted,
+  },
+  infoStrong: { fontFamily: FONT.display600, color: C.bone },
 });

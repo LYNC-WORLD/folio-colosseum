@@ -1,73 +1,160 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { C, RADIUS, FONT } from "../theme";
+import { SafeScreen } from "../components";
+import { useWallet } from "../context/WalletContext";
+import { useRecurringBuys, useCancelRecurringBuy } from "../hooks/useTrade";
+import type { RecurringBuy } from "../types";
+import { NavigationProp, useNavigation } from "@react-navigation/native";
+import { TabParamList } from "../navigation";
 
 const RANGES = ["Today", "1M", "1Y", "All"] as const;
 type Range = (typeof RANGES)[number];
 
-const MOCK_ALLOCATION = [
-  { label: "US stocks", pct: 44, value: "$1,840", color: C.series.usStocks },
-  { label: "Pre-IPO", pct: 27, value: "$1,129", color: C.series.preIpo },
-  { label: "Commodities", pct: 18, value: "$753", color: C.series.commodities },
-  { label: "Crypto", pct: 11, value: "$460", color: C.series.crypto },
-];
+const STOCK_TYPE_LABEL: Record<string, string> = {
+  USStock: "US stocks",
+  PreIPO: "Pre-IPO",
+};
 
-const MOCK_HOLDINGS = [
-  {
-    initial: "S",
-    name: "SpaceX",
-    units: "5.31 SPCX",
-    value: "$1,128",
-    pnl: "+18.4%",
-    up: true,
-  },
-  {
-    initial: "N",
-    name: "NVIDIA",
-    units: "4.02 NVDA",
-    value: "$740",
-    pnl: "+12.1%",
-    up: true,
-  },
-  {
-    initial: "B",
-    name: "Berkshire B",
-    units: "2.26 BRKB",
-    value: "$1,100",
-    pnl: "+3.2%",
-    up: true,
-  },
-  {
-    initial: "G",
-    name: "Tokenized gold",
-    units: "0.221 XAUT",
-    value: "$753",
-    pnl: "\u22120.8%",
-    up: false,
-  },
-  {
-    initial: "B",
-    name: "Bitcoin",
-    units: "0.0041 BTC",
-    value: "$460",
-    pnl: "+6.7%",
-    up: true,
-  },
-];
+const STOCK_TYPE_COLOR: Record<string, string> = {
+  USStock: C.series.usStocks,
+  PreIPO: C.series.preIpo,
+};
+
+function formatUsd(n: number) {
+  return n.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  });
+}
+
+function formatBuyDate(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 export function PortfolioScreen() {
   const [range, setRange] = useState<Range>("All");
+  const { usdc, tokens, usdValue, loading, error, refresh } = useWallet();
+  const {
+    recurringBuys,
+    loading: recurringLoading,
+    error: recurringError,
+    reload: reloadRecurring,
+  } = useRecurringBuys();
+  const cancelRecurring = useCancelRecurringBuy();
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
+
+  const holdings = tokens.map((t) => ({
+    key: t.balance,
+    imageUrl: t.imageUrl,
+    initial: t.symbol.charAt(0),
+    name: t.name,
+    units: `${t.balance} ${t.symbol}`,
+    symbol: t.symbol,
+    value: formatUsd(t.balance * Number(t.price)),
+  }));
+  const navigation = useNavigation<NavigationProp<TabParamList>>();
+
+  const allocation = useMemo(() => {
+    const totals = new Map<string, number>();
+    let grandTotal = 0;
+
+    for (const t of tokens) {
+      const value = t.balance * Number(t.price);
+      totals.set(t.stockType, (totals.get(t.stockType) ?? 0) + value);
+      grandTotal += value;
+    }
+
+    return Array.from(totals.entries())
+      .map(([type, value]) => ({
+        type,
+        label: STOCK_TYPE_LABEL[type] ?? type,
+        color: STOCK_TYPE_COLOR[type] ?? C.inkMuted,
+        value,
+        pct: grandTotal > 0 ? (value / grandTotal) * 100 : 0,
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [tokens]);
+
+  // Active buys first so a cancelled entry doesn't push live ones down.
+  const sortedRecurring = useMemo(
+    () =>
+      [...recurringBuys].sort(
+        (a, b) => Number(b.isActive) - Number(a.isActive),
+      ),
+    [recurringBuys],
+  );
+
+  const activeCount = recurringBuys.filter((r) => r.isActive).length;
+
+  // Map a recurring buy's stockAddress back to its token metadata (symbol,
+  // name, image) so the list can show something nicer than a raw address.
+  function tokenFor(stockAddress: string) {
+    return tokens.find((t) => t.tokenAccount === stockAddress);
+  }
+
+  function amountLabel(item: RecurringBuy) {
+    if (item.usdcAmount) return `${formatUsd(Number(item.usdcAmount))} USDC`;
+    if (item.stockAmount) {
+      return `${item.stockAmount} ${item.stock.symbol}`.trim();
+    }
+    return "—";
+  }
+
+  const handleCancel = (item: RecurringBuy) => {
+    const label = item.stock.symbol;
+    Alert.alert(
+      "Cancel recurring buy",
+      `Stop the recurring buy for ${label}? This can't be undone.`,
+      [
+        { text: "Keep it", style: "cancel" },
+        {
+          text: "Cancel buy",
+          style: "destructive",
+          onPress: () => {
+            setCancelingId(item.id);
+            cancelRecurring.mutate(item.id, {
+              onError: () => {
+                Alert.alert("Something went wrong", "Please try again.");
+              },
+              onSettled: () => {
+                setCancelingId(null);
+              },
+            });
+          },
+        },
+      ],
+    );
+  };
+
+  if (loading) {
+    return (
+      <SafeScreen>
+        <View style={s.center}>
+          <ActivityIndicator color={C.bone} />
+        </View>
+      </SafeScreen>
+    );
+  }
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeScreen>
       <ScrollView
         contentContainerStyle={s.container}
         showsVerticalScrollIndicator={false}
@@ -88,31 +175,16 @@ export function PortfolioScreen() {
         </View>
 
         <Text style={s.totalLabel}>Total value</Text>
-        <Text style={s.totalValue}>$4,182.60</Text>
-        <View style={s.gainRow}>
-          <View style={s.gainPill}>
-            <Ionicons name="arrow-up" size={12} color={C.jade} />
-            <Text style={s.gainText}>+$318.42 · 8.2%</Text>
-          </View>
-          <Text style={s.gainNote}>all time</Text>
-        </View>
+        <Text style={s.totalValue}>{formatUsd(usdValue)}</Text>
 
-        <View style={s.rangeRow}>
-          {RANGES.map((r) => {
-            const on = r === range;
-            return (
-              <Pressable
-                key={r}
-                onPress={() => setRange(r)}
-                style={[s.rangePill, on && s.rangePillActive]}
-              >
-                <Text style={[s.rangeLabel, on && s.rangeLabelActive]}>
-                  {r}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {error && (
+          <View style={s.errorRow}>
+            <Text style={s.errorText}>{error}</Text>
+            <Pressable onPress={() => refresh()}>
+              <Text style={s.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        )}
 
         {/* Allocation */}
         <View style={s.card}>
@@ -120,94 +192,207 @@ export function PortfolioScreen() {
             <Text style={s.sectionHeading}>Allocation</Text>
             <View style={s.sectionRule} />
             <Text style={s.sectionAside}>
-              {MOCK_ALLOCATION.length} collections
+              {allocation.length}{" "}
+              {allocation.length === 1 ? "collection" : "collections"}
             </Text>
           </View>
 
-          <View style={s.allocBar}>
-            {MOCK_ALLOCATION.map((a) => (
-              <View
-                key={a.label}
-                style={{
-                  flexGrow: a.pct,
-                  backgroundColor: a.color,
-                  borderRadius: 4,
-                }}
-              />
-            ))}
-          </View>
-
-          <View style={s.allocGrid}>
-            {MOCK_ALLOCATION.map((a) => (
-              <View key={a.label} style={s.allocItem}>
-                <View style={[s.allocDot, { backgroundColor: a.color }]} />
-                <View style={{ minWidth: 0 }}>
-                  <Text style={s.allocLabel} numberOfLines={1}>
-                    {a.label}
-                  </Text>
-                  <Text style={s.allocValue}>
-                    {a.value} · {a.pct}%
-                  </Text>
-                </View>
+          {allocation.length === 0 ? (
+            <Text style={s.emptyText}>No holdings yet</Text>
+          ) : (
+            <>
+              <View style={s.allocBar}>
+                {allocation.map((a) => (
+                  <View
+                    key={a.type}
+                    style={{
+                      flexGrow: a.pct || 0.0001,
+                      backgroundColor: a.color,
+                      borderRadius: 4,
+                    }}
+                  />
+                ))}
               </View>
-            ))}
-          </View>
+
+              <View style={s.allocGrid}>
+                {allocation.map((a) => (
+                  <View key={a.type} style={s.allocItem}>
+                    <View style={[s.allocDot, { backgroundColor: a.color }]} />
+                    <View style={{ minWidth: 0 }}>
+                      <Text style={s.allocLabel} numberOfLines={1}>
+                        {a.label}
+                      </Text>
+                      <Text style={s.allocValue}>
+                        {formatUsd(a.value)} ·{" "}
+                        {a.pct.toFixed(a.pct < 1 && a.pct > 0 ? 1 : 0)}%
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
         </View>
 
         {/* Holdings */}
-        <View style={s.sectionHeaderRow}>
+        <View style={[s.sectionHeaderRow, s.holdingsHeaderGap]}>
           <Text style={s.sectionHeading}>Holdings</Text>
           <View style={s.sectionRule} />
-          <Text style={s.sectionAside}>{MOCK_HOLDINGS.length} positions</Text>
+          <Text style={s.sectionAside}>{holdings.length} positions</Text>
         </View>
 
-        <View style={s.holdingsList}>
-          {MOCK_HOLDINGS.map((h, i) => (
-            <View
-              key={h.name}
-              style={[
-                s.holdingRow,
-                i === 0 && s.rowFirst,
-                i === MOCK_HOLDINGS.length - 1 && s.rowLast,
-              ]}
-            >
-              <View style={s.holdingBadge}>
-                <Text style={s.holdingBadgeLabel}>{h.initial}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.holdingName}>{h.name}</Text>
-                <Text style={s.holdingUnits}>{h.units}</Text>
-              </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={s.holdingValue}>{h.value}</Text>
-                <Text style={[s.holdingPnl, { color: h.up ? C.jade : C.clay }]}>
-                  {h.pnl}
-                </Text>
-              </View>
+        {holdings.length === 0 ? (
+          <Text style={s.emptyText}>No holdings yet</Text>
+        ) : (
+          <View style={s.holdingsList}>
+            {holdings.map((h, i) => (
+              <Pressable
+                key={h.key}
+                onPress={() => {
+                  navigation.navigate("Home", {
+                    screen: "StockDetail",
+                    params: {
+                      symbol: h.symbol,
+                      category: "us-stock",
+                    },
+                  });
+                }}
+                style={[
+                  s.holdingRow,
+                  i === 0 && s.rowFirst,
+                  i === holdings.length - 1 && s.rowLast,
+                ]}
+              >
+                <View style={s.holdingBadge}>
+                  {h.imageUrl ? (
+                    <Image
+                      source={{ uri: h.imageUrl }}
+                      style={s.holdingImage}
+                    />
+                  ) : (
+                    <Text style={s.holdingBadgeLabel}>{h.initial}</Text>
+                  )}
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={s.holdingName}>{h.name}</Text>
+                  <Text style={s.holdingUnits}>{h.units}</Text>
+                </View>
+
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={s.holdingValue}>{h.value}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {/* Recurring buys */}
+        <View style={[s.sectionHeaderRow, s.holdingsHeaderGap]}>
+          <Text style={s.sectionHeading}>Recurring buys</Text>
+          <View style={s.sectionRule} />
+          <Text style={s.sectionAside}>{activeCount} active</Text>
+        </View>
+
+        {recurringLoading ? (
+          <View style={s.recurringLoadingRow}>
+            <ActivityIndicator color={C.bone} size="small" />
+          </View>
+        ) : recurringError ? (
+          <View style={s.errorRow}>
+            <Text style={s.errorText}>{recurringError}</Text>
+            <Pressable onPress={() => reloadRecurring()}>
+              <Text style={s.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : sortedRecurring.length === 0 ? (
+          <Text style={s.emptyText}>No recurring buys set up</Text>
+        ) : (
+          <View style={s.holdingsList}>
+            <View style={s.holdingsList}>
+              {sortedRecurring.map((item, i) => {
+                const isCanceling = cancelingId === item.id;
+                const typeLabel =
+                  STOCK_TYPE_LABEL[item.stock.stockType] ??
+                  item.stock.stockType;
+
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      s.recurringRow,
+                      i === 0 && s.rowFirst,
+                      i === sortedRecurring.length - 1 && s.rowLast,
+                      !item.isActive && s.recurringRowInactive,
+                    ]}
+                  >
+                    <View style={s.holdingBadge}>
+                      {item.stock.imageUrl ? (
+                        <Image
+                          source={{ uri: item.stock.imageUrl }}
+                          style={s.holdingImage}
+                        />
+                      ) : (
+                        <Text style={s.holdingBadgeLabel}>
+                          {item.stock.symbol.charAt(0)}
+                        </Text>
+                      )}
+                    </View>
+
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <View style={s.recurringNameRow}>
+                        <Text style={s.holdingName} numberOfLines={1}>
+                          {item.stock.name}
+                        </Text>
+                        <View style={s.typeTag}>
+                          <Text style={s.typeTagText}>{typeLabel}</Text>
+                        </View>
+                      </View>
+                      <Text style={s.holdingUnits}>
+                        {amountLabel(item)} · {formatBuyDate(item.buyDate)}
+                      </Text>
+                    </View>
+
+                    {item.isActive ? (
+                      <Pressable
+                        onPress={() => handleCancel(item)}
+                        disabled={isCanceling}
+                        style={[
+                          s.cancelBtn,
+                          isCanceling && s.cancelBtnDisabled,
+                        ]}
+                        hitSlop={8}
+                      >
+                        {isCanceling ? (
+                          <ActivityIndicator color={C.clay} size="small" />
+                        ) : (
+                          <Text style={s.cancelBtnText}>Cancel</Text>
+                        )}
+                      </Pressable>
+                    ) : (
+                      <View style={s.cancelledPill}>
+                        <Ionicons
+                          name="close-circle-outline"
+                          size={12}
+                          color={C.inkMuted}
+                        />
+                        <Text style={s.cancelledPillText}>Cancelled</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
             </View>
-          ))}
-        </View>
-
-        {/* Recurring buy */}
-        <Pressable style={s.recurringCard}>
-          <View style={s.recurringIcon}>
-            <Ionicons name="refresh" size={18} color={C.bone} />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.recurringTitle}>$250 every Monday</Text>
-            <Text style={s.recurringSub}>
-              Split across SpaceX, NVDA and gold · next Monday
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={C.inkMuted} />
-        </Pressable>
+        )}
       </ScrollView>
-    </SafeAreaView>
+    </SafeScreen>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
   container: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
 
   topRow: { flexDirection: "row", alignItems: "center" },
@@ -238,6 +423,16 @@ const s = StyleSheet.create({
     letterSpacing: -2.2,
     color: C.bone,
   },
+
+  errorRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  errorText: { fontFamily: FONT.display400, fontSize: 13, color: C.clay },
+  retryText: { fontFamily: FONT.display600, fontSize: 13, color: C.bone },
+
   gainRow: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 8 },
   gainPill: {
     flexDirection: "row",
@@ -317,6 +512,13 @@ const s = StyleSheet.create({
     color: C.bone,
   },
 
+  emptyText: {
+    marginTop: 12,
+    fontFamily: FONT.display400,
+    fontSize: 13,
+    color: C.inkMuted,
+  },
+
   holdingsList: {
     marginTop: 12,
     borderRadius: RADIUS.md,
@@ -347,6 +549,26 @@ const s = StyleSheet.create({
   },
   holdingBadgeLabel: { fontFamily: FONT.mono400, fontSize: 13, color: C.bone },
   holdingName: { fontFamily: FONT.display600, fontSize: 14, color: C.bone },
+  recurringNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  typeTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.sm,
+    backgroundColor: C.raised,
+    borderWidth: 1,
+    borderColor: C.hairline,
+  },
+  typeTagText: {
+    fontFamily: FONT.display600,
+    fontSize: 9,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    color: C.inkMuted,
+  },
   holdingUnits: {
     marginTop: 3,
     fontFamily: FONT.mono400,
@@ -354,32 +576,54 @@ const s = StyleSheet.create({
     color: C.inkMuted,
   },
   holdingValue: { fontFamily: FONT.mono400, fontSize: 14, color: C.bone },
-  holdingPnl: { marginTop: 3, fontFamily: FONT.mono400, fontSize: 12 },
 
-  recurringCard: {
-    marginTop: 18,
-    padding: 16,
-    borderRadius: RADIUS.md,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.hairline,
+  holdingsHeaderGap: { marginTop: 24 },
+  holdingImage: { width: 24, height: 24, borderRadius: 6 },
+
+  recurringRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    padding: 13,
+    backgroundColor: C.card,
+    borderTopWidth: 1,
+    borderTopColor: C.hairline,
   },
-  recurringIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: C.raised,
+  recurringRowInactive: { opacity: 0.55 },
+  recurringLoadingRow: {
+    marginTop: 12,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  cancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: "#3A2320",
+    backgroundColor: "#1F1412",
+    minWidth: 64,
     alignItems: "center",
     justifyContent: "center",
   },
-  recurringTitle: { fontFamily: FONT.display600, fontSize: 14, color: C.bone },
-  recurringSub: {
-    marginTop: 3,
-    fontFamily: FONT.display400,
-    fontSize: 12,
+  cancelBtnDisabled: { opacity: 0.6 },
+  cancelBtnText: { fontFamily: FONT.display600, fontSize: 12, color: C.clay },
+  cancelledPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: C.hairline,
+    backgroundColor: C.raised,
+    minWidth: 64,
+    justifyContent: "center",
+  },
+  cancelledPillText: {
+    fontFamily: FONT.display500,
+    fontSize: 11,
     color: C.inkMuted,
   },
 });
