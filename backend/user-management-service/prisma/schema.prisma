@@ -106,5 +106,6 @@ model RecurringBuyRequest {
     usdcAmount   String?
     stockAmount  String?
     buyDate      String
+    isActive     Boolean @default(true)
     user         User    @relation(fields: [userId], references: [userId])
 }

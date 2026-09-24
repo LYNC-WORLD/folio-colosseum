@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { TradeService } from "../services/tradeServices";
+import { prisma } from "../lib/prisma";
 
 export class TradeController {
   private tradeService: TradeService;
@@ -31,6 +32,14 @@ export class TradeController {
         });
         return;
       }
+      const stockDecimal = await prisma.stocks.findUnique({
+        select: {
+          decimals: true,
+        },
+        where: {
+          tokenAddress: body.stockAddress,
+        },
+      });
       const quote = await this.tradeService.getQuoteBuy(
         body.stockAddress,
         body.stockSymbol,
@@ -53,7 +62,9 @@ export class TradeController {
           stockAddress: body.stockAddress,
           stockSymbol: body.stockSymbol,
           inputUSDC: Number(quote?.input_amount) / 1000000,
-          outputStocks: Number(quote?.est_output_amount) / 100000000,
+          outputStocks:
+            Number(quote?.est_output_amount) /
+            10 ** (stockDecimal?.decimals ?? 8),
         },
       });
       return;
@@ -88,6 +99,14 @@ export class TradeController {
         });
         return;
       }
+      const stockDecimal = await prisma.stocks.findUnique({
+        select: {
+          decimals: true,
+        },
+        where: {
+          tokenAddress: body.stockAddress,
+        },
+      });
       const quote = await this.tradeService.getQuoteSell(
         body.stockAddress,
         body.stockSymbol,
@@ -95,6 +114,7 @@ export class TradeController {
         body.usdcAmount,
         req.user.walletId,
         req.user.userId,
+        stockDecimal?.decimals ?? 8,
       );
       if (!quote) {
         res.status(404).json({
@@ -110,7 +130,8 @@ export class TradeController {
           stockAddress: body.stockAddress,
           stockSymbol: body.stockSymbol,
           outputUSDC: Number(quote?.est_output_amount) / 1000000,
-          inputStocks: Number(quote?.input_amount) / 100000000,
+          inputStocks:
+            Number(quote?.input_amount) / 10 ** (stockDecimal?.decimals ?? 8),
         },
       });
       return;
@@ -205,6 +226,14 @@ export class TradeController {
         });
         return;
       }
+      const stockDecimal = await prisma.stocks.findUnique({
+        select: {
+          decimals: true,
+        },
+        where: {
+          tokenAddress: body.stockAddress,
+        },
+      });
       const responce = await this.tradeService.sellStock(
         body.stockAddress,
         body.stockSymbol,
@@ -212,6 +241,7 @@ export class TradeController {
         body.usdcAmount,
         req.user.walletId,
         req.user.userId,
+        stockDecimal?.decimals ?? 8,
       );
       if (!responce) {
         res.status(404).json({
@@ -255,6 +285,13 @@ export class TradeController {
         return;
       }
       const body: recurringBuyRequest = req.body;
+      if (Number(body.buyDate) > 31 || Number(body.buyDate) < 1) {
+        res.status(400).json({
+          success: false,
+          message: "invalid buy date",
+        });
+        return;
+      }
       if (
         (body.stockAmount && body.usdcAmount) ||
         (!body.stockAmount && !body.usdcAmount) ||

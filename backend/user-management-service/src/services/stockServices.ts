@@ -1,9 +1,13 @@
 import { prisma } from "../lib/prisma";
 
 export class StockService {
-  public async getStocks() {
+  public async getUSStocks() {
     try {
-      const stockDetails = await prisma.stocks.findMany();
+      const stockDetails = await prisma.stocks.findMany({
+        where: {
+          stockType: "USStock",
+        },
+      });
       return stockDetails;
     } catch (error) {
       console.error(error);
@@ -11,7 +15,35 @@ export class StockService {
     }
   }
 
-  public async getStockById(stockSymbol: string) {
+  public async getUSStockById(stockSymbol: string) {
+    try {
+      const stockDetails = await prisma.stocks.findFirst({
+        where: {
+          symbol: stockSymbol,
+        },
+      });
+      return stockDetails;
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
+
+  public async getPreIPO() {
+    try {
+      const stockDetails = await prisma.stocks.findMany({
+        where: {
+          stockType: "PreIPO",
+        },
+      });
+      return stockDetails;
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
+
+  public async getPreIPOById(stockSymbol: string) {
     try {
       const stockDetails = await prisma.stocks.findFirst({
         where: {

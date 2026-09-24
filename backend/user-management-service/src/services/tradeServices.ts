@@ -50,6 +50,7 @@ export class TradeService {
     usdcAmount: number | undefined,
     walletId: string,
     userId: string,
+    tokenDecimal: number,
   ) {
     try {
       const price = await getStockPrice(stockSymbol);
@@ -62,18 +63,6 @@ export class TradeService {
       if (!stockAmount) {
         stockAmount = usdcAmount / price;
       }
-
-      console.log({
-        destination: {
-          asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-        },
-        source: {
-          asset_address: stockAddress,
-          caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-        },
-        base_amount: String(stockAmount * 100000000).split(".")[0],
-        amount_type: "exact_input",
-      });
       const qoute = await privy
         .wallets()
         .swaps()
@@ -85,7 +74,7 @@ export class TradeService {
             asset_address: stockAddress,
             caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
           },
-          base_amount: String(stockAmount * 100000000).split(".")[0],
+          base_amount: String(stockAmount * (10 ** tokenDecimal)).split(".")[0],
           amount_type: "exact_input",
         });
 
@@ -179,6 +168,7 @@ export class TradeService {
     usdcAmount: number | undefined,
     walletId: string,
     userId: string,
+    tokenDecimal: number,
   ) {
     try {
       const price = await getStockPrice(stockSymbol);
@@ -194,6 +184,7 @@ export class TradeService {
         stockAddress,
         stockAmount,
         walletId,
+        tokenDecimal
       );
       const result = await getTransectionResults(walletId, responce.id);
       if (result != "succeeded") {
@@ -300,6 +291,7 @@ async function sellStockOnChain(
   stockAddress: string,
   stockAmount: number,
   walletId: string,
+  tokenDecimal: number,
 ) {
   const responce = await privy
     .wallets()
@@ -312,7 +304,7 @@ async function sellStockOnChain(
         asset_address: stockAddress,
         caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
       },
-      base_amount: String(stockAmount * 100000000).split(".")[0],
+      base_amount: String(stockAmount * (10 ** tokenDecimal)).split(".")[0],
       amount_type: "exact_input",
       authorization_context: {
         authorization_private_keys: [env.PRIVY_AUTH_KEY!],

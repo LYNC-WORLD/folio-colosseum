@@ -118,6 +118,7 @@ export class UserController {
       });
     }
   };
+
   public getUserTransactions = async (
     req: Request,
     res: Response,
@@ -151,6 +152,50 @@ export class UserController {
     } catch (error) {
       console.error("Get user transactions error:", error);
 
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
+
+  public cancelRecurringBuyRequest = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(404).json({
+          success: false,
+          message: "can not find user",
+        });
+        return;
+      }
+      if (!req.body.recurringId) {
+        res.status(400).json({
+          success: false,
+          message: "can not find user",
+        });
+        return;
+      }
+      const data = await this.userService.cancelRecurringBuyRequest(
+        req.user.userId,
+        req.body.recurringId
+      );
+      if (!data) {
+        res
+          .status(404)
+          .json({ success: false, message: "No recurrent buy request found" });
+        return;
+      }
+      res.status(200).json({
+        success: true,
+        message: "recurrent buy request details",
+        data: data,
+      });
+      return;
+    } catch (error) {
+      // console.log(error);
       res.status(500).json({
         success: false,
         message: "Internal server error",

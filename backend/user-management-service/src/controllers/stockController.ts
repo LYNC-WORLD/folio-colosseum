@@ -8,9 +8,9 @@ export class StockController {
     this.stockService = new StockService();
   }
 
-  public getStocks = async (req: Request, res: Response): Promise<void> => {
+  public getUSStocks = async (req: Request, res: Response): Promise<void> => {
     try {
-      const stocks = await this.stockService.getStocks();
+      const stocks = await this.stockService.getUSStocks();
       if (!stocks) {
         res.status(500).json({
           success: false,
@@ -33,7 +33,85 @@ export class StockController {
     }
   };
 
-  public getStockBySymbol = async (
+  public getUSStockBySymbol = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      const { stockSymbol } = req.params;
+
+      if (!stockSymbol || Array.isArray(stockSymbol)) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid stock symbol",
+        });
+        return;
+      }
+
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      const stockDetails = await this.stockService.getStockDetails(
+        stockSymbol,
+        userId,
+      );
+
+      if (!stockDetails) {
+        res.status(404).json({
+          success: false,
+          message: "Stock not found",
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Stock details fetched successfully",
+        data: stockDetails,
+      });
+    } catch (error) {
+      console.error("Get stock details error:", error);
+
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
+
+  public getPreIPOs = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const stocks = await this.stockService.getPreIPO();
+      if (!stocks) {
+        res.status(500).json({
+          success: false,
+          message: "Internal server error: error fetching stocks",
+        });
+        return;
+      }
+      res.status(200).json({
+        success: true,
+        message: "stocks list",
+        data: stocks,
+      });
+      return;
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
+
+  public getPreIPOsBySymbol = async (
     req: Request,
     res: Response,
   ): Promise<void> => {

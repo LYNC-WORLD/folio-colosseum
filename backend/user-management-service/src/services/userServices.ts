@@ -94,6 +94,19 @@ export class UserService {
       return;
     }
   }
+  public async cancelRecurringBuyRequest(userId: string, recurringId: string) {
+    try {
+      const data = await prisma.recurringBuyRequest.update({
+        where: { id: recurringId },
+        data: {
+          isActive: false
+        }
+      });
+      return data;
+    } catch (error) {
+      return;
+    }
+  }
   public async getUserTransactions(userId: string) {
     try {
       const trades = await prisma.trades.findMany({
