@@ -46,6 +46,7 @@ model User {
     googleSubjectId String       @unique
     investments     Investment[]
     trades          Trades[]
+    recurringBuyRequest          RecurringBuyRequest[]
     createdAt       DateTime     @default(now())
     updatedAt       DateTime     @updatedAt
 
@@ -92,4 +93,14 @@ model LoginDetails {
     amountToPutIn    Float
     positionHold     String
     expectToHold     String
+}
+
+model RecurringBuyRequest{
+    id String @id @default(cuid())
+    stockAddress String
+    userId String
+    usdcAmount String?
+    stockAmount String?
+    buyDate String
+    user User @relation(fields: [userId], references: [userId])
 }

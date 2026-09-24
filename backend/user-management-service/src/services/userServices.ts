@@ -7,7 +7,7 @@ export class UserService {
   public async getBalance(walletAddress: string) {
     try {
       const tokenDetails = await getWalletTokens(walletAddress);
-      if(!tokenDetails){
+      if (!tokenDetails) {
         return;
       }
       const usdcToken = tokenDetails.tokens.find(
@@ -68,4 +68,35 @@ export class UserService {
       return;
     }
   }
+  public async setLoginFormData(email: string, data: loginForm) {
+    try {
+      const responce = await prisma.loginDetails.create({data: {
+        email: email,
+        amountToPutIn: 0,
+        expectToHold: data.question2,
+        positionHold: data.question1,
+        interestedStocks: data.interestedStocks
+      }});
+      return responce;
+    } catch (error) {
+      return;
+    }
+  }
+  public async getRecurrentBuyRequest(userId: string) {
+    try {
+      const data = await prisma.recurringBuyRequest.findMany({
+        where: { userId: userId },
+      });
+      return data;
+    } catch (error) {
+      return;
+    }
+  }
+}
+
+interface loginForm{
+  interestedStocks: string[];
+  amountToPutIn: number;
+  question1: string;
+  question2: string; 
 }

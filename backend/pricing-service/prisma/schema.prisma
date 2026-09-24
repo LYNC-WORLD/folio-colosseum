@@ -93,3 +93,11 @@ model LoginDetails {
     positionHold     String
     expectToHold     String
 }
+model RecurringBuyRequest{
+    id String @id @default(cuid())
+    stockAddress String
+    userId String
+    usdcAmount String?
+    stockAmount String?
+    buyDate String
+}

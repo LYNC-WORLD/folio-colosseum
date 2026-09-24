@@ -7,5 +7,7 @@ const router = Router();
 const userController = new UserController();
 
 router.get("/balance", authMiddleware,  userController.getBalance);
+router.get("/recurring-buy-requests", authMiddleware,  userController.getRecurringBuyRequests);
+router.post("/login-form", authMiddleware,  userController.getBalance);
 
 export { router as userRoutes };

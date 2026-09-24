@@ -245,6 +245,30 @@ export class TradeService {
       return;
     }
   }
+
+  public async startRecurringBuy(
+    stockAddress: string,
+    stockAmount: string | undefined,
+    usdcAmount: string | undefined,
+    buyDate: string,
+    userId: string,
+  ) {
+    try {
+      const data = await prisma.recurringBuyRequest.create({
+        data: {
+          buyDate: buyDate,
+          stockAddress: stockAddress,
+          userId: userId,
+          stockAmount: stockAmount,
+          usdcAmount: usdcAmount,
+        },
+      });
+      return data;
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
 }
 
 async function buyStockOnChain(

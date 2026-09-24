@@ -242,6 +242,60 @@ export class TradeController {
       });
     }
   };
+  public startRecurringBuy = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const body: recurringBuyRequest = req.body;
+      if (
+        (body.stockAmount && body.usdcAmount) ||
+        (!body.stockAmount && !body.usdcAmount) ||
+        !body.stockAddress ||
+        !body.buyDate
+      ) {
+        res.status(400).json({
+          success: false,
+          message:
+            "stockAmount, usdcAmount, buyDate and stockAddress is required",
+        });
+        return;
+      }
+      const responce = await this.tradeService.startRecurringBuy(
+        body.stockAddress,
+        body.stockAmount,
+        body.usdcAmount,
+        body.buyDate,
+        req.user.userId,
+      );
+      if (!responce) {
+        res.status(500).json({
+          success: false,
+          messgae: "request failed",
+        });
+        return;
+      }
+      res.status(200).json({
+        success: true,
+        message: "recurring buy scheduled",
+        data: responce,
+      });
+      return;
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
 }
 
 interface getQuoteRequest {
@@ -249,4 +303,11 @@ interface getQuoteRequest {
   stockSymbol: string;
   usdcAmount: number | undefined;
   stockAmount: number | undefined;
+}
+
+interface recurringBuyRequest {
+  stockAddress: string;
+  usdcAmount: string | undefined;
+  stockAmount: string | undefined;
+  buyDate: string;
 }
