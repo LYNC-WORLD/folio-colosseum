@@ -7,7 +7,4 @@ declare global {
     }
   }
 }
-export interface AuthenticatedRequest extends Request {
-  user: User;
-}
 export {};

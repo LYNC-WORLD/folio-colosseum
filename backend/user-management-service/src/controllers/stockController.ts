@@ -1,11 +1,6 @@
 import { Request, Response } from "express";
 import { StockService } from "../services/stockServices";
 
-interface AuthenticatedRequest extends Request {
-  user?: {
-    userId: string;
-  };
-}
 export class StockController {
   private stockService: StockService;
 
@@ -39,7 +34,7 @@ export class StockController {
   };
 
   public getStockBySymbol = async (
-    req: AuthenticatedRequest,
+    req: Request,
     res: Response,
   ): Promise<void> => {
     try {
