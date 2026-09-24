@@ -1,6 +1,11 @@
 import { Request, Response } from "express";
 import { StockService } from "../services/stockServices";
 
+interface AuthenticatedRequest extends Request {
+  user?: {
+    userId: string;
+  };
+}
 export class StockController {
   private stockService: StockService;
 
@@ -34,40 +39,58 @@ export class StockController {
   };
 
   public getStockBySymbol = async (
-    req: Request<{ stockSymbol: string }>,
+    req: AuthenticatedRequest,
     res: Response,
   ): Promise<void> => {
     try {
-      const stock: string = req.params.stockSymbol;
-      if (!stock) {
-        res.status(500).json({
+      const { stockSymbol } = req.params;
+
+      if (!stockSymbol || Array.isArray(stockSymbol)) {
+        res.status(400).json({
           success: false,
-          message: "No stock provided",
+          message: "Invalid stock symbol",
         });
         return;
       }
-      const stockDetails = await this.stockService.getStockById(stock);
-      if (stockDetails == undefined || stockDetails == null) {
+
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      const stockDetails = await this.stockService.getStockDetails(
+        stockSymbol,
+        userId,
+      );
+
+      if (!stockDetails) {
         res.status(404).json({
           success: false,
           message: "Stock not found",
         });
         return;
       }
+
       res.status(200).json({
         success: true,
-        message: "stocks list",
+        message: "Stock details fetched successfully",
         data: stockDetails,
       });
-      return;
     } catch (error) {
-      console.log(error);
+      console.error("Get stock details error:", error);
+
       res.status(500).json({
         success: false,
         message: "Internal server error",
       });
     }
   };
+
   public getLatestBuy = async (req: Request, res: Response): Promise<void> => {
     try {
       const { stockAddress } = req.query;
