@@ -51,7 +51,7 @@ export async function getTransectionResults(
       .actions.get(transectionId, {
         wallet_id: walletId,
       });
-      if(data.status == "failed"){
+      if(data.status == "pending"){
         await sleep(1000);
       }
       else return data.status;

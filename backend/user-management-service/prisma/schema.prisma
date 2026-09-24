@@ -11,6 +11,12 @@ enum Chain {
     SOLANA
 }
 
+enum StockType {
+    USStock
+    PreIPO
+    IndexFunds
+}
+
 enum TradeType {
     BUY
     SELL
@@ -48,12 +54,16 @@ model User {
 }
 
 model Stocks {
-    tokenAddress String @id
-    price        String
-    name         String
-    decimals     Int    @default(8)
-    symbol       String
-    imageUrl     String
+    tokenAddress     String @id
+    price            String
+    name             String
+    decimals         Int    @default(8)
+    symbol           String
+    imageUrl         String
+    marketOpenPrice  String @default("0")
+    // marketClosePrice String @default("0")
+
+    stockType StockType
 }
 
 model Investment {

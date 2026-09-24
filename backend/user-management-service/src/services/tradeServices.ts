@@ -53,6 +53,8 @@ export class TradeService {
   ) {
     try {
       const price = await getStockPrice(stockSymbol);
+      console.log("Price: ", price);
+
       if (!price) {
         return;
       }
@@ -60,6 +62,18 @@ export class TradeService {
       if (!stockAmount) {
         stockAmount = usdcAmount / price;
       }
+
+      console.log({
+        destination: {
+          asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        },
+        source: {
+          asset_address: stockAddress,
+          caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        },
+        base_amount: String(stockAmount * 100000000),
+        amount_type: "exact_input",
+      });
       const qoute = await privy
         .wallets()
         .swaps()
@@ -74,6 +88,7 @@ export class TradeService {
           base_amount: String(stockAmount * 100000000),
           amount_type: "exact_input",
         });
+
       // qoute.
       return qoute;
     } catch (error) {
@@ -107,8 +122,8 @@ export class TradeService {
         walletId,
       );
       const result = await getTransectionResults(walletId, responce.id);
-      if (result == "rejected") {
-        return;
+      if (result != "succeeded") {
+        return { status: result };
       }
       const currentInvestedInStock = await prisma.investment.findFirst({
         where: {
@@ -181,8 +196,8 @@ export class TradeService {
         walletId,
       );
       const result = await getTransectionResults(walletId, responce.id);
-      if (result == "rejected") {
-        return;
+      if (result != "succeeded") {
+        return { status: result };
       }
       const currentInvestedInStock = await prisma.investment.findFirst({
         where: {
@@ -224,7 +239,7 @@ export class TradeService {
           userId: userId,
         },
       });
-      return {responce: responce, status: result};
+      return { responce: responce, status: result };
     } catch (error) {
       console.error(error);
       return;

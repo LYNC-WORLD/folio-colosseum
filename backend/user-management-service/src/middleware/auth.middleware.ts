@@ -52,7 +52,7 @@ export async function authMiddleware(
     // 4. Continue to controller
     next();
   } catch (error) {
-    console.error("Auth middleware error:", error);
+    // console.error("Auth middleware error:", error);
 
     res.status(401).json({
       success: false,

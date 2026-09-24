@@ -61,11 +61,3 @@ export async function getStockUrl(): Promise<void> {
     console.error("Stock price cron failed:", error);
   }
 }
-
-(async () => {
-  try {
-    await getStockUrl();
-  } catch (error) {
-    console.error("Error executing async code:", error);
-  }
-})();

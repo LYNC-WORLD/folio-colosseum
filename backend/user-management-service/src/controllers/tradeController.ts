@@ -98,7 +98,7 @@ export class TradeController {
       );
       if (!quote) {
         res.status(404).json({
-          success: true,
+          success: false,
           message: "can not fetch stocks",
         });
         return;
@@ -160,6 +160,13 @@ export class TradeController {
         });
         return;
       }
+      if (responce.status == "rejected" || responce.status == "failed") {
+        res.status(500).json({
+          success: false,
+          message: "transection failed",
+          status: responce.status,
+        });
+      }
       res.status(200).json({
         success: true,
         message: "Quote details",
@@ -212,6 +219,13 @@ export class TradeController {
           message: "can not fetch stocks",
         });
         return;
+      }
+      if (responce.status == "rejected" || responce.status == "failed") {
+        res.status(500).json({
+          success: false,
+          message: "transection failed",
+          status: responce.status,
+        });
       }
       res.status(200).json({
         success: true,
