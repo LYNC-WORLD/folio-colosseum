@@ -6,6 +6,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,18 +15,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker, {
-  type DateTimePickerEvent,
-} from "@react-native-community/datetimepicker";
 import { useWallet } from "../context";
-import { useStartRecurringBuy } from "../hooks/useTrade";
-import type { RecurringBuyRequest } from "../services/trade";
 import { C, RADIUS } from "../theme/colors";
 import { FONT } from "../theme/fonts";
-
+import { useStartRecurringBuy } from "../hooks/useTrade";
+import type { RecurringBuyRequest } from "../services/trade";
 type Mode = "usd" | "stock";
 
 const DECIMALS: Record<Mode, number> = { usd: 2, stock: 6 };
+const DAYS = Array.from({ length: 30 }, (_, i) => i + 1);
 
 type Props = {
   visible: boolean;
@@ -62,6 +60,24 @@ function formatDate(d: Date) {
   });
 }
 
+// Resolves a day-of-month (1-30) into the next actual calendar date it
+// occurs on. If that day has already passed this month, rolls to next month.
+function nextOccurrence(day: number): Date {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  let candidate = new Date(year, month, day, 0, 0, 0, 0);
+  if (candidate <= now) {
+    candidate = new Date(year, month + 1, day, 0, 0, 0, 0);
+  }
+  return candidate;
+}
+
+function defaultDay() {
+  const d = new Date();
+  return Math.min(d.getDate() + 1, 30);
+}
+
 function useKeyboardHeight() {
   const [height, setHeight] = useState(0);
 
@@ -92,12 +108,6 @@ function useKeyboardHeight() {
   return height;
 }
 
-function defaultDate() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d;
-}
-
 export function RecurringBuySheet({ visible, onClose, stock }: Props) {
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
@@ -107,8 +117,7 @@ export function RecurringBuySheet({ visible, onClose, stock }: Props) {
 
   const [mode, setMode] = useState<Mode>("usd");
   const [input, setInput] = useState("");
-  const [date, setDate] = useState<Date>(defaultDate());
-  const [showPicker, setShowPicker] = useState(false);
+  const [day, setDay] = useState<number>(defaultDay());
   const [ready, setReady] = useState(false);
 
   const start = useStartRecurringBuy();
@@ -117,8 +126,7 @@ export function RecurringBuySheet({ visible, onClose, stock }: Props) {
     if (visible) {
       setInput("");
       setMode("usd");
-      setDate(defaultDate());
-      setShowPicker(false);
+      setDay(defaultDay());
       start.reset();
       setReady(true);
     } else {
@@ -142,32 +150,28 @@ export function RecurringBuySheet({ visible, onClose, stock }: Props) {
     setMode(next);
   };
 
-  const onPickerChange = (event: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS === "android") setShowPicker(false);
-    if (event.type === "dismissed") return;
-    if (selected) setDate(selected);
-  };
+  const upcomingDate = nextOccurrence(day);
 
   const handleStart = async () => {
     if (!canSubmit) return;
+
     const req: RecurringBuyRequest = {
       stockAddress: stock.tokenAddress,
-      buyDate: date.toISOString(),
-      ...(mode === "usd"
-        ? { usdcAmount: String(amount) }
-        : { stockAmount: String(amount) }),
+      buyDate: upcomingDate.toISOString(),
+      stockSymbol: stock.symbol,
+      usdcAmount: mode === "usd" ? String(amount) : undefined,
+      stockAmount: mode === "stock" ? String(amount) : undefined,
     };
+
     try {
       await start.mutateAsync(req);
       Keyboard.dismiss();
       onClose();
       Alert.alert(
         "Recurring buy started",
-        `${mode === "usd" ? formatUsd(amount) : `${amount} ${stock.symbol}`} of ${stock.symbol}, starting ${formatDate(date)}.`,
+        `${mode === "usd" ? formatUsd(amount) : `${amount} ${stock.symbol}`} of ${stock.symbol}, every month on day ${day}. Next buy: ${formatDate(upcomingDate)}.`,
       );
-    } catch {
-      // Error shown inline via start.error
-    }
+    } catch {}
   };
 
   const errorMessage = insufficient
@@ -237,28 +241,29 @@ export function RecurringBuySheet({ visible, onClose, stock }: Props) {
             )}
           </View>
 
-          <Text style={s.fieldLabel}>Starts on</Text>
-          <Pressable style={s.dateRow} onPress={() => setShowPicker(true)}>
+          <Text style={s.fieldLabel}>Buy automatically on day</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.dayRow}
+          >
+            {DAYS.map((d) => (
+              <Pressable
+                key={d}
+                onPress={() => setDay(d)}
+                style={[s.dayPill, day === d && s.dayPillActive]}
+              >
+                <Text style={[s.dayText, day === d && s.dayTextActive]}>
+                  {d}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          <View style={s.dateRow}>
             <Ionicons name="calendar-outline" size={18} color={C.inkMuted} />
-            <Text style={s.dateText}>{formatDate(date)}</Text>
-          </Pressable>
-
-          {showPicker && (
-            <DateTimePicker
-              value={date}
-              mode="date"
-              display={Platform.OS === "ios" ? "inline" : "default"}
-              minimumDate={new Date()}
-              onChange={onPickerChange}
-              themeVariant="dark"
-            />
-          )}
-
-          {Platform.OS === "ios" && showPicker && (
-            <Pressable style={s.doneBtn} onPress={() => setShowPicker(false)}>
-              <Text style={s.doneText}>Done</Text>
-            </Pressable>
-          )}
+            <Text style={s.dateText}>Next buy: {formatDate(upcomingDate)}</Text>
+          </View>
 
           {errorMessage && <Text style={s.error}>{errorMessage}</Text>}
 
@@ -355,6 +360,52 @@ const s = StyleSheet.create({
     fontFamily: FONT.display500,
     marginTop: 4,
   },
+
+  dayRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingVertical: 2,
+  },
+  dayPill: {
+    minWidth: 42,
+    height: 42,
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.sm,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.hairline,
+  },
+  dayPillActive: { backgroundColor: C.bone, borderColor: C.bone },
+  dayText: { color: C.inkMuted, fontSize: 14, fontFamily: FONT.mono500 },
+  dayTextActive: { color: C.buttonInk },
+
+  customIntervalBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 42,
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.sm,
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.hairline,
+    gap: 4,
+  },
+  customIntervalInput: {
+    color: C.bone,
+    fontSize: 14,
+    fontFamily: FONT.mono500,
+    minWidth: 24,
+    padding: 0,
+  },
+  customIntervalSuffix: {
+    color: C.inkMuted,
+    fontSize: 12,
+    fontFamily: FONT.display400,
+  },
+
   dateRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -367,9 +418,6 @@ const s = StyleSheet.create({
     borderColor: C.hairline,
   },
   dateText: { color: C.bone, fontSize: 15, fontFamily: FONT.mono500 },
-
-  doneBtn: { alignSelf: "flex-end", paddingVertical: 6, paddingHorizontal: 4 },
-  doneText: { color: C.bone, fontSize: 14, fontFamily: FONT.display600 },
 
   error: { color: C.clay, fontSize: 13, fontFamily: FONT.display400 },
 

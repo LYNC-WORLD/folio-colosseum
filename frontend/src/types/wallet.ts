@@ -17,6 +17,7 @@ export type TokenBalance = {
   name: string;
   symbol: string;
   imageUrl: string;
+    stockType: "USStock" | "PreIPO";
 };
 
 export type WalletBalance = {

@@ -12,8 +12,10 @@ import {
   sellStock,
   type TradeRequest,
   type TradeSide,
-  RecurringBuyRequest,
+  cancelRecurringBuy,
+  getRecurringBuys,
   startRecurringBuy,
+  type RecurringBuyRequest,
 } from "../services/trade";
 
 export function useDebouncedValue<T>(value: T, delayMs: number) {
@@ -38,8 +40,8 @@ export function useTradeQuote(side: TradeSide, req: TradeRequest | null) {
 
     staleTime: 10_000,
     gcTime: 5 * 60_000,
-    placeholderData: keepPreviousData, 
-    retry: false, 
+    placeholderData: keepPreviousData,
+    retry: false,
   });
 }
 
@@ -75,6 +77,25 @@ export function useSellStock() {
   });
 }
 
+export function useRecurringBuys() {
+  const { idToken } = useAuth();
+
+  const query = useQuery({
+    queryKey: ["recurring-buys"],
+    queryFn: () => getRecurringBuys(idToken as string),
+    select: (res) => res.data,
+    enabled: !!idToken,
+    refetchInterval: 30_000,
+  });
+
+  return {
+    recurringBuys: query.data ?? [],
+    loading: query.isPending,
+    error: query.error instanceof Error ? query.error.message : null,
+    reload: query.refetch,
+  };
+}
+
 export function useStartRecurringBuy() {
   const { idToken } = useAuth();
   const queryClient = useQueryClient();
@@ -83,7 +104,22 @@ export function useStartRecurringBuy() {
     mutationFn: (req: RecurringBuyRequest) =>
       startRecurringBuy(req, idToken as string),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recurring-buys"] });
       queryClient.invalidateQueries({ queryKey: ["walletBalance"] });
+    },
+  });
+}
+
+export function useCancelRecurringBuy() {
+  const { idToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (recurringId: string) =>
+      cancelRecurringBuy(recurringId, idToken as string),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recurring-buys"] });
+      queryClient.invalidateQueries({ queryKey: ["stock"] });
     },
   });
 }

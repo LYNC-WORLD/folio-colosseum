@@ -3,11 +3,9 @@ import {
   ActivityIndicator,
   Image,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,7 +35,8 @@ export function HomeScreen() {
   const { user } = useAuth();
   const navigation =
     useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
-  const { stocks, loading, error } = useStocks();
+  const { stocks, loading, error } = useStocks("us-stock");
+  const { stocks: preIpoStocks, loading: preIpoLoading } = useStocks("pre-ipo");
   const [profile, setProfile] = useState<OnboardingProfile | null>(null);
   const { usdValue, loading: walletLoading, error: walletError } = useWallet();
 
@@ -49,8 +48,6 @@ export function HomeScreen() {
 
   const popular = stocks.slice(0, 4);
   const picks = stocks.length > 4 ? stocks.slice(4, 7) : stocks.slice(0, 3);
-
-  console.log("HomeScreen render", { profile });
 
   return (
     <SafeScreen>
@@ -80,20 +77,6 @@ export function HomeScreen() {
             )}
           </View>
         </View>
-
-        {/* Search */}
-        {/* <View style={s.searchBar}>
-          <Ionicons name="search" size={18} color={C.inkMuted} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={() => navigation.navigate("Stocks")}
-            placeholder="Search NVDA, SpaceX, gold…"
-            placeholderTextColor={C.inkMuted}
-            style={s.searchInput}
-            returnKeyType="search"
-          />
-        </View> */}
 
         {/* Popular right now */}
         <View style={s.sectionHeaderRow}>
@@ -171,7 +154,9 @@ export function HomeScreen() {
             </View>
             <Text style={s.collectionName}>Pre-IPO</Text>
             <Text style={s.collectionNote}>Private names, tokenized</Text>
-            <Text style={s.collectionCount}>Explore</Text>
+            <Text style={s.collectionCount}>
+              {preIpoLoading ? "…" : `${preIpoStocks.length} assets`}
+            </Text>
           </Pressable>
         </View>
 
@@ -227,6 +212,7 @@ function PopularCard({
       onPress={() =>
         navigation.navigate("StockDetail", {
           symbol: stock.symbol,
+          category: "us-stock",
         })
       }
       style={s.popularCard}
@@ -242,7 +228,7 @@ function PopularCard({
             <Text
               style={{ fontFamily: FONT.mono400, fontSize: 13, color: C.bone }}
             >
-              {stock.symbol.charAt(0).toUpperCase()}
+              {stock?.symbol?.charAt(0).toUpperCase()}
             </Text>
           )}
         </View>
@@ -266,7 +252,6 @@ function PopularCard({
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   container: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 32 },
-
   headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   greeting: { fontFamily: FONT.display400, fontSize: 13, color: C.inkMuted },
   name: {
@@ -288,26 +273,6 @@ const s = StyleSheet.create({
   },
   balanceDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.jade },
   balanceText: { fontFamily: FONT.mono400, fontSize: 14, color: C.bone },
-
-  searchBar: {
-    marginTop: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    height: 48,
-    paddingHorizontal: 14,
-    borderRadius: RADIUS.md,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.hairline,
-  },
-  searchInput: {
-    flex: 1,
-    fontFamily: FONT.display400,
-    fontSize: 15,
-    color: C.bone,
-  },
-
   sectionHeaderRow: {
     marginTop: 28,
     flexDirection: "row",
@@ -322,7 +287,6 @@ const s = StyleSheet.create({
     color: C.inkMuted,
   },
   sectionRule: { flexGrow: 1, height: 1, backgroundColor: C.hairline },
-
   errorText: {
     marginTop: 14,
     fontFamily: FONT.display400,
@@ -335,7 +299,6 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: C.inkMuted,
   },
-
   popularRow: { marginTop: 14, gap: 12, paddingRight: 4 },
   popularCard: {
     width: 150,
@@ -355,11 +318,7 @@ const s = StyleSheet.create({
     borderColor: C.hairline,
     alignItems: "center",
     justifyContent: "center",
-  },
-  popularBadgeLabel: {
-    fontFamily: FONT.mono500,
-    fontSize: 12,
-    color: C.inkSecondary,
+    overflow: "hidden",
   },
   popularTicker: {
     fontFamily: FONT.mono400,
@@ -380,7 +339,6 @@ const s = StyleSheet.create({
     color: C.bone,
   },
   popularFooter: { marginTop: 8, alignItems: "flex-end" },
-
   collectionsGrid: { marginTop: 14, flexDirection: "row", gap: 12 },
   collectionTile: {
     flex: 1,
@@ -419,7 +377,6 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: C.inkSecondary,
   },
-
   picksHeader: { marginTop: 28, gap: 8 },
   picksEyebrow: {
     fontFamily: FONT.display600,
@@ -428,7 +385,6 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
     color: C.bone,
   },
-
   picksList: {
     marginTop: 12,
     borderRadius: RADIUS.lg,

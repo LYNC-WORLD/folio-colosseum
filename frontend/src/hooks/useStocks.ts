@@ -1,11 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { getStocks } from "../services";
+import { getStocks, type StockCategory } from "../services";
+import { useAuth } from "../context";
 
-export function useStocks() {
+export function useStocks(category: StockCategory) {
+  const { idToken } = useAuth();
+
   const query = useQuery({
-    queryKey: ["stocks"],
-    queryFn: () => getStocks(),
+    queryKey: ["stocks", category],
+    queryFn: () => getStocks(category, idToken as string),
     select: (res) => res.data,
+    enabled: !!idToken,
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
