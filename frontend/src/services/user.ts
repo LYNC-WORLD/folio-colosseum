@@ -1,3 +1,4 @@
+import { Stock } from "../types";
 import { request } from "./api/client";
 
 export type UserTransaction = {
@@ -22,6 +23,7 @@ export type RecurringBuyAsset = {
   stockAmount: string | null;
   buyDate: string;
   isActive: boolean;
+  stock: Stock;
 };
 
 export type UserTransactionsResponse = {
