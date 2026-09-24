@@ -18,7 +18,7 @@ import { StocksStackParamList } from "../navigation/types";
 import { useStockDetail } from "../hooks/useStockDetail";
 import { MOCK_DETAIL } from "../data/mockStockDetail";
 import { C, RADIUS, FONT } from "../theme";
-import { BuySheet } from "../components/BuySheet";
+import { PriceChart, BuySheet, type ChartChange } from "../components";
 
 function formatPrice(n: number) {
   return n.toLocaleString(undefined, {
@@ -36,6 +36,7 @@ export function StockDetail() {
 
   const [period, setPeriod] =
     useState<(typeof MOCK_DETAIL.periods)[number]>("1Y");
+  const [change, setChange] = useState<ChartChange | null>(null);
   const [buyOpen, setBuyOpen] = useState(false);
 
   if (loading) {
@@ -56,10 +57,10 @@ export function StockDetail() {
       </View>
     );
   }
-
   const price = Number(stock.price);
-  const positive = MOCK_DETAIL.changePct >= 0;
-  // const estUnits = amount / price;
+  const changeAbs = change?.changeAbs ?? 0;
+  const changePct = change?.changePct ?? 0;
+  const positive = changeAbs >= 0;
 
   return (
     <View style={[s.safe, { paddingTop: insets.top }]}>
@@ -101,32 +102,7 @@ export function StockDetail() {
           <Text style={s.periodLabel}> {MOCK_DETAIL.periodLabel}</Text>
         </View>
 
-        {/* No historical price endpoint yet — static chart placeholder */}
-        <View style={s.chartBox}>
-          <View style={s.chartTooltip}>
-            <Text style={s.chartTooltipDate}>
-              {MOCK_DETAIL.chartPoint.date}
-            </Text>
-            <Text style={s.chartTooltipPrice}>
-              {formatPrice(MOCK_DETAIL.chartPoint.price)}
-            </Text>
-          </View>
-          <Text style={s.chartPlaceholder}>Chart data coming soon</Text>
-        </View>
-
-        <View style={s.periodTabs}>
-          {MOCK_DETAIL.periods.map((p) => (
-            <Pressable
-              key={p}
-              onPress={() => setPeriod(p)}
-              style={[s.periodPill, period === p && s.periodPillActive]}
-            >
-              <Text style={[s.periodText, period === p && s.periodTextActive]}>
-                {p}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <PriceChart mint={stock.tokenAddress} onChange={setChange} />
 
         <View style={s.banner}>
           <View style={s.bannerIcon}>
