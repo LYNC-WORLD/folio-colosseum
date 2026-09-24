@@ -62,6 +62,66 @@ export async function updateStockPrices(): Promise<void> {
   }
 }
 
+export async function updateDailyOpenPrices(): Promise<void> {
+  try {
+    const stocks = await prisma.stocks.findMany({
+      select: {
+        tokenAddress: true,
+        symbol: true,
+        name: true,
+      },
+    });
+
+    console.log(`[DailyOpenPrice] Updating ${stocks.length} stocks...`);
+
+    for (const stock of stocks) {
+      try {
+        const url = `${XSTOCKS_API}/public/assets/${encodeURIComponent(
+          stock.symbol,
+        )}/price-data`;
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          console.error(
+            `[DailyOpenPrice] Failed to fetch ${stock.symbol}: ${response.status}`,
+          );
+          continue;
+        }
+
+        const data = (await response.json()) as XStocksPriceResponse;
+
+        if (data.quote === undefined || data.quote === null) {
+          console.error(
+            `[DailyOpenPrice] No quote returned for ${stock.symbol}`,
+          );
+          continue;
+        }
+
+        await prisma.stocks.update({
+          where: {
+            tokenAddress: stock.tokenAddress,
+          },
+          data: {
+            marketOpenPrice: String(data.quote),
+          },
+        });
+
+        console.log(`[DailyOpenPrice] ${stock.symbol} -> ${data.quote}`);
+      } catch (error) {
+        console.error(
+          `[DailyOpenPrice] Error updating ${stock.symbol}:`,
+          error,
+        );
+      }
+    }
+
+    console.log("[DailyOpenPrice] Update completed");
+  } catch (error) {
+    console.error("[DailyOpenPrice] Cron failed:", error);
+  }
+}
+
 // (async () => {
 //   try {
 //     const data = await updateStockPrices();
