@@ -29,19 +29,11 @@ const NEXT_SORT: Record<SortMode, SortMode> = {
   name: "priceDesc",
 };
 
-function formatPrice(n: number) {
-  return n.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  });
-}
-// used only if you re-add a price-formatted element outside AssetRow later
-
 export function StocksScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<StocksStackParamList, "Stocks">>();
-  const { stocks, loading, refreshing, error, refresh, reload } = useStocks();
+  const { stocks, loading, refreshing, error, refresh, reload } =
+    useStocks("us-stock");
   const [sort, setSort] = useState<SortMode>("priceDesc");
 
   const rows = useMemo(() => {
@@ -60,9 +52,7 @@ export function StocksScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => {
-              refresh();
-            }}
+            onRefresh={() => refresh()}
             tintColor={C.bone}
           />
         }
@@ -115,7 +105,10 @@ export function StocksScreen() {
                   price={Number(item.price)}
                   imageUrl={item.imageUrl}
                   onPress={() =>
-                    navigation.navigate("StockDetail", { symbol: item.symbol })
+                    navigation.navigate("StockDetail", {
+                      symbol: item.symbol,
+                      category: "us-stock",
+                    })
                   }
                 />
               </View>
@@ -144,14 +137,7 @@ export function StocksScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   container: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
-
   topRow: { flexDirection: "row", alignItems: "center" },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   sortBtn: {
     height: 40,
     paddingHorizontal: 16,
@@ -167,7 +153,6 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: C.inkSecondary,
   },
-
   h1: {
     marginTop: 8,
     fontFamily: FONT.display800,
@@ -183,7 +168,6 @@ const s = StyleSheet.create({
     lineHeight: 21,
     color: C.inkSecondary,
   },
-
   columnHeaderRow: {
     marginTop: 22,
     flexDirection: "row",
@@ -197,11 +181,9 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
     color: C.inkMuted,
   },
-
   errorBox: { marginTop: 12, gap: 4 },
   errorText: { fontFamily: FONT.display400, fontSize: 13, color: C.clay },
   retryText: { fontFamily: FONT.display600, fontSize: 13, color: C.bone },
-
   list: {
     marginTop: 10,
     borderRadius: RADIUS.md,
@@ -210,7 +192,6 @@ const s = StyleSheet.create({
     overflow: "hidden",
   },
   rowDivider: { borderTopWidth: 1, borderTopColor: C.hairline },
-
   emptyBox: {
     marginTop: 10,
     padding: 24,
@@ -221,7 +202,6 @@ const s = StyleSheet.create({
     backgroundColor: C.card,
   },
   emptyText: { fontFamily: FONT.display400, fontSize: 13, color: C.inkMuted },
-
   infoCard: {
     marginTop: 18,
     padding: 16,

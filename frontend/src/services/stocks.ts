@@ -1,7 +1,16 @@
 import { StockDetailResponse, StocksResponse } from "../types";
 import { request } from "./api/client";
 
-export const getStocks = () => request<StocksResponse>("/api/stocks/us-stock/");
+export type StockCategory = "us-stock" | "pre-ipo";
 
-export const getStockBySymbol = (symbol: string) =>
-  request<StockDetailResponse>(`/api/stocks/us-stock/${symbol}`);
+export const getStocks = (category: StockCategory, idToken: string) =>
+  request<StocksResponse>(`/api/stocks/${category}`, { token: idToken });
+
+export const getStockBySymbol = (
+  category: StockCategory,
+  symbol: string,
+  idToken: string,
+) =>
+  request<StockDetailResponse>(`/api/stocks/${category}/${symbol}`, {
+    token: idToken,
+  });

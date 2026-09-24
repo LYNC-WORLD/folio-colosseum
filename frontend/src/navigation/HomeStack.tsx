@@ -11,9 +11,11 @@ export type HomeStackParamList = {
   HomeMain: undefined;
   Stocks: undefined;
   PreIPO: undefined;
-  StockDetail: { symbol: string };
+  StockDetail: {
+    symbol: string;
+    category: "us-stock" | "pre-ipo";
+  };
 };
-
 const Stack = createNativeStackNavigator<HomeStackParamList>();
 
 export function HomeStack() {

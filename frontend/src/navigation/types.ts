@@ -1,6 +1,15 @@
+export type StockCategory = "us-stock" | "pre-ipo";
+
 export type StocksStackParamList = {
   Stocks: undefined;
-  StockDetail: { symbol: string };
+  StockDetail: { symbol: string; category: StockCategory };
+};
+
+export type HomeStackParamList = {
+  Home: undefined;
+  Stocks: undefined;
+  PreIPO: undefined;
+  StockDetail: { symbol: string; category: StockCategory };
 };
 
 export type TabParamList = {
@@ -8,3 +17,4 @@ export type TabParamList = {
   PreIPO: undefined;
   Profile: undefined;
 };
+

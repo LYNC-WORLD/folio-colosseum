@@ -1,25 +1,27 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
-  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, type RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { StocksStackParamList } from "../navigation/types";
 import { useStockDetail } from "../hooks/useStockDetail";
+import { useCancelRecurringBuy } from "../hooks/useTrade";
 import { MOCK_DETAIL } from "../data/mockStockDetail";
 import { C, RADIUS, FONT } from "../theme";
 import {
   PriceChart,
   BuySheet,
-  type ChartChange,
   RecurringBuySheet,
+  type ChartChange,
 } from "../components";
 import { SellSheet } from "../components/SellSheet";
 
@@ -31,15 +33,64 @@ function formatPrice(n: number) {
   });
 }
 
+function formatUsd(n: number) {
+  return n.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatUnits(n: number) {
+  return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function timeAgo(iso: string) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function maskUserId(id: string) {
+  // DIDs like "did:privy:xxxxxxxxxxxxxxxxxxxxxxxxx" — show a short readable tail
+  const tail = id.split(":").pop() ?? id;
+  return tail.length > 10 ? `${tail.slice(0, 4)}…${tail.slice(-4)}` : tail;
+}
+
 export function StockDetail() {
   const insets = useSafeAreaInsets();
   const { params } = useRoute<RouteProp<StocksStackParamList, "StockDetail">>();
-  const { stock, loading, error, reload } = useStockDetail(params.symbol);
+  const {
+    stock,
+    investment,
+    recurringBuy,
+    latestBuys,
+    loading,
+    error,
+    reload,
+  } = useStockDetail(params.category, params.symbol);
 
   const [change, setChange] = useState<ChartChange | null>(null);
   const [buyOpen, setBuyOpen] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+
+  const cancelRecurring = useCancelRecurringBuy();
 
   if (loading) {
     return (
@@ -59,9 +110,26 @@ export function StockDetail() {
       </View>
     );
   }
+
   const price = Number(stock.price);
   const changeAbs = change?.changeAbs ?? 0;
   const positive = changeAbs >= 0;
+
+  const activeRecurring = recurringBuy?.hasRecurringBuy
+    ? recurringBuy.data.find((r) => r.isActive)
+    : undefined;
+
+  const holding = investment?.hasInvestment ? investment.data[0] : undefined;
+
+  const handleConfirmCancel = async () => {
+    if (!activeRecurring) return;
+    try {
+      await cancelRecurring.mutateAsync(activeRecurring.id);
+      setCancelConfirmOpen(false);
+    } catch {
+      // error surfaces via cancelRecurring.error below the confirm buttons
+    }
+  };
 
   return (
     <View style={[s.safe]}>
@@ -72,7 +140,7 @@ export function StockDetail() {
         <View style={s.header}>
           <View style={s.icon}>
             {stock.imageUrl ? (
-              <Image source={{ uri: stock.imageUrl }} style={s.bannerIcon} />
+              <Image source={{ uri: stock.imageUrl }} style={s.iconImage} />
             ) : (
               <Text style={s.iconText}>{stock.symbol.charAt(0)}</Text>
             )}
@@ -96,17 +164,75 @@ export function StockDetail() {
 
         <PriceChart mint={stock.tokenAddress} onChange={setChange} />
 
-        <View style={s.banner}>
-          <View style={s.bannerIcon}>
-            <Ionicons name="trending-up" size={16} color={C.jade} />
+        {/* Your investment */}
+        {holding && (
+          <View style={s.card}>
+            <View style={s.cardHeaderRow}>
+              <Text style={s.cardTitle}>Your investment</Text>
+            </View>
+            <View style={s.cardRow}>
+              <View>
+                <Text style={s.cardLabel}>You own</Text>
+                <Text style={s.cardValue}>
+                  {formatUnits(holding.stockAmount)} {stock.symbol}
+                </Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={s.cardLabel}>Invested</Text>
+                <Text style={s.cardValue}>
+                  {formatUsd(holding.investmesntAmount)}
+                </Text>
+              </View>
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.bannerLabel}>{MOCK_DETAIL.banner.label}</Text>
-            <Text style={s.bannerSub}>{MOCK_DETAIL.banner.sublabel}</Text>
-          </View>
-        </View>
+        )}
 
-        {/* Stats below aren't in the API yet — static placeholders */}
+        {/* Recurring buy */}
+        {/* Recurring buy */}
+        {activeRecurring && (
+          <View style={s.card}>
+            <View style={s.cardHeaderRow}>
+              <View style={s.cardTitleRow}>
+                <View style={s.liveDot} />
+                <Text style={s.cardTitle}>Recurring buy</Text>
+              </View>
+              <Pressable
+                hitSlop={10}
+                onPress={() => setCancelConfirmOpen(true)}
+                style={s.cardCloseBtn}
+              >
+                <Ionicons name="close" size={16} color={C.inkMuted} />
+              </Pressable>
+            </View>
+
+            <View style={s.recurringAmountRow}>
+              <Text style={s.recurringAmount}>
+                {activeRecurring.usdcAmount
+                  ? formatUsd(Number(activeRecurring.usdcAmount))
+                  : `${activeRecurring.stockAmount} ${stock.symbol}`}
+              </Text>
+              <View style={s.cadencePill}>
+                <Ionicons name="repeat" size={11} color={C.inkMuted} />
+                <Text style={s.cadenceText}>Monthly</Text>
+              </View>
+            </View>
+
+            <View style={s.cardRow}>
+              <View style={s.nextBuyRow}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color={C.inkMuted}
+                />
+                <Text style={s.nextBuyText}>
+                  Next buy {formatDate(activeRecurring.buyDate)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Stats — still static, no source yet */}
         <View style={s.statsGrid}>
           {chunkPairs(MOCK_DETAIL.stats).map((row, rowIndex, rows) => (
             <View
@@ -130,32 +256,44 @@ export function StockDetail() {
         </View>
 
         <View style={s.sectionHeaderRow}>
-          <Text style={s.sectionHeading}>Who is buying</Text>
+          <Text style={s.sectionHeading}>Recent activity</Text>
           <View style={s.sectionRule} />
-          <Text style={s.sectionAside}>wallets you follow</Text>
         </View>
-        <View style={s.buyersBox}>
-          {MOCK_DETAIL.buyers.map((b, i) => (
-            <View
-              key={b.handle}
-              style={[
-                s.buyerRow,
-                i === 0 && s.buyerRowFirst,
-                i === MOCK_DETAIL.buyers.length - 1 && s.buyerRowLast,
-              ]}
-            >
-              <View style={s.buyerAvatar} />
-              <View style={{ flex: 1 }}>
-                <Text style={s.buyerHandle}>{b.handle}</Text>
-                <Text style={s.buyerDetail}>{b.detail}</Text>
+        {latestBuys.length === 0 ? (
+          <Text style={[s.emptyText]}>No recent trades yet</Text>
+        ) : (
+          <View style={s.buyersBox}>
+            {latestBuys.map((b, i) => (
+              <View
+                key={b.id}
+                style={[
+                  s.buyerRow,
+                  i === 0 && s.buyerRowFirst,
+                  i === latestBuys.length - 1 && s.buyerRowLast,
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={s.buyerHandle}>{maskUserId(b.userId)}</Text>
+                  <Text style={s.buyerDetail}>
+                    {b.tradeType === "BUY" ? "Bought" : "Sold"}{" "}
+                    {formatUsd(b.investmentAmount)} · {timeAgo(b.createdAt)}
+                  </Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text
+                    style={[
+                      s.buyerPnl,
+                      { color: b.tradeType === "BUY" ? C.jade : C.clay },
+                    ]}
+                  >
+                    {formatPrice(b.stockPrice)}
+                  </Text>
+                  <Text style={s.buyerPnlLabel}>at trade</Text>
+                </View>
               </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={s.buyerPnl}>{b.pnl}</Text>
-                <Text style={s.buyerPnlLabel}>90d PnL</Text>
-              </View>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
 
       <View style={s.footer}>
@@ -169,12 +307,14 @@ export function StockDetail() {
           </Pressable>
         </View>
 
-        <Pressable
-          style={s.recurringBuyBtn}
-          onPress={() => setRecurringOpen(true)}
-        >
-          <Text style={s.buyText}>Recurring Buy {stock.symbol}</Text>
-        </Pressable>
+        {!activeRecurring && (
+          <Pressable
+            style={s.recurringBuyBtn}
+            onPress={() => setRecurringOpen(true)}
+          >
+            <Text style={s.buyText}>Recurring Buy {stock.symbol}</Text>
+          </Pressable>
+        )}
       </View>
 
       {buyOpen && (
@@ -185,13 +325,11 @@ export function StockDetail() {
         />
       )}
 
-      {sellOpen && (
-        <SellSheet
-          visible={sellOpen}
-          onClose={() => setSellOpen(false)}
-          stock={stock}
-        />
-      )}
+      <SellSheet
+        visible={sellOpen}
+        onClose={() => setSellOpen(false)}
+        stock={stock}
+      />
 
       {recurringOpen && (
         <RecurringBuySheet
@@ -200,6 +338,54 @@ export function StockDetail() {
           stock={stock}
         />
       )}
+
+      <Modal
+        visible={cancelConfirmOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCancelConfirmOpen(false)}
+      >
+        <View style={s.confirmRoot}>
+          <Pressable
+            style={StyleSheetAbsoluteFill}
+            onPress={() => setCancelConfirmOpen(false)}
+          />
+          <View style={s.confirmBox}>
+            <Text style={s.confirmTitle}>Cancel recurring buy?</Text>
+            <Text style={s.confirmBody}>
+              Your recurring buy of {stock.symbol} will stop. You can always set
+              up a new one later.
+            </Text>
+
+            {cancelRecurring.error instanceof Error && (
+              <Text style={s.confirmError}>
+                {cancelRecurring.error.message}
+              </Text>
+            )}
+
+            <View style={s.confirmRow}>
+              <Pressable
+                style={s.confirmKeepBtn}
+                onPress={() => setCancelConfirmOpen(false)}
+                disabled={cancelRecurring.isPending}
+              >
+                <Text style={s.confirmKeepText}>Keep it</Text>
+              </Pressable>
+              <Pressable
+                style={s.confirmCancelBtn}
+                onPress={handleConfirmCancel}
+                disabled={cancelRecurring.isPending}
+              >
+                {cancelRecurring.isPending ? (
+                  <ActivityIndicator color={C.buttonInk} />
+                ) : (
+                  <Text style={s.confirmCancelText}>Cancel it</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -210,37 +396,23 @@ function chunkPairs<T>(arr: T[]): T[][] {
   return out;
 }
 
+const StyleSheetAbsoluteFill = {
+  position: "absolute" as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+};
+
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
   errorText: { color: C.clay, fontSize: 14, fontFamily: FONT.display400 },
   retryText: { color: C.bone, fontWeight: "600", fontFamily: FONT.display600 },
 
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: C.card,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: C.hairline,
-  },
-
   scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 24, gap: 4 },
 
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginTop: 0,
-  },
+  header: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 0 },
   icon: {
     width: 44,
     height: 44,
@@ -250,7 +422,9 @@ const s = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: C.hairline,
+    overflow: "hidden",
   },
+  iconImage: { width: "100%", height: "100%" },
   iconText: { color: C.bone, fontSize: 17, fontFamily: FONT.mono500 },
   name: { color: C.bone, fontSize: 18, fontFamily: FONT.display600 },
   subLabel: {
@@ -277,61 +451,7 @@ const s = StyleSheet.create({
   changeText: { fontSize: 14, fontFamily: FONT.mono500 },
   periodLabel: { color: C.inkMuted, fontSize: 13, fontFamily: FONT.display400 },
 
-  chartBox: {
-    height: 200,
-    marginTop: 18,
-    borderRadius: RADIUS.md,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.hairline,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  chartTooltip: {
-    position: "absolute",
-    top: 14,
-    backgroundColor: C.raised,
-    borderRadius: RADIUS.sm,
-    borderWidth: 1,
-    borderColor: "#453D37",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chartTooltipDate: {
-    color: C.inkMuted,
-    fontSize: 11,
-    fontFamily: FONT.display400,
-  },
-  chartTooltipPrice: {
-    color: C.bone,
-    fontSize: 14,
-    marginTop: 2,
-    fontFamily: FONT.mono500,
-  },
-  chartPlaceholder: {
-    color: C.inkMuted,
-    fontSize: 13,
-    fontFamily: FONT.display400,
-  },
-
-  periodTabs: { flexDirection: "row", gap: 8, marginTop: 14 },
-  periodPill: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: RADIUS.sm,
-    alignItems: "center",
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  periodPillActive: { backgroundColor: C.raised, borderColor: "#453D37" },
-  periodText: { color: C.inkMuted, fontSize: 12, fontFamily: FONT.display500 },
-  periodTextActive: { color: C.bone },
-
-  banner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+  card: {
     marginTop: 18,
     padding: 14,
     borderRadius: RADIUS.md,
@@ -339,20 +459,73 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.hairline,
   },
-  bannerIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 7,
-    backgroundColor: "#10201A",
+  cardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  cardTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.jade,
+  },
+  cardTitle: { color: C.bone, fontSize: 13, fontFamily: FONT.display600 },
+  cardCloseBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: C.raised,
     alignItems: "center",
     justifyContent: "center",
   },
-  bannerLabel: { color: C.bone, fontSize: 14, fontFamily: FONT.display600 },
-  bannerSub: {
+  cardRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
+  recurringAmountRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  recurringAmount: {
+    color: C.bone,
+    fontSize: 20,
+    fontFamily: FONT.mono500,
+    letterSpacing: -0.4,
+  },
+  cadencePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.pill,
+    backgroundColor: C.raised,
+    borderWidth: 1,
+    borderColor: C.hairline,
+  },
+  cadenceText: {
+    color: C.inkMuted,
+    fontSize: 11,
+    fontFamily: FONT.display500,
+  },
+  nextBuyRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  nextBuyText: {
     color: C.inkMuted,
     fontSize: 12,
-    marginTop: 2,
-    fontFamily: FONT.display400,
+    fontFamily: FONT.mono400,
+  },
+  cardLabel: { color: C.inkMuted, fontSize: 11, fontFamily: FONT.display400 },
+  cardValue: {
+    marginTop: 3,
+    color: C.bone,
+    fontSize: 15,
+    fontFamily: FONT.mono500,
   },
 
   statsGrid: {
@@ -366,7 +539,6 @@ const s = StyleSheet.create({
   statsRowDivider: { borderBottomWidth: 1, borderBottomColor: C.hairline },
   statCell: { flex: 1, padding: 14, gap: 4, backgroundColor: C.card },
   statCellDivider: { borderRightWidth: 1, borderRightColor: C.hairline },
-
   statLabel: { color: C.inkMuted, fontSize: 12, fontFamily: FONT.display400 },
   statValue: { color: C.bone, fontSize: 15, fontFamily: FONT.mono500 },
 
@@ -385,10 +557,11 @@ const s = StyleSheet.create({
     color: C.inkMuted,
   },
   sectionRule: { flexGrow: 1, height: 1, backgroundColor: C.hairline },
-  sectionAside: {
-    fontFamily: FONT.display400,
-    fontSize: 12,
+  emptyText: {
     color: C.inkMuted,
+    fontSize: 13,
+    fontFamily: FONT.display400,
+    textAlign: "center",
   },
 
   buyersBox: {
@@ -423,7 +596,7 @@ const s = StyleSheet.create({
     marginTop: 3,
     fontFamily: FONT.display400,
   },
-  buyerPnl: { color: C.jade, fontSize: 13, fontFamily: FONT.mono500 },
+  buyerPnl: { fontSize: 13, fontFamily: FONT.mono500 },
   buyerPnlLabel: {
     color: C.inkMuted,
     fontSize: 11,
@@ -431,7 +604,6 @@ const s = StyleSheet.create({
     fontFamily: FONT.display400,
   },
 
-  // ---- footer: the part you asked about ----
   footer: {
     gap: 10,
     paddingHorizontal: 20,
@@ -441,12 +613,7 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#1F1B19",
   },
-
-  footerRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-
+  footerRow: { flexDirection: "row", gap: 10 },
   recurringBuyBtn: {
     width: "100%",
     height: 56,
@@ -457,7 +624,6 @@ const s = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
-
   sellBtn: {
     height: 56,
     paddingHorizontal: 20,
@@ -480,10 +646,54 @@ const s = StyleSheet.create({
     gap: 8,
   },
   buyText: { color: C.buttonInk, fontSize: 16, fontFamily: FONT.display600 },
-  buyEst: {
+
+  // Cancel confirm popup
+  confirmRoot: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 32,
+  },
+  confirmBox: {
+    width: "100%",
+    padding: 20,
+    borderRadius: RADIUS.lg,
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.hairline,
+    gap: 12,
+  },
+  confirmTitle: { color: C.bone, fontSize: 16, fontFamily: FONT.display600 },
+  confirmBody: {
+    color: C.inkMuted,
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: FONT.display400,
+  },
+  confirmError: { color: C.clay, fontSize: 12, fontFamily: FONT.display400 },
+  confirmRow: { flexDirection: "row", gap: 10, marginTop: 4 },
+  confirmKeepBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: C.hairline,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmKeepText: { color: C.bone, fontSize: 14, fontFamily: FONT.display600 },
+  confirmCancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: RADIUS.md,
+    backgroundColor: C.clay,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmCancelText: {
     color: C.buttonInk,
-    fontSize: 12,
-    fontFamily: FONT.mono400,
-    opacity: 0.65,
+    fontSize: 14,
+    fontFamily: FONT.display600,
   },
 });
