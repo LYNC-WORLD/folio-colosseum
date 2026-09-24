@@ -150,7 +150,7 @@ export class TradeService {
           userId: userId,
         },
       });
-      return { responce };
+      return { responce: responce, status: result };
     } catch (error) {
       console.error(error);
       return;
@@ -190,7 +190,6 @@ export class TradeService {
           stockAddress: stockAddress,
         },
       });
-      // TODO: Add success verification
       if (!currentInvestedInStock) {
         await prisma.investment.create({
           data: {
@@ -225,7 +224,7 @@ export class TradeService {
           userId: userId,
         },
       });
-      return responce;
+      return {responce: responce, status: result};
     } catch (error) {
       console.error(error);
       return;
