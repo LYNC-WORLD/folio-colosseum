@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -11,6 +12,8 @@ import { C } from "../theme";
 import { SafeScreen } from "../components";
 import { useAuth } from "../context";
 import { useUserRecurringBuyAssets } from "../hooks/useUserRecords";
+import { Stock } from "../types";
+import { RecurringBuyAsset } from "../services";
 
 function formatAmount(value: number | string | null | undefined) {
   if (value === null || value === undefined) {
@@ -42,17 +45,20 @@ function formatDate(value: string) {
   });
 }
 
-function RecurringBuyItem({ item }: { item: any }) {
+function RecurringBuyItem({ item }: { item: RecurringBuyAsset }) {
   return (
     <View style={s.card}>
       <View style={s.row}>
         <View style={s.left}>
           <View style={s.placeholderImage}>
-            <Text style={s.placeholderText}>$</Text>
+            <Image
+              source={{ uri: item.stock.imageUrl }}
+              style={{ width: "100%", height: "100%" }}
+            />
           </View>
 
           <View style={s.assetInfo}>
-            <Text style={s.symbol}>{item.stockAddress?.slice(0, 6)}...</Text>
+            <Text style={s.symbol}>{item.stock.symbol}</Text>
 
             <Text style={s.subtitle}>Recurring buy</Text>
           </View>
