@@ -11,6 +11,17 @@ enum Chain {
     SOLANA
 }
 
+enum StockType {
+    USStock
+    PreIPO
+    IndexFunds
+}
+
+enum TradeType {
+    BUY
+    SELL
+}
+
 enum TransactionType {
     DEPOSIT
     WITHDRAW
@@ -26,57 +37,59 @@ enum TransactionStatus {
 }
 
 model User {
-    id              String          @id @default(cuid())
-    userId          String          @unique
-    walletId        String          @unique
-    email           String          @unique
+    id              String       @id @default(cuid())
+    userId          String       @unique
+    walletId        String       @unique
+    email           String       @unique
     name            String
-    walletAddress   String          @unique
-    googleSubjectId String          @unique
-    transactions    Transaction[]
-    holdings        HoldingStocks[]
-    createdAt       DateTime        @default(now())
-    updatedAt       DateTime        @updatedAt
+    walletAddress   String       @unique
+    googleSubjectId String       @unique
+    investments     Investment[]
+    trades          Trades[]
+    createdAt       DateTime     @default(now())
+    updatedAt       DateTime     @updatedAt
 
     @@index([userId])
     @@index([walletId])
-}
-
-model Transaction {
-    id        String            @id @default(cuid())
-    userId    String
-    walletId  String
-    signature String?           @unique
-    type      TransactionType
-    status    TransactionStatus @default(PENDING)
-    amount    String
-    token     String
-    recipient String?
-    error     String?
-    user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-    createdAt DateTime          @default(now())
-    updatedAt DateTime          @updatedAt
-
-    @@index([userId])
-    @@index([walletId])
-    @@index([status])
-    @@index([createdAt])
 }
 
 model Stocks {
-    tokenAddress String @id
-    price        String
-    name         String
-    decimals     Int    @default(8)
-    symbol       String
-    imageUrl     String
+    tokenAddress    String    @id
+    price           String
+    name            String
+    decimals        Int       @default(8)
+    symbol          String
+    imageUrl        String
+    marketOpenPrice String    @default("0")
+    stockType       StockType @default(USStock)
 }
 
-model HoldingStocks {
-    id            String @id @default(cuid())
-    amount        String
-    tokenAddress  String
-    name          String
-    walletAddress String
-    user          User   @relation(fields: [walletAddress], references: [id], onDelete: Cascade)
+model Investment {
+    id                String @id @default(cuid())
+    userId            String
+    stockSymbol       String
+    stockAmount       Float
+    stockAddress      String
+    investmesntAmount Float  @default(0)
+    user              User   @relation(fields: [userId], references: [userId])
+}
+
+model Trades {
+    id               String    @id @default(cuid())
+    userId           String
+    stockAddress     String
+    stockPrice       Float
+    investmentAmount Float
+    tradeType        TradeType
+    createdAt        DateTime  @default(now()) @db.Timestamp(3)
+    user             User      @relation(fields: [userId], references: [userId])
+}
+
+model LoginDetails {
+    id               String   @id @default(cuid())
+    email            String   @unique
+    interestedStocks String[]
+    amountToPutIn    Float
+    positionHold     String
+    expectToHold     String
 }
