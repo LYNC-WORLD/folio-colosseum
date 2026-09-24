@@ -11,10 +11,15 @@ export class TradeService {
     stockAmount: number | undefined,
     usdcAmount: number | undefined,
     walletId: string,
-    userId: string,
+    stockType: string,
   ) {
     try {
-      const price = await getStockPrice(stockSymbol);
+      let price: number | undefined;
+      if (stockType == "USStock") {
+        price = await getUSStockPrice(stockSymbol);
+      } else {
+        price = Number(await getPreIPOStockPrice(stockAddress));
+      }
       if (!price) {
         return;
       }
@@ -51,9 +56,15 @@ export class TradeService {
     walletId: string,
     userId: string,
     tokenDecimal: number,
+    stockType: string,
   ) {
     try {
-      const price = await getStockPrice(stockSymbol);
+      let price: number | undefined;
+      if (stockType == "USStock") {
+        price = await getUSStockPrice(stockSymbol);
+      } else {
+        price = Number(await getPreIPOStockPrice(stockAddress));
+      }
       console.log("Price: ", price);
 
       if (!price) {
@@ -74,7 +85,7 @@ export class TradeService {
             asset_address: stockAddress,
             caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
           },
-          base_amount: String(stockAmount * (10 ** tokenDecimal)).split(".")[0],
+          base_amount: String(stockAmount * 10 ** tokenDecimal).split(".")[0],
           amount_type: "exact_input",
         });
 
@@ -93,9 +104,15 @@ export class TradeService {
     usdcAmount: number | undefined,
     walletId: string,
     userId: string,
+    stockType: string,
   ) {
     try {
-      const price = await getStockPrice(stockSymbol);
+      let price: number | undefined;
+      if (stockType == "USStock") {
+        price = await getUSStockPrice(stockSymbol);
+      } else {
+        price = Number(await getPreIPOStockPrice(stockAddress));
+      }
       if (!price) {
         return;
       }
@@ -169,9 +186,15 @@ export class TradeService {
     walletId: string,
     userId: string,
     tokenDecimal: number,
+    stockType: string,
   ) {
     try {
-      const price = await getStockPrice(stockSymbol);
+      let price: number | undefined;
+      if (stockType == "USStock") {
+        price = await getUSStockPrice(stockSymbol);
+      } else {
+        price = Number(await getPreIPOStockPrice(stockAddress));
+      }
       console.log("price: ", price);
       if (!price) {
         return;
@@ -184,7 +207,7 @@ export class TradeService {
         stockAddress,
         stockAmount,
         walletId,
-        tokenDecimal
+        tokenDecimal,
       );
       const result = await getTransectionResults(walletId, responce.id);
       if (result != "succeeded") {
@@ -304,7 +327,7 @@ async function sellStockOnChain(
         asset_address: stockAddress,
         caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
       },
-      base_amount: String(stockAmount * (10 ** tokenDecimal)).split(".")[0],
+      base_amount: String(stockAmount * 10 ** tokenDecimal).split(".")[0],
       amount_type: "exact_input",
       authorization_context: {
         authorization_private_keys: [env.PRIVY_AUTH_KEY!],
@@ -313,7 +336,7 @@ async function sellStockOnChain(
   return responce;
 }
 
-async function getStockPrice(walletSymbol: string) {
+async function getUSStockPrice(walletSymbol: string) {
   try {
     const url = `${XSTOCKS_API}/public/assets/${encodeURIComponent(
       walletSymbol,
@@ -335,7 +358,49 @@ async function getStockPrice(walletSymbol: string) {
     return;
   }
 }
+
+// Price functions
+async function getPreIPOStockPrice(
+  stockAddress: string,
+): Promise<string | null> {
+  try {
+    // Fetch the API only once
+    const response = await fetch("https://prestocks.com/api/prestocks");
+
+    if (!response.ok) {
+      throw new Error(
+        `PreStocks API error: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const stocks = (await response.json()) as PreStock[];
+
+    // Find the stock using its contract/token address
+    const stock = stocks.find((item) => item.contract_address === stockAddress);
+
+    if (!stock) {
+      console.warn(`PreIPO stock not found for address: ${stockAddress}`);
+      return null;
+    }
+
+    return String(stock.tokenPrice);
+  } catch (error) {
+    console.error("Error fetching PreIPO stock price:", error);
+    return null;
+  }
+}
 interface XStocksPriceResponse {
   quote?: number;
   [key: string]: any;
+}
+interface PreStock {
+  name: string;
+  symbol: string;
+  image: string;
+  contract_address: string;
+  markPrice: number;
+  markValuation: number;
+  tokenPrice: number;
+  impliedValuation: number;
+  supply: number;
 }

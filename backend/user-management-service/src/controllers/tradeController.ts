@@ -32,9 +32,10 @@ export class TradeController {
         });
         return;
       }
-      const stockDecimal = await prisma.stocks.findUnique({
+      const stockDetails = await prisma.stocks.findUnique({
         select: {
           decimals: true,
+          stockType: true,
         },
         where: {
           tokenAddress: body.stockAddress,
@@ -46,7 +47,7 @@ export class TradeController {
         body.stockAmount,
         body.usdcAmount,
         req.user.walletId,
-        req.user.userId,
+        stockDetails?.stockType ?? "USStock",
       );
       if (!quote) {
         res.status(404).json({
@@ -64,7 +65,7 @@ export class TradeController {
           inputUSDC: Number(quote?.input_amount) / 1000000,
           outputStocks:
             Number(quote?.est_output_amount) /
-            10 ** (stockDecimal?.decimals ?? 8),
+            10 ** (stockDetails?.decimals ?? 8),
         },
       });
       return;
@@ -99,9 +100,11 @@ export class TradeController {
         });
         return;
       }
-      const stockDecimal = await prisma.stocks.findUnique({
+
+      const stockDetails = await prisma.stocks.findUnique({
         select: {
           decimals: true,
+          stockType: true,
         },
         where: {
           tokenAddress: body.stockAddress,
@@ -114,7 +117,8 @@ export class TradeController {
         body.usdcAmount,
         req.user.walletId,
         req.user.userId,
-        stockDecimal?.decimals ?? 8,
+        stockDetails?.decimals ?? 8,
+        stockDetails?.stockType ?? "USStock",
       );
       if (!quote) {
         res.status(404).json({
@@ -131,7 +135,7 @@ export class TradeController {
           stockSymbol: body.stockSymbol,
           outputUSDC: Number(quote?.est_output_amount) / 1000000,
           inputStocks:
-            Number(quote?.input_amount) / 10 ** (stockDecimal?.decimals ?? 8),
+            Number(quote?.input_amount) / 10 ** (stockDetails?.decimals ?? 8),
         },
       });
       return;
@@ -166,6 +170,15 @@ export class TradeController {
         });
         return;
       }
+      const stockDetails = await prisma.stocks.findUnique({
+        select: {
+          decimals: true,
+          stockType: true,
+        },
+        where: {
+          tokenAddress: body.stockAddress,
+        },
+      });
       const responce = await this.tradeService.buyStock(
         body.stockAddress,
         body.stockSymbol,
@@ -173,6 +186,7 @@ export class TradeController {
         body.usdcAmount,
         req.user.walletId,
         req.user.userId,
+        stockDetails?.stockType ?? "USStock",
       );
       if (!responce) {
         res.status(404).json({
@@ -213,6 +227,8 @@ export class TradeController {
         return;
       }
       const body: getQuoteRequest = req.body;
+
+      console.log("body: ", body);
       if (
         (body.stockAmount && body.usdcAmount) ||
         (!body.stockAmount && !body.usdcAmount) ||
@@ -234,6 +250,16 @@ export class TradeController {
           tokenAddress: body.stockAddress,
         },
       });
+      console.log("stockDecimal: ", stockDecimal);
+      const stockDetails = await prisma.stocks.findUnique({
+        select: {
+          decimals: true,
+          stockType: true,
+        },
+        where: {
+          tokenAddress: body.stockAddress,
+        },
+      });
       const responce = await this.tradeService.sellStock(
         body.stockAddress,
         body.stockSymbol,
@@ -241,7 +267,8 @@ export class TradeController {
         body.usdcAmount,
         req.user.walletId,
         req.user.userId,
-        stockDecimal?.decimals ?? 8,
+        stockDetails?.decimals ?? 8,
+        stockDetails?.stockType ?? "USStock",
       );
       if (!responce) {
         res.status(404).json({

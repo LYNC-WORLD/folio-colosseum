@@ -59,6 +59,7 @@ export class UserService {
             name: stock?.name ?? null,
             symbol: stock?.symbol ?? null,
             imageUrl: stock?.imageUrl ?? null,
+            stockType: stock?.stockType ?? "USStock",
           };
         }),
       };
@@ -87,7 +88,12 @@ export class UserService {
   public async getRecurrentBuyRequest(userId: string) {
     try {
       const data = await prisma.recurringBuyRequest.findMany({
-        where: { userId: userId },
+        where: {
+          userId: userId,
+        },
+        include: {
+          stock: true,
+        },
       });
       return data;
     } catch (error) {
@@ -99,8 +105,8 @@ export class UserService {
       const data = await prisma.recurringBuyRequest.update({
         where: { id: recurringId },
         data: {
-          isActive: false
-        }
+          isActive: false,
+        },
       });
       return data;
     } catch (error) {

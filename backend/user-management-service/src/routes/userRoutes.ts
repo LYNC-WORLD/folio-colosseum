@@ -19,7 +19,7 @@ router.post(
   userController.cancelRecurringBuyRequest,
 );
 
-router.post("/login-form", authMiddleware, userController.getBalance);
+router.post("/login-form", authMiddleware, userController.setLoginFormDetails);
 
 router.get("/transactions", authMiddleware, userController.getUserTransactions);
 

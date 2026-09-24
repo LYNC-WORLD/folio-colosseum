@@ -55,14 +55,15 @@ model User {
 }
 
 model Stocks {
-    tokenAddress    String    @id
+    tokenAddress    String                @id
     price           String
     name            String
-    decimals        Int       @default(8)
+    decimals        Int                   @default(8)
     symbol          String
     imageUrl        String
-    marketOpenPrice String    @default("0")
-    stockType       StockType @default(USStock)
+    marketOpenPrice String                @default("0")
+    stockType       StockType             @default(USStock)
+    recurringBuys   RecurringBuyRequest[]
 }
 
 model Investment {
@@ -108,4 +109,5 @@ model RecurringBuyRequest {
     buyDate      String
     isActive     Boolean @default(true)
     user         User    @relation(fields: [userId], references: [userId])
+    stock        Stocks  @relation(fields: [stockAddress], references: [tokenAddress])
 }
