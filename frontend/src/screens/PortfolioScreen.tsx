@@ -294,80 +294,74 @@ export function PortfolioScreen() {
           <Text style={s.emptyText}>No recurring buys set up</Text>
         ) : (
           <View style={s.holdingsList}>
-            <View style={s.holdingsList}>
-              {sortedRecurring.map((item, i) => {
-                const isCanceling = cancelingId === item.id;
-                const typeLabel =
-                  STOCK_TYPE_LABEL[item.stock.stockType] ??
-                  item.stock.stockType;
+            {sortedRecurring.map((item, i) => {
+              const isCanceling = cancelingId === item.id;
+              const typeLabel =
+                STOCK_TYPE_LABEL[item.stock.stockType] ?? item.stock.stockType;
 
-                return (
-                  <View
-                    key={item.id}
-                    style={[
-                      s.recurringRow,
-                      i === 0 && s.rowFirst,
-                      i === sortedRecurring.length - 1 && s.rowLast,
-                      !item.isActive && s.recurringRowInactive,
-                    ]}
-                  >
-                    <View style={s.holdingBadge}>
-                      {item.stock.imageUrl ? (
-                        <Image
-                          source={{ uri: item.stock.imageUrl }}
-                          style={s.holdingImage}
-                        />
-                      ) : (
-                        <Text style={s.holdingBadgeLabel}>
-                          {item.stock.symbol.charAt(0)}
-                        </Text>
-                      )}
-                    </View>
-
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <View style={s.recurringNameRow}>
-                        <Text style={s.holdingName} numberOfLines={1}>
-                          {item.stock.name}
-                        </Text>
-                        <View style={s.typeTag}>
-                          <Text style={s.typeTagText}>{typeLabel}</Text>
-                        </View>
-                      </View>
-                      <Text style={s.holdingUnits}>
-                        {amountLabel(item)} · {formatBuyDate(item.buyDate)}
-                      </Text>
-                    </View>
-
-                    {item.isActive ? (
-                      <Pressable
-                        onPress={() => handleCancel(item)}
-                        disabled={isCanceling}
-                        style={[
-                          s.cancelBtn,
-                          isCanceling && s.cancelBtnDisabled,
-                        ]}
-                        hitSlop={8}
-                      >
-                        {isCanceling ? (
-                          <ActivityIndicator color={C.clay} size="small" />
-                        ) : (
-                          <Text style={s.cancelBtnText}>Cancel</Text>
-                        )}
-                      </Pressable>
+              return (
+                <View
+                  key={item.id}
+                  style={[
+                    s.recurringRow,
+                    i === 0 && s.rowFirst,
+                    i === sortedRecurring.length - 1 && s.rowLast,
+                    !item.isActive && s.recurringRowInactive,
+                  ]}
+                >
+                  <View style={s.holdingBadge}>
+                    {item.stock.imageUrl ? (
+                      <Image
+                        source={{ uri: item.stock.imageUrl }}
+                        style={s.holdingImage}
+                      />
                     ) : (
-                      <View style={s.cancelledPill}>
-                        <Ionicons
-                          name="close-circle-outline"
-                          size={12}
-                          color={C.inkMuted}
-                        />
-                        <Text style={s.cancelledPillText}>Cancelled</Text>
-                      </View>
+                      <Text style={s.holdingBadgeLabel}>
+                        {item.stock.symbol.charAt(0)}
+                      </Text>
                     )}
                   </View>
-                );
-              })}
-            </View>
+
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={s.recurringNameRow}>
+                      <Text style={s.holdingName} numberOfLines={1}>
+                        {item.stock.name}
+                      </Text>
+                      <View style={s.typeTag}>
+                        <Text style={s.typeTagText}>{typeLabel}</Text>
+                      </View>
+                    </View>
+                    <Text style={s.holdingUnits}>
+                      {amountLabel(item)} · {formatBuyDate(item.buyDate)}
+                    </Text>
+                  </View>
+
+                  {item.isActive ? (
+                    <Pressable
+                      onPress={() => handleCancel(item)}
+                      disabled={isCanceling}
+                      style={[s.cancelBtn, isCanceling && s.cancelBtnDisabled]}
+                      hitSlop={8}
+                    >
+                      {isCanceling ? (
+                        <ActivityIndicator color={C.clay} size="small" />
+                      ) : (
+                        <Text style={s.cancelBtnText}>Cancel</Text>
+                      )}
+                    </Pressable>
+                  ) : (
+                    <View style={s.cancelledPill}>
+                      <Ionicons
+                        name="close-circle-outline"
+                        size={12}
+                        color={C.inkMuted}
+                      />
+                      <Text style={s.cancelledPillText}>Cancelled</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
           </View>
         )}
       </ScrollView>
