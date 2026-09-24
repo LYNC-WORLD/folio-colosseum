@@ -1,10 +1,22 @@
-export type TokenBalance = {
+export type UsdcBalance = {
   balance: number;
-  rawBalance?: string;
+  rawBalance: string;
   decimals: number;
   price: string;
   symbol: string;
   name: string;
+};
+
+export type TokenBalance = {
+  tokenAccount: string;
+  mint: string;
+  balance: number;
+  decimals: number;
+  rawBalance: string;
+  price: string;
+  name: string;
+  symbol: string;
+  imageUrl: string;
 };
 
 export type WalletBalance = {
@@ -13,7 +25,7 @@ export type WalletBalance = {
     balance: number;
     lamports: number;
   };
-  usdc: TokenBalance;
+  usdc: UsdcBalance;
   tokens: TokenBalance[];
 };
 

@@ -35,14 +35,12 @@ export function useStockChart(mint: string | undefined, period: ChartPeriod) {
   // Per-period cache so flipping back to a tab is instant
   const cache = useRef(new Map<ChartPeriod, Candle[]>());
 
-  // Don't fetch until the screen has rendered and the push animation is done
   const [ready, setReady] = useState(false);
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => setReady(true));
     return () => task.cancel();
   }, []);
 
-  // New token → drop cached data
   useEffect(() => {
     cache.current.clear();
     setCandles(null);

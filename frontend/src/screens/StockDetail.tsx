@@ -64,19 +64,6 @@ export function StockDetail() {
 
   return (
     <View style={[s.safe, { paddingTop: insets.top }]}>
-      <View style={s.topBar}>
-        <Pressable style={s.iconBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={20} color={C.bone} />
-        </Pressable>
-        <View style={{ flex: 1 }} />
-        <Pressable style={s.iconBtn}>
-          <Ionicons name="bookmark-outline" size={18} color={C.inkSecondary} />
-        </Pressable>
-        <Pressable style={s.iconBtn}>
-          <Ionicons name="share-outline" size={18} color={C.inkSecondary} />
-        </Pressable>
-      </View>
-
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}

@@ -1,15 +1,17 @@
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { C, RADIUS, FONT } from "../theme";
 import { SafeScreen } from "../components";
+import { useWallet } from "../context/WalletContext";
 
 const RANGES = ["Today", "1M", "1Y", "All"] as const;
 type Range = (typeof RANGES)[number];
@@ -21,51 +23,36 @@ const MOCK_ALLOCATION = [
   { label: "Crypto", pct: 11, value: "$460", color: C.series.crypto },
 ];
 
-const MOCK_HOLDINGS = [
-  {
-    initial: "S",
-    name: "SpaceX",
-    units: "5.31 SPCX",
-    value: "$1,128",
-    pnl: "+18.4%",
-    up: true,
-  },
-  {
-    initial: "N",
-    name: "NVIDIA",
-    units: "4.02 NVDA",
-    value: "$740",
-    pnl: "+12.1%",
-    up: true,
-  },
-  {
-    initial: "B",
-    name: "Berkshire B",
-    units: "2.26 BRKB",
-    value: "$1,100",
-    pnl: "+3.2%",
-    up: true,
-  },
-  {
-    initial: "G",
-    name: "Tokenized gold",
-    units: "0.221 XAUT",
-    value: "$753",
-    pnl: "\u22120.8%",
-    up: false,
-  },
-  {
-    initial: "B",
-    name: "Bitcoin",
-    units: "0.0041 BTC",
-    value: "$460",
-    pnl: "+6.7%",
-    up: true,
-  },
-];
+function formatUsd(n: number) {
+  return n.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  });
+}
 
 export function PortfolioScreen() {
   const [range, setRange] = useState<Range>("All");
+  const { usdc, tokens, usdValue, loading, error, refresh } = useWallet();
+
+  const holdings = tokens.map((t) => ({
+    key: t.balance,
+    imageUrl: t.imageUrl,
+    initial: t.symbol.charAt(0),
+    name: t.name,
+    units: `${t.balance} ${t.symbol}`,
+    value: formatUsd(t.balance * Number(t.price)),
+  }));
+
+  if (loading) {
+    return (
+      <SafeScreen>
+        <View style={s.center}>
+          <ActivityIndicator color={C.bone} />
+        </View>
+      </SafeScreen>
+    );
+  }
 
   return (
     <SafeScreen>
@@ -89,7 +76,18 @@ export function PortfolioScreen() {
         </View>
 
         <Text style={s.totalLabel}>Total value</Text>
-        <Text style={s.totalValue}>$4,182.60</Text>
+        <Text style={s.totalValue}>{formatUsd(usdValue)}</Text>
+
+        {error && (
+          <View style={s.errorRow}>
+            <Text style={s.errorText}>{error}</Text>
+            <Pressable onPress={() => refresh()}>
+              <Text style={s.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Gain figures aren't in the wallet API yet — static until available */}
         <View style={s.gainRow}>
           <View style={s.gainPill}>
             <Ionicons name="arrow-up" size={12} color={C.jade} />
@@ -156,40 +154,48 @@ export function PortfolioScreen() {
         </View>
 
         {/* Holdings */}
-        <View style={s.sectionHeaderRow}>
+        <View style={[s.sectionHeaderRow, s.holdingsHeaderGap]}>
           <Text style={s.sectionHeading}>Holdings</Text>
           <View style={s.sectionRule} />
-          <Text style={s.sectionAside}>{MOCK_HOLDINGS.length} positions</Text>
+          <Text style={s.sectionAside}>{holdings.length} positions</Text>
         </View>
 
-        <View style={s.holdingsList}>
-          {MOCK_HOLDINGS.map((h, i) => (
-            <View
-              key={h.name}
-              style={[
-                s.holdingRow,
-                i === 0 && s.rowFirst,
-                i === MOCK_HOLDINGS.length - 1 && s.rowLast,
-              ]}
-            >
-              <View style={s.holdingBadge}>
-                <Text style={s.holdingBadgeLabel}>{h.initial}</Text>
+        {holdings.length === 0 ? (
+          <Text style={s.emptyText}>No holdings yet</Text>
+        ) : (
+          <View style={s.holdingsList}>
+            {holdings.map((h, i) => (
+              <View
+                key={h.key}
+                style={[
+                  s.holdingRow,
+                  i === 0 && s.rowFirst,
+                  i === holdings.length - 1 && s.rowLast,
+                ]}
+              >
+                <View style={s.holdingBadge}>
+                  {h.imageUrl ? (
+                    <Image
+                      source={{ uri: h.imageUrl }}
+                      style={s.holdingImage}
+                    />
+                  ) : (
+                    <Text style={s.holdingBadgeLabel}>{h.initial}</Text>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.holdingName}>{h.name}</Text>
+                  <Text style={s.holdingUnits}>{h.units}</Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={s.holdingValue}>{h.value}</Text>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.holdingName}>{h.name}</Text>
-                <Text style={s.holdingUnits}>{h.units}</Text>
-              </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={s.holdingValue}>{h.value}</Text>
-                <Text style={[s.holdingPnl, { color: h.up ? C.jade : C.clay }]}>
-                  {h.pnl}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        )}
 
-        {/* Recurring buy */}
+        {/* Recurring buy — still static, no recurring-order API yet */}
         <Pressable style={s.recurringCard}>
           <View style={s.recurringIcon}>
             <Ionicons name="refresh" size={18} color={C.bone} />
@@ -209,6 +215,7 @@ export function PortfolioScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
   container: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
 
   topRow: { flexDirection: "row", alignItems: "center" },
@@ -239,6 +246,16 @@ const s = StyleSheet.create({
     letterSpacing: -2.2,
     color: C.bone,
   },
+
+  errorRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  errorText: { fontFamily: FONT.display400, fontSize: 13, color: C.clay },
+  retryText: { fontFamily: FONT.display600, fontSize: 13, color: C.bone },
+
   gainRow: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 8 },
   gainPill: {
     flexDirection: "row",
@@ -318,6 +335,13 @@ const s = StyleSheet.create({
     color: C.bone,
   },
 
+  emptyText: {
+    marginTop: 12,
+    fontFamily: FONT.display400,
+    fontSize: 13,
+    color: C.inkMuted,
+  },
+
   holdingsList: {
     marginTop: 12,
     borderRadius: RADIUS.md,
@@ -355,7 +379,9 @@ const s = StyleSheet.create({
     color: C.inkMuted,
   },
   holdingValue: { fontFamily: FONT.mono400, fontSize: 14, color: C.bone },
-  holdingPnl: { marginTop: 3, fontFamily: FONT.mono400, fontSize: 12 },
+
+  holdingsHeaderGap: { marginTop: 24 },
+  holdingImage: { width: 24, height: 24, borderRadius: 6 },
 
   recurringCard: {
     marginTop: 18,

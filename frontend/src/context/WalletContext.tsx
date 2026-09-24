@@ -43,8 +43,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     dataUpdatedAt,
     refetch,
   } = useQuery({
-    // Scope the cache to the user so balances never leak between accounts.
-    // Replace `id` with whatever stable identifier your user object has.
     queryKey: ["walletBalance", (user as any)?.id ?? user?.email],
     queryFn: () => getWalletBalance(idToken as string),
     select: (res) => res.data,

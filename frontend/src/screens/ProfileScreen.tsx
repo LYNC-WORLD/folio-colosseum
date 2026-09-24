@@ -155,7 +155,7 @@ export function ProfileScreen() {
   const following: number = u.following ?? 0;
   const txCount: number = u.totalTrades ?? 0;
 
-  const walletProvider: string | undefined = u.walletProvider; // e.g. "Rainbow"
+  const walletProvider: string | undefined = u.walletProvider;
   const walletChain: string | undefined = u.walletChain ?? "Base";
   const walletConnectedAt = formatShortDate(u.walletConnectedAt);
 

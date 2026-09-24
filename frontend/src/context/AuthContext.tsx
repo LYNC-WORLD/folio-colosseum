@@ -37,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const authenticate = useCallback(async (g: GoogleSession) => {
+    console.log("Authenticating with Google session", g.idToken);
     const res = await loginWithGoogle(g.idToken);
     setUser(g.user);
     setSession(res);
