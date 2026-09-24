@@ -33,7 +33,7 @@ export class TradeService {
             asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
             caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
           },
-          base_amount: String(usdcAmount * 1000000),
+          base_amount: String(usdcAmount * 1000000).split(".")[0],
           amount_type: "exact_input",
         });
       return qoute;
@@ -71,7 +71,7 @@ export class TradeService {
           asset_address: stockAddress,
           caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
         },
-        base_amount: String(stockAmount * 100000000),
+        base_amount: String(stockAmount * 100000000).split(".")[0],
         amount_type: "exact_input",
       });
       const qoute = await privy
@@ -85,7 +85,7 @@ export class TradeService {
             asset_address: stockAddress,
             caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
           },
-          base_amount: String(stockAmount * 100000000),
+          base_amount: String(stockAmount * 100000000).split(".")[0],
           amount_type: "exact_input",
         });
 
@@ -263,7 +263,7 @@ async function buyStockOnChain(
         asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
       },
-      base_amount: String(usdcAmount * 1000000),
+      base_amount: String(usdcAmount * 1000000).split(".")[0],
       amount_type: "exact_input",
       authorization_context: {
         authorization_private_keys: [env.PRIVY_AUTH_KEY!],
@@ -288,7 +288,7 @@ async function sellStockOnChain(
         asset_address: stockAddress,
         caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
       },
-      base_amount: String(stockAmount * 100000000),
+      base_amount: String(stockAmount * 100000000).split(".")[0],
       amount_type: "exact_input",
       authorization_context: {
         authorization_private_keys: [env.PRIVY_AUTH_KEY!],
