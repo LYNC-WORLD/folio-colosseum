@@ -150,6 +150,14 @@ export function BuySheet({ visible, onClose, stock }: Props) {
     !quote.isError &&
     !buy.isPending;
 
+  console.log("quote:", {
+    settled,
+    isFetching: quote.isFetching,
+    isError: quote.isError,
+    data: quote.data,
+    error: quote.error,
+  });
+
   const switchMode = (next: Mode) => {
     if (next === mode) return;
     if (amount > 0 && price > 0) {

@@ -38,7 +38,6 @@ export function HomeScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
   const { stocks, loading, error } = useStocks();
-  const [query, setQuery] = useState("");
   const [profile, setProfile] = useState<OnboardingProfile | null>(null);
   const { usdValue, loading: walletLoading, error: walletError } = useWallet();
 
@@ -46,13 +45,12 @@ export function HomeScreen() {
     getOnboardingProfile().then(setProfile);
   }, []);
 
-  // Placeholder until a real portfolio balance field exists on the user —
-  // same pattern StocksScreen already uses for `balance`.
-  const balance = (user as any)?.balance ?? 100;
   const firstName = user?.name?.split(" ")[0] || "there";
 
   const popular = stocks.slice(0, 4);
   const picks = stocks.length > 4 ? stocks.slice(4, 7) : stocks.slice(0, 3);
+
+  console.log("HomeScreen render", { profile });
 
   return (
     <SafeScreen>
@@ -84,7 +82,7 @@ export function HomeScreen() {
         </View>
 
         {/* Search */}
-        <View style={s.searchBar}>
+        {/* <View style={s.searchBar}>
           <Ionicons name="search" size={18} color={C.inkMuted} />
           <TextInput
             value={query}
@@ -95,7 +93,7 @@ export function HomeScreen() {
             style={s.searchInput}
             returnKeyType="search"
           />
-        </View>
+        </View> */}
 
         {/* Popular right now */}
         <View style={s.sectionHeaderRow}>

@@ -6,19 +6,22 @@ import {
   StyleSheet,
   Text,
   View,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  useNavigation,
-  useRoute,
-  type RouteProp,
-} from "@react-navigation/native";
+import { useRoute, type RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { StocksStackParamList } from "../navigation/types";
 import { useStockDetail } from "../hooks/useStockDetail";
 import { MOCK_DETAIL } from "../data/mockStockDetail";
 import { C, RADIUS, FONT } from "../theme";
-import { PriceChart, BuySheet, type ChartChange } from "../components";
+import {
+  PriceChart,
+  BuySheet,
+  type ChartChange,
+  RecurringBuySheet,
+} from "../components";
+import { SellSheet } from "../components/SellSheet";
 
 function formatPrice(n: number) {
   return n.toLocaleString(undefined, {
@@ -30,14 +33,13 @@ function formatPrice(n: number) {
 
 export function StockDetail() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
   const { params } = useRoute<RouteProp<StocksStackParamList, "StockDetail">>();
   const { stock, loading, error, reload } = useStockDetail(params.symbol);
 
-  const [period, setPeriod] =
-    useState<(typeof MOCK_DETAIL.periods)[number]>("1Y");
   const [change, setChange] = useState<ChartChange | null>(null);
   const [buyOpen, setBuyOpen] = useState(false);
+  const [sellOpen, setSellOpen] = useState(false);
+  const [recurringOpen, setRecurringOpen] = useState(false);
 
   if (loading) {
     return (
@@ -59,18 +61,21 @@ export function StockDetail() {
   }
   const price = Number(stock.price);
   const changeAbs = change?.changeAbs ?? 0;
-  const changePct = change?.changePct ?? 0;
   const positive = changeAbs >= 0;
 
   return (
-    <View style={[s.safe, { paddingTop: insets.top }]}>
+    <View style={[s.safe]}>
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
       >
         <View style={s.header}>
           <View style={s.icon}>
-            <Text style={s.iconText}>{stock.symbol.charAt(0)}</Text>
+            {stock.imageUrl ? (
+              <Image source={{ uri: stock.imageUrl }} style={s.bannerIcon} />
+            ) : (
+              <Text style={s.iconText}>{stock.symbol.charAt(0)}</Text>
+            )}
           </View>
           <View>
             <Text style={s.name}>{stock.name}</Text>
@@ -154,18 +159,47 @@ export function StockDetail() {
       </ScrollView>
 
       <View style={s.footer}>
-        <Pressable style={s.sellBtn}>
-          <Text style={s.sellText}>Sell</Text>
-        </Pressable>
-        <Pressable style={s.buyBtn} onPress={() => setBuyOpen(true)}>
-          <Text style={s.buyText}>Buy {stock.symbol}</Text>
+        <View style={s.footerRow}>
+          <Pressable style={s.sellBtn} onPress={() => setSellOpen(true)}>
+            <Text style={s.sellText}>Sell</Text>
+          </Pressable>
+
+          <Pressable style={s.buyBtn} onPress={() => setBuyOpen(true)}>
+            <Text style={s.buyText}>Buy {stock.symbol}</Text>
+          </Pressable>
+        </View>
+
+        <Pressable
+          style={s.recurringBuyBtn}
+          onPress={() => setRecurringOpen(true)}
+        >
+          <Text style={s.buyText}>Recurring Buy {stock.symbol}</Text>
         </Pressable>
       </View>
-      <BuySheet
-        visible={buyOpen}
-        onClose={() => setBuyOpen(false)}
-        stock={stock}
-      />
+
+      {buyOpen && (
+        <BuySheet
+          visible={buyOpen}
+          onClose={() => setBuyOpen(false)}
+          stock={stock}
+        />
+      )}
+
+      {sellOpen && (
+        <SellSheet
+          visible={sellOpen}
+          onClose={() => setSellOpen(false)}
+          stock={stock}
+        />
+      )}
+
+      {recurringOpen && (
+        <RecurringBuySheet
+          visible={recurringOpen}
+          onClose={() => setRecurringOpen(false)}
+          stock={stock}
+        />
+      )}
     </View>
   );
 }
@@ -199,13 +233,13 @@ const s = StyleSheet.create({
     borderColor: C.hairline,
   },
 
-  scroll: { paddingHorizontal: 20, paddingBottom: 24, gap: 4 },
+  scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 24, gap: 4 },
 
   header: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginTop: 12,
+    marginTop: 0,
   },
   icon: {
     width: 44,
@@ -399,8 +433,6 @@ const s = StyleSheet.create({
 
   // ---- footer: the part you asked about ----
   footer: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: 10,
     paddingHorizontal: 20,
     paddingTop: 14,
@@ -409,6 +441,23 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#1F1B19",
   },
+
+  footerRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  recurringBuyBtn: {
+    width: "100%",
+    height: 56,
+    borderRadius: RADIUS.md,
+    backgroundColor: C.bone,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
   sellBtn: {
     height: 56,
     paddingHorizontal: 20,

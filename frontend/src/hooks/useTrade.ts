@@ -1,19 +1,29 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  keepPreviousData,
+} from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import {
-  buyStock,
   getTradeQuote,
+  buyStock,
+  sellStock,
   type TradeRequest,
   type TradeSide,
-} from "../services";
+  RecurringBuyRequest,
+  startRecurringBuy,
+} from "../services/trade";
 
-export function useDebouncedValue<T>(value: T, delay = 400) {
+export function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debounced, setDebounced] = useState(value);
+
   useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+
   return debounced;
 }
 
@@ -22,11 +32,14 @@ export function useTradeQuote(side: TradeSide, req: TradeRequest | null) {
 
   return useQuery({
     queryKey: ["tradeQuote", side, req],
-    queryFn: () => getTradeQuote(side, idToken as string, req!),
-    enabled: !!idToken && !!req,
+    queryFn: () => getTradeQuote(side, req as TradeRequest, idToken as string),
+    select: (res) => res.data,
+    enabled: !!req && !!idToken,
+
     staleTime: 10_000,
-    refetchInterval: 10_000, // keep the quote fresh while the sheet is open
-    retry: 1,
+    gcTime: 5 * 60_000,
+    placeholderData: keepPreviousData, 
+    retry: false, 
   });
 }
 
@@ -35,9 +48,41 @@ export function useBuyStock() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (req: TradeRequest) => buyStock(idToken as string, req),
+    mutationFn: async (req: TradeRequest) => {
+      const res = await buyStock(req, idToken as string);
+      return res.data;
+    },
     onSuccess: () => {
-      // Prefix match: refreshes the wallet everywhere (Home pill, Profile, etc.)
+      queryClient.invalidateQueries({ queryKey: ["walletBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["tradeQuote"] });
+    },
+  });
+}
+
+export function useSellStock() {
+  const { idToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (req: TradeRequest) => {
+      const res = await sellStock(req, idToken as string);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["walletBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["tradeQuote"] });
+    },
+  });
+}
+
+export function useStartRecurringBuy() {
+  const { idToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (req: RecurringBuyRequest) =>
+      startRecurringBuy(req, idToken as string),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["walletBalance"] });
     },
   });

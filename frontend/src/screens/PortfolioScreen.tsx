@@ -88,15 +88,15 @@ export function PortfolioScreen() {
         )}
 
         {/* Gain figures aren't in the wallet API yet — static until available */}
-        <View style={s.gainRow}>
+        {/* <View style={s.gainRow}>
           <View style={s.gainPill}>
             <Ionicons name="arrow-up" size={12} color={C.jade} />
             <Text style={s.gainText}>+$318.42 · 8.2%</Text>
           </View>
           <Text style={s.gainNote}>all time</Text>
-        </View>
+        </View> */}
 
-        <View style={s.rangeRow}>
+        {/* <View style={s.rangeRow}>
           {RANGES.map((r) => {
             const on = r === range;
             return (
@@ -111,7 +111,7 @@ export function PortfolioScreen() {
               </Pressable>
             );
           })}
-        </View>
+        </View> */}
 
         {/* Allocation */}
         <View style={s.card}>
@@ -195,7 +195,6 @@ export function PortfolioScreen() {
           </View>
         )}
 
-        {/* Recurring buy — still static, no recurring-order API yet */}
         <Pressable style={s.recurringCard}>
           <View style={s.recurringIcon}>
             <Ionicons name="refresh" size={18} color={C.bone} />

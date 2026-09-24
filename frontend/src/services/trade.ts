@@ -1,10 +1,7 @@
-import { ENV } from "../config";
-
-const API_URL = ENV.API_URL ?? "http://localhost:5000";
+import { request } from "./api/client";
 
 export type TradeSide = "buy" | "sell";
 
-// Exactly one of usdcAmount / stockAmount is sent
 export type TradeRequest = {
   stockAddress: string;
   stockSymbol: string;
@@ -13,49 +10,74 @@ export type TradeRequest = {
   | { stockAmount: number; usdcAmount?: undefined }
 );
 
-// ⚠️ Adjust these to match what your API actually returns
-export type TradeQuote = {
-  usdcAmount: number; // USDC you'll pay
-  stockAmount: number; // stock you'll receive
+export type TradeQuoteResponse = {
+  success: boolean;
+  message: string;
+  data: {
+    usdcAmount: number; 
+    stockAmount: number;
+  };
 };
 
-export type BuyResult = {
+export type TradeResult = {
   signature?: string;
   stockAmount?: number;
   usdcAmount?: number;
   [key: string]: unknown;
 };
 
-async function post<T>(path: string, token: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+export type TradeResultResponse = {
+  success: boolean;
+  message: string;
+  data: TradeResult;
+};
+
+export type RecurringBuyRequest = {
+  stockAddress: string;
+  usdcAmount?: string;
+  stockAmount?: string;
+  buyDate: string; 
+};
+
+export type RecurringBuyResult = {
+  id?: string;
+  stockAddress?: string;
+  usdcAmount?: string;
+  stockAmount?: string;
+  buyDate?: string;
+  [key: string]: unknown;
+};
+
+export type RecurringBuyResponse = {
+  success: boolean;
+  message: string;
+  data: RecurringBuyResult;
+};
+
+export const getTradeQuote = (side: TradeSide, req: TradeRequest, token: string) =>
+  request<TradeQuoteResponse>(`/api/trade/get-quote-${side}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body), // undefined fields are dropped automatically
+    body: req,
+    token,
   });
 
-  const json = await res.json().catch(() => null);
+export const buyStock = (req: TradeRequest, token: string) =>
+  request<TradeResultResponse>("/api/trade/stock-buy", {
+    method: "POST",
+    body: req,
+    token,
+  });
 
-  if (!res.ok) {
-    throw new Error(
-      json?.message ?? json?.error ?? `Request failed (${res.status})`,
-    );
-  }
+export const sellStock = (req: TradeRequest, token: string) =>
+  request<TradeResultResponse>("/api/trade/stock-sell", {
+    method: "POST",
+    body: req,
+    token,
+  });
 
-  // Supports both `{ data: {...} }` and a bare object
-  return (json?.data ?? json) as T;
-}
-
-export function getTradeQuote(
-  side: TradeSide,
-  token: string,
-  req: TradeRequest,
-) {
-  return post<TradeQuote>(`/api/trade/get-quote-${side}`, token, req);
-}
-
-export function buyStock(token: string, req: TradeRequest) {
-  return post<BuyResult>("/api/trade/stock-buy", token, req);
-}
+  export const startRecurringBuy = (req: RecurringBuyRequest, token: string) =>
+  request<RecurringBuyResponse>("/api/trade/start-recurring-buy", {
+    method: "POST",
+    body: req,
+    token,
+  });

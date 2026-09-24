@@ -30,7 +30,8 @@
           "iosUrlScheme": "com.googleusercontent.apps.1037438594396-a10qm1r0p4evjdnptubbj6kk7rbumpta"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {
