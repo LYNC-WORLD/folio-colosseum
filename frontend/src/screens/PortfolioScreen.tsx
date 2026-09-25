@@ -13,7 +13,7 @@
 //   ($) Cash in wallet  $440          [+] [⋯]
 //   Positions (3)            ( One-time • | Recurring )
 //   $800 in positions
-//   [All] [Stocks] [Pre-IPOs]
+//   [All] [Stocks] [Pre-IPOs] [Index funds]
 //   rows…
 //   HELD AT 4a91…f2c7 · SELF-CUSTODY
 
@@ -36,7 +36,7 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 
 import { useAuth, type OnboardingProfile } from "../context";
 import { useWallet } from "../context/WalletContext";
-import { useStocks } from "../hooks";
+import { useIndexFunds, useStocks } from "../hooks";
 import { useRecurringBuys } from "../hooks/useTrade";
 import { useUserTransactions } from "../hooks/useUserRecords";
 import { usePortfolioSeries } from "../hooks/usePortfolioSeries";
@@ -58,7 +58,9 @@ import {
   MoreSheet,
   shortAddr,
 } from "../components/folio/FolioSheets";
-import { dayChange, money } from "../lib/format";
+import { dayChange, money, pct } from "../lib/format";
+import { fundPositions, useFundLots } from "../lib/fundHoldings";
+import { toFund } from "../lib/indexFunds";
 import { dayDate } from "../lib/trade";
 import { hSelect, hTap } from "../lib/haptics";
 import Animated, { FadeIn } from "react-native-reanimated";
@@ -74,11 +76,12 @@ const RANGES: { key: string; period: ChartPeriod; label: string }[] = [
   { key: "All", period: "All", label: "all time" },
 ];
 
-type Cat = "all" | "USStock" | "PreIPO";
+type Cat = "all" | "USStock" | "PreIPO" | "index";
 const CATS: [Cat, string][] = [
   ["all", "All"],
   ["USStock", "Stocks"],
   ["PreIPO", "Pre-IPOs"],
+  ["index", "Index funds"],
 ];
 
 export function PortfolioScreen() {
@@ -108,6 +111,8 @@ export function PortfolioScreen() {
   const txs = useUserTransactions(idToken ?? undefined);
   const us = useStocks("us-stock");
   const pre = useStocks("pre-ipo");
+  const idx = useIndexFunds();
+  const fundLots = useFundLots();
 
   const [profile, setProfile] = useState<OnboardingProfile | null>(null);
   useEffect(() => {
@@ -175,6 +180,18 @@ export function PortfolioScreen() {
     (p) => cat === "all" || p.stockType === cat,
   );
 
+  // Index funds: the wallet holds the stocks themselves; which of them came
+  // from a fund buy is rebuilt from the on-device log (lib/fundHoldings).
+  const funds = useMemo(
+    () => fundPositions(fundLots, walletAddress, tokens),
+    [fundLots, walletAddress, tokens],
+  );
+  const fundMoves = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const f of idx.funds) m.set(f.id, toFund(f).change);
+    return m;
+  }, [idx.funds]);
+
   const activeRec = recurringBuys.filter((r) => r.isActive);
   const due30 = activeRec.reduce(
     (t, r) =>
@@ -207,6 +224,12 @@ export function PortfolioScreen() {
         symbol,
         category: stockType === "PreIPO" ? "pre-ipo" : "us-stock",
       },
+      initial: false,
+    });
+  const openFund = (id: string) =>
+    nav.navigate("Home", {
+      screen: "IndexFundDetail",
+      params: { id },
       initial: false,
     });
   const toAccount = () => nav.navigate("Profile");
@@ -506,7 +529,69 @@ export function PortfolioScreen() {
             entering={FadeIn.duration(160)}
             style={{ marginTop: 8 }}
           >
-            {tab === "open" ? (
+            {tab === "open" && cat === "index" ? (
+              funds.length === 0 ? (
+                <Text style={s.empty}>
+                  No index funds yet. Find one under Collections on Home.
+                </Text>
+              ) : (
+                funds.map((f, i) => {
+                  const move = fundMoves.get(f.fundId) ?? null;
+                  return (
+                    <Rise key={f.fundId} delay={i * 45} duration={400}>
+                      <PressScale
+                        scaleTo={0.985}
+                        onPress={() => {
+                          hTap();
+                          openFund(f.fundId);
+                        }}
+                        style={s.posRow}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${f.fundName} index fund, ${money(f.value)}`}
+                      >
+                        <AssetAvatar symbol={f.fundName} size={48} radius={14} />
+                        <View style={{ flex: 1, gap: 4 }}>
+                          <Text
+                            style={[TYPE.ttl, { fontSize: 16 }]}
+                            numberOfLines={1}
+                          >
+                            {f.fundName}
+                          </Text>
+                          <Text style={s.qty} numberOfLines={1}>
+                            {f.legs.map((l) => l.symbol).join(" · ")}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: "flex-end", gap: 4 }}>
+                          <Text style={s.val}>{money(f.value)}</Text>
+                          {move != null ? (
+                            <Text
+                              style={[
+                                s.chg,
+                                { color: move >= 0 ? C.mint : C.loss },
+                              ]}
+                            >
+                              <Text style={s.tri}>
+                                {move >= 0 ? "▲ " : "▼ "}
+                              </Text>
+                              {Math.abs(move).toFixed(2)}%
+                            </Text>
+                          ) : f.ret != null ? (
+                            <Text
+                              style={[
+                                s.chg,
+                                { color: f.ret >= 0 ? C.mint : C.loss },
+                              ]}
+                            >
+                              {pct(f.ret)}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </PressScale>
+                    </Rise>
+                  );
+                })
+              )
+            ) : tab === "open" ? (
               shownPositions.length === 0 ? (
                 <Text style={s.empty}>
                   {cat === "all"
@@ -566,6 +651,11 @@ export function PortfolioScreen() {
                   </Rise>
                 ))
               )
+            ) : cat === "index" ? (
+              <Text style={s.empty}>
+                Index funds are one-time buys for now. Recurring buys work on
+                single stocks and pre-IPOs.
+              </Text>
             ) : shownRec.length === 0 ? (
               <Text style={s.empty}>
                 {recurringBuys.length

@@ -50,6 +50,7 @@ import { useSheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { IndexBuyFlow } from "../components/trade/IndexBuyFlow";
 import { money, pct } from "../lib/format";
+import { fundPositions, useFundLots } from "../lib/fundHoldings";
 import { toFund, type FundHolding } from "../lib/indexFunds";
 import { cleanAmt, fmtIn } from "../lib/trade";
 import { hTap } from "../lib/haptics";
@@ -68,7 +69,12 @@ export function IndexFundDetail() {
   const raw = funds.find((f) => f.id === params.id);
   const fund = useMemo(() => (raw ? toFund(raw) : null), [raw]);
 
-  const { usdc, loading: walletLoading } = useWallet();
+  const { usdc, tokens, walletAddress, loading: walletLoading } = useWallet();
+  const lots = useFundLots();
+  const position = useMemo(
+    () => fundPositions(lots, walletAddress, tokens).find((p) => p.fundId === params.id),
+    [lots, walletAddress, tokens, params.id],
+  );
   const sheet = useSheet();
   const toast = useToast();
 
@@ -239,6 +245,33 @@ export function IndexFundDetail() {
             </View>
           </View>
         </Rise>
+
+        {position ? (
+          <Rise duration={420} delay={90}>
+            <View style={s.card}>
+              <Text style={TYPE.lbl}>YOUR POSITION</Text>
+              <View style={s.posRow}>
+                <View style={{ flex: 1, gap: 5 }}>
+                  <Text style={s.posValue}>{money(position.value)}</Text>
+                  <Text style={s.posQty} numberOfLines={1}>
+                    {position.legs.length} of {n} stocks ·{" "}
+                    {money(position.invested)} put in
+                  </Text>
+                </View>
+                {position.ret != null ? (
+                  <View style={{ alignItems: "flex-end", gap: 5 }}>
+                    <Text
+                      style={[s.fig, { color: position.ret >= 0 ? C.mint : C.loss }]}
+                    >
+                      {pct(position.ret)}
+                    </Text>
+                    <Text style={s.tinyLbl}>RETURN</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          </Rise>
+        ) : null}
 
         <Rise duration={420} delay={120} style={{ gap: 12 }}>
           <View style={s.insideHead}>
@@ -481,6 +514,16 @@ const s = StyleSheet.create({
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   legendDot: { width: 7, height: 7, borderRadius: 999 },
   legendText: { fontFamily: FONT.mono400, fontSize: 11, color: C.ink2 },
+
+  posRow: { flexDirection: "row", alignItems: "flex-end", gap: 12 },
+  posValue: {
+    fontFamily: FONT.mono400,
+    fontSize: 24,
+    letterSpacing: em(24, -0.03),
+    color: C.ink1,
+    fontVariant: ["tabular-nums"],
+  },
+  posQty: { fontFamily: FONT.mono400, fontSize: 11.5, color: C.ink3 },
 
   insideHead: { flexDirection: "row", alignItems: "center" },
   insideRow: {

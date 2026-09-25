@@ -4,8 +4,10 @@
 import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useBuyStock } from "../../hooks/useTrade";
+import { useWallet } from "../../context/WalletContext";
 import { C, FONT } from "../../theme";
 import { money } from "../../lib/format";
+import { recordFundBuy } from "../../lib/fundHoldings";
 import { splitBuy, type Fund, type Leg } from "../../lib/indexFunds";
 import { units } from "../../lib/trade";
 import { hError } from "../../lib/haptics";
@@ -29,6 +31,7 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Something went
 export function IndexBuyFlow({ fund, amount, onFinish }: Props) {
   const sheet = useSheet();
   const buy = useBuyStock();
+  const { walletAddress } = useWallet();
   const legs = useMemo(() => splitBuy(fund, amount), [fund, amount]);
 
   const [step, setStep] = useState<StepId>("confirm");
@@ -66,6 +69,22 @@ export function IndexBuyFlow({ fund, amount, onFinish }: Props) {
       }
     }
     setResults(next);
+    // log what this attempt bought so the Folio can show it as a fund position
+    recordFundBuy({
+      fundId: fund.id,
+      fundName: fund.name,
+      wallet: walletAddress ?? "",
+      at: new Date().toISOString(),
+      legs: next
+        .slice(kept.length)
+        .filter((r) => r.ok)
+        .map((r) => ({
+          mint: r.leg.holding.stock.tokenAddress,
+          symbol: r.leg.holding.stock.symbol,
+          units: r.units ?? 0,
+          usdc: r.leg.usdc,
+        })),
+    });
     sheet.setOptions({ dismissable: true });
     if (next.some((r) => !r.ok)) {
       hError();
