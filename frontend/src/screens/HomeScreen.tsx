@@ -1,425 +1,517 @@
-import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+// src/screens/HomeScreen.tsx — prototype #s-home
+//
+//   [mark] Folio                          (S)
+//   [ search ……………………… ]  Cancel          ← sticks to the top while scrolling
+//   ● AVAILABLE ANYWHERE   USDC $440        ← balance counts up
+//   POPULAR NOW     three cards
+//   COLLECTIONS     US stocks / Pre-IPOs
+//   TRENDING        top movers today
+//
+// Tapping search swaps the page for RECENT + BROWSE BY THEME, then live
+// results grouped by collection as you type.
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, { FadeIn } from "react-native-reanimated";
+import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Circle, Path } from "react-native-svg";
+import { useNavigation, useScrollToTop } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useStocks } from "../hooks";
-import type { HomeStackParamList } from "../navigation";
-import { C, FONT, RADIUS } from "../theme";
-import { OnboardingProfile, useAuth } from "../context";
-import { Stock } from "../types";
-import { getOnboardingProfile } from "../lib";
-import { SafeScreen } from "../components";
-import { useWallet } from "../context/WalletContext";
 
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
-}
+import { useStocks, useWalletBalance } from "../hooks";
+import { useCountUp } from "../hooks/useCountUp";
+import { useAuth } from "../context";
+import type { HomeStackParamList } from "../navigation/HomeStack";
+import { useTabBarSpace } from "../navigation/TabBar";
+import { C, FONT, TYPE, em } from "../theme";
+import { Badge, Chip, Mark, PressScale, Rise, Skeleton } from "../components/ui";
+import { AssetRow } from "../components/AssetRow";
+import { SearchBar } from "../components/SearchBar";
+import { useSplashDone } from "../components/SplashIntro";
+import { COLLECTIONS, THEMES, searchAssets, toAsset, type Asset } from "../lib/assets";
+import { loadRecents, saveRecents, withRecent } from "../lib/recentSearches";
+import { money, pct } from "../lib/format";
+import { hTap } from "../lib/haptics";
 
-function money(n: number) {
-  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-}
+type Nav = NativeStackNavigationProp<HomeStackParamList>;
+type Mode = "home" | "recent" | "results";
 
 export function HomeScreen() {
+  const nav = useNavigation<Nav>();
   const { user } = useAuth();
-  const navigation =
-    useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
-  const { stocks, loading, error } = useStocks("us-stock");
-  const { stocks: preIpoStocks, loading: preIpoLoading } = useStocks("pre-ipo");
-  const [profile, setProfile] = useState<OnboardingProfile | null>(null);
-  const { usdValue, loading: walletLoading, error: walletError } = useWallet();
+  const splashDone = useSplashDone();
+  const bottom = useTabBarSpace();
 
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef); // re-tap Home tab → back to top
+
+  const us = useStocks("us-stock");
+  const pre = useStocks("pre-ipo");
+  const { wallet, loading: walletLoading, error: walletError } = useWalletBalance();
+  const usdc = wallet ? wallet.usdc.balance * Number(wallet.usdc.price) : 0;
+  const shownUsdc = useCountUp(usdc);
+
+  const stocks = useMemo(() => us.stocks.map((s) => toAsset(s, "us-stock")), [us.stocks]);
+  const preIpos = useMemo(() => pre.stocks.map((s) => toAsset(s, "pre-ipo")), [pre.stocks]);
+  const all = useMemo(() => [...stocks, ...preIpos], [stocks, preIpos]);
+
+  // ---------- search ----------
+  const inputRef = useRef<TextInput>(null);
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [recents, setRecents] = useState<string[]>([]);
   useEffect(() => {
-    getOnboardingProfile().then(setProfile);
+    loadRecents().then(setRecents);
   }, []);
 
-  const firstName = user?.name?.split(" ")[0] || "there";
+  const hits = useMemo(() => searchAssets(all, query), [all, query]);
+  const mode: Mode = !searching && !query ? "home" : !query.trim() ? "recent" : "results";
 
-  const popular = stocks.slice(0, 4);
-  const picks = stocks.length > 4 ? stocks.slice(4, 7) : stocks.slice(0, 3);
+  const remember = (q: string) => {
+    const next = withRecent(recents, q);
+    setRecents(next);
+    saveRecents(next);
+  };
+  const exitSearch = () => {
+    setSearching(false);
+    setQuery("");
+    inputRef.current?.blur();
+  };
+  const fill = (q: string) => {
+    setQuery(q);
+    setSearching(true);
+    inputRef.current?.focus();
+  };
+  const openAsset = (a: Asset) => {
+    if (query.trim()) remember(query);
+    nav.navigate("StockDetail", { symbol: a.symbol, category: a.category });
+    // prototype resets search when you come back to Home; do it once the push has covered it
+    if (searching) setTimeout(exitSearch, 450);
+  };
+
+  // ---------- home content ----------
+  const popular = [stocks[0], stocks[1], preIpos[0]].filter(Boolean) as Asset[];
+  const trending = useMemo(() => {
+    const withMove = stocks.filter((a) => a.change != null);
+    if (withMove.length >= 3) return [...withMove].sort((a, b) => b.change! - a.change!).slice(0, 3);
+    return stocks.slice(2, 5);
+  }, [stocks]);
+
+  const firstInitial = (user?.name ?? "").trim().charAt(0).toUpperCase() || "·";
+  const loading = us.loading || pre.loading;
+  const refreshing = us.refreshing || pre.refreshing;
 
   return (
-    <SafeScreen>
+    <SafeAreaView style={s.safe} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={s.container}
+        ref={scrollRef}
+        stickyHeaderIndices={[1]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={[s.page, { paddingBottom: bottom }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              us.refresh();
+              pre.refresh();
+            }}
+            tintColor={C.mint}
+            colors={[C.mint]}
+            progressBackgroundColor={C.raised}
+          />
+        }
       >
-        {/* Greeting + balance */}
-        <View style={s.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.greeting}>{getGreeting()}</Text>
-            <Text style={s.name}>{firstName}</Text>
-          </View>
-          <View style={s.balancePill}>
-            <View
-              style={[
-                s.balanceDot,
-                walletError ? { backgroundColor: C.clay } : null,
-              ]}
-            />
-            {walletLoading ? (
-              <ActivityIndicator size="small" color={C.bone} />
-            ) : (
-              <Text style={s.balanceText}>
-                {walletError ? "—" : money(usdValue)}
-              </Text>
-            )}
-          </View>
-        </View>
-
-        {/* Popular right now */}
-        <View style={s.sectionHeaderRow}>
-          <Text style={s.sectionHeading}>Popular right now</Text>
-          <View style={s.sectionRule} />
-        </View>
-
-        {loading ? (
-          <ActivityIndicator style={{ marginTop: 14 }} color={C.bone} />
-        ) : error ? (
-          <Text style={s.errorText}>{error}</Text>
-        ) : popular.length === 0 ? (
-          <Text style={s.emptyText}>No assets available yet.</Text>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.popularRow}
-          >
-            {popular.map((item) => (
-              <PopularCard
-                key={item.tokenAddress}
-                stock={item}
-                navigation={navigation}
-              />
-            ))}
-          </ScrollView>
-        )}
-
-        {/* Collections */}
-        <View style={s.sectionHeaderRow}>
-          <Text style={s.sectionHeading}>Collections</Text>
-          <View style={s.sectionRule} />
-        </View>
-
-        <View style={s.collectionsGrid}>
+        {/* 0 — brand row */}
+        <View style={s.brand}>
+          <Mark height={24} />
+          <Text style={s.word}>Folio</Text>
           <Pressable
-            onPress={() => navigation.navigate("Stocks")}
-            style={s.collectionTile}
+            onPress={() => {
+              hTap();
+              nav.getParent()?.navigate("Profile" as never);
+            }}
+            style={s.avatarBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Your account"
           >
-            <View
-              style={[
-                s.collectionIcon,
-                { borderColor: C.series.usStocks + "40" },
-              ]}
-            >
-              <Ionicons
-                name="bar-chart-outline"
-                size={18}
-                color={C.series.usStocks}
-              />
+            <View style={s.avatar}>
+              <Text style={s.avatarText}>{firstInitial}</Text>
             </View>
-            <Text style={s.collectionName}>US Stocks</Text>
-            <Text style={s.collectionNote}>The full listed catalogue</Text>
-            <Text style={s.collectionCount}>
-              {loading ? "…" : `${stocks.length} assets`}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => navigation.navigate("PreIPO")}
-            style={s.collectionTile}
-          >
-            <View
-              style={[
-                s.collectionIcon,
-                { borderColor: C.series.preIpo + "40" },
-              ]}
-            >
-              <Ionicons
-                name="rocket-outline"
-                size={18}
-                color={C.series.preIpo}
-              />
-            </View>
-            <Text style={s.collectionName}>Pre-IPO</Text>
-            <Text style={s.collectionNote}>Private names, tokenized</Text>
-            <Text style={s.collectionCount}>
-              {preIpoLoading ? "…" : `${preIpoStocks.length} assets`}
-            </Text>
           </Pressable>
         </View>
 
-        {/* Personalized picks, derived from onboarding */}
-        {profile && picks.length > 0 && (
-          <>
-            <View style={s.picksHeader}>
-              <Text style={s.picksEyebrow}>
-                For {profile.title.replace(/^The /, "a ")}
-              </Text>
-              <Text style={s.sectionHeading}>{profile.tagline}</Text>
-            </View>
+        {/* 1 — sticky search */}
+        <View style={s.sticky}>
+          <SearchBar
+            ref={inputRef}
+            value={query}
+            onChangeText={setQuery}
+            active={searching}
+            onFocus={() => setSearching(true)}
+            onCancel={exitSearch}
+            onClear={() => {
+              setQuery("");
+              inputRef.current?.focus();
+            }}
+            onSubmit={() => hits[0] && openAsset(hits[0])}
+          />
+          <LinearGradient pointerEvents="none" colors={[C.ground, "rgba(10,11,14,0)"]} style={s.stickyFade} />
+        </View>
 
-            <View style={s.picksList}>
-              {picks.map((item, i) => (
-                <View
-                  key={item.tokenAddress}
-                  style={[
-                    s.pickRow,
-                    i === 0 && s.pickRowFirst,
-                    i === picks.length - 1 && s.pickRowLast,
-                  ]}
-                >
-                  <View style={s.pickBadge}>
-                    <Text style={s.pickBadgeLabel}>
-                      {item.symbol.charAt(0).toUpperCase()}
+        {/* 2 — body: one of three modes, crossfading */}
+        <Animated.View key={mode} entering={FadeIn.duration(220)} style={s.body}>
+          {mode === "home" ? (
+            <>
+              <Rise when={splashDone} duration={460}>
+                <View style={s.chips}>
+                  <Chip variant="mint" label="● AVAILABLE ANYWHERE" />
+                  <View style={s.balChip}>
+                    <Text style={s.balText}>
+                      USDC {walletLoading ? "…" : walletError ? "—" : "$" + Math.round(shownUsdc).toLocaleString("en-US")}
                     </Text>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.pickName}>{item.name}</Text>
-                    <Text style={s.pickSymbol}>{item.symbol}</Text>
-                  </View>
-                  <Text style={s.pickPrice}>{money(Number(item.price))}</Text>
                 </View>
-              ))}
+              </Rise>
+
+              <Rise when={splashDone} delay={55} duration={460} style={s.section}>
+                <Text style={TYPE.lbl}>POPULAR NOW</Text>
+                <View style={s.popGrid}>
+                  {loading && !popular.length
+                    ? [0, 1, 2].map((i) => <Skeleton key={i} height={100} radius={16} style={s.popCell} />)
+                    : popular.map((a) => <PopularCard key={a.symbol + a.category} a={a} onPress={() => openAsset(a)} />)}
+                </View>
+                {us.error ? <ErrorLine text={us.error} onRetry={us.reload} /> : null}
+              </Rise>
+
+              <Rise when={splashDone} delay={110} duration={460} style={s.section}>
+                <Text style={TYPE.lbl}>COLLECTIONS</Text>
+                <View style={s.collList}>
+                  <CollectionRow
+                    icon="stocks"
+                    title={COLLECTIONS["us-stock"].title}
+                    sub={`${COLLECTIONS["us-stock"].blurb.split(".")[0]} · ${us.loading ? "…" : stocks.length + " " + COLLECTIONS["us-stock"].countWord}`}
+                    onPress={() => nav.navigate("Stocks")}
+                  />
+                  <CollectionRow
+                    icon="preipo"
+                    title={COLLECTIONS["pre-ipo"].title}
+                    sub={`${COLLECTIONS["pre-ipo"].blurb.split(".")[0]} · ${pre.loading ? "…" : preIpos.length + " " + COLLECTIONS["pre-ipo"].countWord}`}
+                    badge="NEW"
+                    onPress={() => nav.navigate("PreIPO")}
+                  />
+                </View>
+              </Rise>
+
+              <Rise when={splashDone} delay={165} duration={460} style={s.section}>
+                <Text style={TYPE.lbl}>TRENDING</Text>
+                <View>
+                  {loading && !trending.length
+                    ? [0, 1, 2].map((i) => <Skeleton key={i} height={22} style={{ marginVertical: 16 }} />)
+                    : trending.map((a, i) => (
+                        <TrendRow key={a.symbol} a={a} last={i === trending.length - 1} onPress={() => openAsset(a)} />
+                      ))}
+                </View>
+              </Rise>
+            </>
+          ) : mode === "recent" ? (
+            <View style={s.section}>
+              <View style={s.recentHead}>
+                <Text style={[TYPE.lbl, { flex: 1 }]}>RECENT</Text>
+                {recents.length ? (
+                  <Pressable
+                    onPress={() => {
+                      setRecents([]);
+                      saveRecents([]);
+                    }}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                  >
+                    <Text style={s.clearAll}>Clear</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {recents.length ? (
+                <View style={s.chipWrap}>
+                  {recents.map((r) => (
+                    <Chip key={r} label={r} icon={<ClockIcon />} onPress={() => fill(r)} />
+                  ))}
+                </View>
+              ) : (
+                <Text style={TYPE.sub}>Nothing yet. Search a ticker, a company or a theme.</Text>
+              )}
+              <Text style={[TYPE.lbl, { marginTop: 8 }]}>BROWSE BY THEME</Text>
+              <View style={s.chipWrap}>
+                {Object.keys(THEMES).map((t) => (
+                  <Chip key={t} label={t} onPress={() => fill(t)} />
+                ))}
+              </View>
             </View>
-          </>
-        )}
+          ) : (
+            <Results query={query} hits={hits} loading={loading} onOpen={openAsset} onFill={fill} suggestions={all} />
+          )}
+        </Animated.View>
       </ScrollView>
-    </SafeScreen>
+    </SafeAreaView>
   );
 }
 
-function PopularCard({
-  stock,
-  navigation,
+// ---------- pieces ----------
+
+function PopularCard({ a, onPress }: { a: Asset; onPress: () => void }) {
+  return (
+    <PressScale
+      scaleTo={0.96}
+      onPress={() => {
+        hTap();
+        onPress();
+      }}
+      style={[s.popCard, s.popCell]}
+      accessibilityRole="button"
+      accessibilityLabel={`${a.name}${a.change != null ? `, ${pct(a.change)} today` : ""}`}
+    >
+      <Text style={s.popLabel} numberOfLines={1}>
+        {a.kind === "Pre-IPO" ? "PRE-IPO" : a.symbol}
+      </Text>
+      <Text style={s.popName} numberOfLines={1}>
+        {a.name}
+      </Text>
+      {a.change != null ? (
+        <Text style={[s.fig, { color: a.change >= 0 ? C.mint : C.loss }]}>{pct(a.change)}</Text>
+      ) : (
+        <Text style={[s.fig, { color: C.ink2 }]}>{money(a.price)}</Text>
+      )}
+    </PressScale>
+  );
+}
+
+const COLL_ICONS: Record<string, string> = {
+  stocks: "M3 16V9M8.3 16V4M13.7 16v-5M19 16V7",
+  preipo: "M5 15 15 5M15 5H8M15 5v7",
+};
+
+function CollectionRow({
+  icon,
+  title,
+  sub,
+  badge,
+  onPress,
 }: {
-  stock: Stock;
-  navigation: NativeStackNavigationProp<HomeStackParamList>;
+  icon: keyof typeof COLL_ICONS;
+  title: string;
+  sub: string;
+  badge?: string;
+  onPress: () => void;
 }) {
   return (
-    <Pressable
-      onPress={() =>
-        navigation.navigate("StockDetail", {
-          symbol: stock.symbol,
-          category: "us-stock",
-        })
-      }
-      style={s.popularCard}
+    <PressScale
+      scaleTo={0.985}
+      onPress={() => {
+        hTap();
+        onPress();
+      }}
+      style={s.collRow}
+      accessibilityRole="button"
+      accessibilityLabel={title}
     >
-      <View style={s.popularTop}>
-        <View style={s.popularBadge}>
-          {stock.imageUrl ? (
-            <Image
-              source={{ uri: stock.imageUrl }}
-              style={{ width: "100%", height: "100%" }}
-            />
-          ) : (
-            <Text
-              style={{ fontFamily: FONT.mono400, fontSize: 13, color: C.bone }}
-            >
-              {stock?.symbol?.charAt(0).toUpperCase()}
-            </Text>
-          )}
-        </View>
-
-        <Text style={s.popularTicker}>{stock.symbol}</Text>
+      <View style={s.collIcon}>
+        <Svg width={17} height={17} viewBox="0 0 20 20" fill="none" stroke={C.mint} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+          <Path d={COLL_ICONS[icon]} />
+        </Svg>
       </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={TYPE.ttl}>{title}</Text>
+        <Text style={TYPE.sub} numberOfLines={1}>
+          {sub}
+        </Text>
+      </View>
+      {badge ? <Badge label={badge} variant="solid" /> : <Text style={s.chev}>›</Text>}
+    </PressScale>
+  );
+}
 
-      <Text style={s.popularName} numberOfLines={1}>
-        {stock.name}
+function TrendRow({ a, last, onPress }: { a: Asset; last: boolean; onPress: () => void }) {
+  return (
+    <PressScale
+      scaleTo={0.985}
+      onPress={() => {
+        hTap();
+        onPress();
+      }}
+      style={[s.trendRow, !last && s.hair]}
+      accessibilityRole="button"
+    >
+      <Text style={[TYPE.ttl, s.trendName]} numberOfLines={1}>
+        {a.symbol === a.name ? `${a.name} · ${a.kind}` : `${a.symbol} · ${a.name}`}
       </Text>
+      {a.change != null ? (
+        <Text style={[s.fig, { color: a.change >= 0 ? C.mint : C.loss }]}>{pct(a.change)}</Text>
+      ) : (
+        <Text style={[s.fig, { color: C.ink2 }]}>{money(a.price)}</Text>
+      )}
+    </PressScale>
+  );
+}
 
-      <Text style={s.popularPrice}>{money(Number(stock.price))}</Text>
-
-      <View style={s.popularFooter}>
-        <Ionicons name="chevron-forward" size={14} color={C.inkMuted} />
+function Results({
+  query,
+  hits,
+  loading,
+  onOpen,
+  onFill,
+  suggestions,
+}: {
+  query: string;
+  hits: Asset[];
+  loading: boolean;
+  onOpen: (a: Asset) => void;
+  onFill: (q: string) => void;
+  suggestions: Asset[];
+}) {
+  if (loading && !hits.length) {
+    return (
+      <View style={{ gap: 14 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} height={46} radius={12} />
+        ))}
       </View>
-    </Pressable>
+    );
+  }
+
+  if (!hits.length) {
+    const ideas = [suggestions.find((a) => a.kind === "Stock")?.symbol, suggestions.find((a) => a.kind === "Pre-IPO")?.name, "AI"]
+      .filter(Boolean) as string[];
+    return (
+      <Rise duration={380} style={s.empty}>
+        <Text style={[TYPE.h2, { fontSize: 20 }]}>No match for “{query.trim()}”</Text>
+        <Text style={TYPE.body}>Try a ticker, a company name, or a theme like AI.</Text>
+        <View style={s.chipWrap}>
+          {ideas.map((t) => (
+            <Chip key={t} label={t} onPress={() => onFill(t)} />
+          ))}
+        </View>
+      </Rise>
+    );
+  }
+
+  // group by collection, keep ranking order inside each group
+  const groups: [string, Asset[]][] = [];
+  for (const a of hits) {
+    const title = COLLECTIONS[a.category].title;
+    const g = groups.find(([t]) => t === title);
+    if (g) g[1].push(a);
+    else groups.push([title, [a]]);
+  }
+
+  let i = 0;
+  return (
+    <View>
+      {groups.map(([title, list], gi) => (
+        <View key={title} style={gi ? { marginTop: 20 } : undefined}>
+          <Text style={[TYPE.lbl, { marginBottom: 4 }]}>
+            {title.toUpperCase()} · {list.length}
+          </Text>
+          {list.map((a, j) => {
+            const delay = Math.min(i++, 10) * 40;
+            return (
+              // keyed by query so rows re-cascade as you type
+              <Rise key={`${query}-${a.category}-${a.symbol}`} delay={delay} duration={400}>
+                <AssetRow
+                  symbol={a.symbol}
+                  name={a.name}
+                  price={a.price}
+                  imageUrl={a.imageUrl}
+                  change={a.change}
+                  kind={a.kind}
+                  last={j === list.length - 1}
+                  onPress={() => onOpen(a)}
+                />
+              </Rise>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ErrorLine({ text, onRetry }: { text: string; onRetry: () => void }) {
+  return (
+    <View style={s.errorRow}>
+      <Text style={[TYPE.sub, { color: C.loss, flex: 1 }]} numberOfLines={2}>
+        {text}
+      </Text>
+      <Chip label="Retry" onPress={onRetry} />
+    </View>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <Svg width={12} height={12} viewBox="0 0 20 20" fill="none" stroke={C.ink2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Circle cx="10" cy="10" r="7" />
+      <Path d="M10 6v4.3l2.8 1.7" />
+    </Svg>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
-  container: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 32 },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  greeting: { fontFamily: FONT.display400, fontSize: 13, color: C.inkMuted },
-  name: {
-    marginTop: 2,
-    fontFamily: FONT.display600,
-    fontSize: 20,
-    color: C.bone,
-  },
-  balancePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    height: 40,
-    paddingHorizontal: 14,
-    borderRadius: RADIUS.pill,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.hairline,
-  },
-  balanceDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.jade },
-  balanceText: { fontFamily: FONT.mono400, fontSize: 14, color: C.bone },
-  sectionHeaderRow: {
-    marginTop: 28,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  sectionHeading: {
-    fontFamily: FONT.display600,
-    fontSize: 11,
-    letterSpacing: 1.6,
-    textTransform: "uppercase",
-    color: C.inkMuted,
-  },
-  sectionRule: { flexGrow: 1, height: 1, backgroundColor: C.hairline },
-  errorText: {
-    marginTop: 14,
-    fontFamily: FONT.display400,
-    fontSize: 13,
-    color: C.clay,
-  },
-  emptyText: {
-    marginTop: 14,
-    fontFamily: FONT.display400,
-    fontSize: 13,
-    color: C.inkMuted,
-  },
-  popularRow: { marginTop: 14, gap: 12, paddingRight: 4 },
-  popularCard: {
-    width: 150,
-    padding: 14,
-    borderRadius: RADIUS.lg,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.hairline,
-  },
-  popularTop: { flexDirection: "row", alignItems: "center", gap: 8 },
-  popularBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: C.raised,
-    borderWidth: 1,
-    borderColor: C.hairline,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  popularTicker: {
-    fontFamily: FONT.mono400,
-    fontSize: 12,
-    letterSpacing: 0.5,
-    color: C.inkSecondary,
-  },
-  popularName: {
-    marginTop: 10,
-    fontFamily: FONT.display400,
-    fontSize: 13,
-    color: C.inkMuted,
-  },
-  popularPrice: {
-    marginTop: 8,
-    fontFamily: FONT.mono500,
-    fontSize: 19,
-    color: C.bone,
-  },
-  popularFooter: { marginTop: 8, alignItems: "flex-end" },
-  collectionsGrid: { marginTop: 14, flexDirection: "row", gap: 12 },
-  collectionTile: {
-    flex: 1,
-    minHeight: 148,
-    padding: 16,
-    borderRadius: RADIUS.lg,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.hairline,
-  },
-  collectionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: C.raised,
-    borderWidth: 1,
+  safe: { flex: 1, backgroundColor: C.ground },
+  page: { paddingTop: 18 },
+
+  brand: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, marginBottom: 12 },
+  word: { flex: 1, fontFamily: FONT.sans800, fontSize: 19, letterSpacing: em(19, -0.035), color: C.ink1 },
+  avatarBtn: { width: 44, height: 44, marginRight: -6, alignItems: "center", justifyContent: "center" },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: "#232833",
     alignItems: "center",
     justifyContent: "center",
   },
-  collectionName: {
-    marginTop: 14,
-    fontFamily: FONT.display600,
-    fontSize: 15,
-    color: C.bone,
-  },
-  collectionNote: {
-    marginTop: 4,
-    fontFamily: FONT.display400,
-    fontSize: 12,
-    lineHeight: 17,
-    color: C.inkMuted,
-  },
-  collectionCount: {
-    marginTop: 12,
-    fontFamily: FONT.mono400,
-    fontSize: 12,
-    color: C.inkSecondary,
-  },
-  picksHeader: { marginTop: 28, gap: 8 },
-  picksEyebrow: {
-    fontFamily: FONT.display600,
-    fontSize: 10,
-    letterSpacing: 1.8,
-    textTransform: "uppercase",
-    color: C.bone,
-  },
-  picksList: {
-    marginTop: 12,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: C.hairline,
-    overflow: "hidden",
-  },
-  pickRow: {
+  avatarText: { fontFamily: FONT.sans800, fontSize: 13, color: "#D6DAE0" },
+
+  sticky: { backgroundColor: C.ground, paddingHorizontal: 20, paddingTop: 8 },
+  stickyFade: { height: 18, marginHorizontal: -20 },
+
+  body: { paddingHorizontal: 20, gap: 24 },
+  section: { gap: 12 },
+
+  chips: { flexDirection: "row", gap: 8, alignItems: "center" },
+  balChip: { height: 34, paddingHorizontal: 14, borderRadius: 999, backgroundColor: C.surface, justifyContent: "center" },
+  balText: { fontFamily: FONT.mono400, fontSize: 10, letterSpacing: em(10, 0.1), color: C.ink2, fontVariant: ["tabular-nums"] },
+
+  popGrid: { flexDirection: "row", gap: 10 },
+  popCell: { flex: 1 },
+  popCard: { backgroundColor: C.surface, borderRadius: 16, padding: 14, gap: 10 },
+  popLabel: { fontFamily: FONT.mono400, fontSize: 11, color: C.ink3 },
+  popName: { fontFamily: FONT.sans800, fontSize: 16, letterSpacing: em(16, -0.03), color: C.ink1 },
+  fig: { fontFamily: FONT.mono400, fontSize: 13, fontVariant: ["tabular-nums"] },
+
+  collList: { gap: 8 },
+  collRow: {
+    minHeight: 64,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: C.surface,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 14,
-    backgroundColor: C.card,
-    borderTopWidth: 1,
-    borderTopColor: C.hairline,
   },
-  pickRowFirst: { borderTopWidth: 0 },
-  pickRowLast: {},
-  pickBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: C.raised,
-    borderWidth: 1,
-    borderColor: C.hairline,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pickBadgeLabel: { fontFamily: FONT.mono500, fontSize: 12, color: C.bone },
-  pickName: { fontFamily: FONT.display600, fontSize: 14, color: C.bone },
-  pickSymbol: {
-    marginTop: 2,
-    fontFamily: FONT.mono400,
-    fontSize: 11,
-    color: C.inkMuted,
-  },
-  pickPrice: { fontFamily: FONT.mono400, fontSize: 14, color: C.bone },
+  collIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: "#20252F", alignItems: "center", justifyContent: "center" },
+  chev: { fontSize: 17, color: C.ink4 },
+
+  trendRow: { minHeight: 54, flexDirection: "row", alignItems: "center", gap: 12 },
+  trendName: { flex: 1, fontFamily: FONT.sans600 },
+  hair: { borderBottomWidth: 1, borderBottomColor: C.hair },
+
+  recentHead: { flexDirection: "row", alignItems: "center" },
+  clearAll: { fontFamily: FONT.sans600, fontSize: 12.5, color: C.mint },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+
+  empty: { gap: 14, paddingVertical: 22, alignItems: "flex-start" },
+  errorRow: { flexDirection: "row", alignItems: "center", gap: 12 },
 });

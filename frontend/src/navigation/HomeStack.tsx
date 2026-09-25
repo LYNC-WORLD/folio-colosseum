@@ -26,13 +26,18 @@ export function HomeStack() {
         component={HomeScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen name="Stocks" component={StocksScreen} />
-      <Stack.Screen name="StockDetail" component={StockDetail} />
+      {/* collections draw their own "‹ Home" link, like the prototype */}
+      <Stack.Screen
+        name="Stocks"
+        component={StocksScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen
         name="PreIPO"
         component={PreIpoScreen}
-        options={{ title: "Pre-IPO" }}
+        options={{ headerShown: false }}
       />
+      <Stack.Screen name="StockDetail" component={StockDetail} />
     </Stack.Navigator>
   );
 }
