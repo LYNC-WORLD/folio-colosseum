@@ -1,6 +1,13 @@
 // "Which one?" sheet for starting a recurring buy: search + every stock and pre-IPO.
 import { useMemo, useState } from "react";
-import { Dimensions, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import { useStocks } from "../hooks";
 import type { Stock } from "../types";
@@ -17,9 +24,19 @@ type Props = {
   /** token addresses that already have an active recurring buy */
   taken: Set<string>;
   onPick: (a: PickedAsset) => void;
+  label?: string;
+  title?: string;
+  /** what greyed-out rows say (default "Already recurring") */
+  takenLabel?: string;
 };
 
-export function AssetPickerSheet({ taken, onPick }: Props) {
+export function AssetPickerSheet({
+  taken,
+  onPick,
+  label = "NEW RECURRING BUY",
+  title = "What do you want to buy?",
+  takenLabel = "Already recurring",
+}: Props) {
   const us = useStocks("us-stock");
   const pre = useStocks("pre-ipo");
   const [q, setQ] = useState("");
@@ -34,17 +51,30 @@ export function AssetPickerSheet({ taken, onPick }: Props) {
   const list = useMemo(() => {
     const v = q.trim().toLowerCase();
     if (!v) return all;
-    return all.filter((a) => a.stock.symbol.toLowerCase().includes(v) || a.stock.name.toLowerCase().includes(v));
+    return all.filter(
+      (a) =>
+        a.stock.symbol.toLowerCase().includes(v) ||
+        a.stock.name.toLowerCase().includes(v),
+    );
   }, [all, q]);
 
   return (
     <Step id="pick">
       <View style={{ gap: 6 }}>
-        <Text style={TYPE.lbl}>NEW RECURRING BUY</Text>
-        <Text style={TYPE.h2}>What do you want to buy?</Text>
+        <Text style={TYPE.lbl}>{label}</Text>
+        <Text style={TYPE.h2}>{title}</Text>
       </View>
       <View style={s.box}>
-        <Svg width={17} height={17} viewBox="0 0 20 20" fill="none" stroke={C.ink4} strokeWidth={1.8} strokeLinecap="round" style={s.icon}>
+        <Svg
+          width={17}
+          height={17}
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke={C.ink4}
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          style={s.icon}
+        >
           <Circle cx="8.8" cy="8.8" r="5.4" />
           <Path d="m12.8 12.8 3.7 3.7" />
         </Svg>
@@ -59,7 +89,11 @@ export function AssetPickerSheet({ taken, onPick }: Props) {
           style={s.input}
         />
       </View>
-      <ScrollView style={{ maxHeight: Dimensions.get("window").height * 0.46 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={{ maxHeight: Dimensions.get("window").height * 0.46 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {us.loading && pre.loading ? (
           <View style={{ gap: 14 }}>
             {[0, 1, 2, 3].map((i) => (
@@ -67,19 +101,31 @@ export function AssetPickerSheet({ taken, onPick }: Props) {
             ))}
           </View>
         ) : list.length === 0 ? (
-          <Text style={[TYPE.sub, { paddingVertical: 14 }]}>No match for “{q.trim()}”.</Text>
+          <Text style={[TYPE.sub, { paddingVertical: 14 }]}>
+            No match for “{q.trim()}”.
+          </Text>
         ) : (
           list.map((a, i) => {
             const on = taken.has(a.stock.tokenAddress);
             return (
-              <View key={a.category + a.stock.tokenAddress} style={on ? { opacity: 0.45 } : undefined} pointerEvents={on ? "none" : "auto"}>
+              <View
+                key={a.category + a.stock.tokenAddress}
+                style={on ? { opacity: 0.45 } : undefined}
+                pointerEvents={on ? "none" : "auto"}
+              >
                 <AssetRow
                   symbol={a.stock.symbol}
                   name={a.stock.name}
                   price={Number(a.stock.price)}
                   imageUrl={a.stock.imageUrl}
                   change={dayChange(a.stock.price, a.stock.marketOpenPrice)}
-                  kind={on ? "Already recurring" : a.category === "pre-ipo" ? "Pre-IPO" : "Stock"}
+                  kind={
+                    on
+                      ? takenLabel
+                      : a.category === "pre-ipo"
+                        ? "Pre-IPO"
+                        : "Stock"
+                  }
                   last={i === list.length - 1}
                   onPress={() => onPick(a)}
                 />
@@ -93,7 +139,19 @@ export function AssetPickerSheet({ taken, onPick }: Props) {
 }
 
 const s = StyleSheet.create({
-  box: { height: 46, borderRadius: 14, backgroundColor: C.surface, justifyContent: "center" },
+  box: {
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: C.surface,
+    justifyContent: "center",
+  },
   icon: { position: "absolute", left: 14 },
-  input: { height: "100%", paddingLeft: 42, paddingRight: 14, fontFamily: FONT.sans400, fontSize: 16, color: C.ink1 },
+  input: {
+    height: "100%",
+    paddingLeft: 42,
+    paddingRight: 14,
+    fontFamily: FONT.sans400,
+    fontSize: 16,
+    color: C.ink1,
+  },
 });

@@ -23,31 +23,14 @@ export type ProfileStackParamList = {
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
 
-// Transactions and Standing orders now draw their own "‹ Back" link.
-// Profile keeps its current layout until Step 12.
+// Every screen here draws its own "‹ Back" link, like the prototype.
 export function ProfileStack() {
   return (
-    <Stack.Navigator screenOptions={stackOptions}>
-      <Stack.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="Transactions"
-        component={TransactionsScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="RecurringBuys"
-        component={RecurringBuysScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="RecurringNew"
-        component={RecurringNewScreen}
-        options={{ headerShown: false }}
-      />
+    <Stack.Navigator screenOptions={{ ...stackOptions, headerShown: false }}>
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="Transactions" component={TransactionsScreen} />
+      <Stack.Screen name="RecurringBuys" component={RecurringBuysScreen} />
+      <Stack.Screen name="RecurringNew" component={RecurringNewScreen} />
     </Stack.Navigator>
   );
 }

@@ -23,6 +23,7 @@ import { WalletProvider } from "./src/context/WalletContext";
 import { SplashIntro, SplashDoneContext } from "./src/components/SplashIntro";
 import { SheetProvider } from "./src/components/Sheet";
 import { ToastProvider } from "./src/components/Toast";
+import { AppFlowContext } from "./src/context/AppFlowContext";
 
 // Keep the native splash up until fonts are loaded and <SplashIntro> has drawn
 // its first frame (it hides the native splash itself).
@@ -79,6 +80,12 @@ function Root() {
     setHasOnboarded(true);
   };
 
+  // Account → "Retake the questions": back to onboarding (fades in like any phase change)
+  const retakeOnboarding = () => {
+    AsyncStorage.removeItem(ONBOARDED_KEY).catch(() => {});
+    setHasOnboarded(false);
+  };
+
   // The splash may leave once we know which screen comes first.
   const ready = !initializing && (!user || hasOnboarded !== null);
 
@@ -115,26 +122,32 @@ function Root() {
   }
 
   return (
-    <SplashDoneContext.Provider value={splashDone}>
-      <View style={{ flex: 1, backgroundColor: C.ground }}>
-        {/* Toast sits above the sheet; both sit above every screen, below the splash. */}
-        <ToastProvider>
-          <SheetProvider>
-            <Animated.View
-              key={phase}
-              style={{ flex: 1 }}
-              // No fade while the splash is up — the splash's own crossfade reveals the first screen.
-              entering={splashDone ? FadeIn.duration(280).easing(Easing.linear) : undefined}
-            >
-              {content}
-            </Animated.View>
-          </SheetProvider>
-        </ToastProvider>
-        {!splashDone && (
-          <SplashIntro ready={ready} onDone={() => setSplashDone(true)} />
-        )}
-      </View>
-    </SplashDoneContext.Provider>
+    <AppFlowContext.Provider value={{ retakeOnboarding }}>
+      <SplashDoneContext.Provider value={splashDone}>
+        <View style={{ flex: 1, backgroundColor: C.ground }}>
+          {/* Toast sits above the sheet; both sit above every screen, below the splash. */}
+          <ToastProvider>
+            <SheetProvider>
+              <Animated.View
+                key={phase}
+                style={{ flex: 1 }}
+                // No fade while the splash is up — the splash's own crossfade reveals the first screen.
+                entering={
+                  splashDone
+                    ? FadeIn.duration(280).easing(Easing.linear)
+                    : undefined
+                }
+              >
+                {content}
+              </Animated.View>
+            </SheetProvider>
+          </ToastProvider>
+          {!splashDone && (
+            <SplashIntro ready={ready} onDone={() => setSplashDone(true)} />
+          )}
+        </View>
+      </SplashDoneContext.Provider>
+    </AppFlowContext.Provider>
   );
 }
 
