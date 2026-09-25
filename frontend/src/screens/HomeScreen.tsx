@@ -175,7 +175,7 @@ export function HomeScreen() {
       >
         <View style={s.brand}>
           <Mark height={32} />
-          <Text style={s.word}>Folio</Text>
+          <Text style={s.word}>folio</Text>
           <Pressable
             onPress={() => {
               hTap();
@@ -204,7 +204,9 @@ export function HomeScreen() {
               inputRef.current?.focus();
             }}
             onSubmit={() =>
-              hits[0] ? openAsset(hits[0]) : fundHits[0] && openFund(fundHits[0])
+              hits[0]
+                ? openAsset(hits[0])
+                : fundHits[0] && openFund(fundHits[0])
             }
           />
           <LinearGradient
