@@ -50,7 +50,6 @@ export type RecurringBuy = {
   stock: RecurringBuyStock;
 };
 
-
 export type RecurringBuyInfo = {
   hasRecurringBuy: boolean;
   data: RecurringBuy[];

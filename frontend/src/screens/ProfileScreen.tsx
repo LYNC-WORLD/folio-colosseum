@@ -15,6 +15,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth, useWallet } from "../context";
 import { C } from "../theme";
 import { SafeScreen } from "../components";
+import {
+  useUserRecurringBuyAssets,
+  useUserTransactions,
+} from "../hooks/useUserRecords";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { ProfileStackParamList } from "../navigation/ProfileStack";
 
 const MONO = Platform.select({
   ios: "Menlo",
@@ -29,7 +36,6 @@ function truncateAddress(addr: string) {
   if (addr.length <= 10) return addr;
   return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
 }
-
 function formatUsdc(n: number) {
   return `${n.toLocaleString("en-US", {
     minimumFractionDigits: 2,
@@ -142,7 +148,8 @@ export function ProfileScreen() {
     error: walletError,
     refresh,
   } = useWallet();
-
+  const navigation =
+    useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
   const [copied, setCopied] = useState(false);
   const [pulling, setPulling] = useState(false);
 
@@ -153,15 +160,10 @@ export function ProfileScreen() {
   const pnl30dPct: number = u.pnl30dPct ?? 0;
   const followers: number = u.followers ?? 0;
   const following: number = u.following ?? 0;
-  const txCount: number = u.totalTrades ?? 0;
 
   const walletProvider: string | undefined = u.walletProvider;
   const walletChain: string | undefined = u.walletChain ?? "Base";
   const walletConnectedAt = formatShortDate(u.walletConnectedAt);
-
-  const recurringCount: number = u.recurringPlans ?? 0;
-  const recurringMonthly: number = u.recurringMonthly ?? 0;
-  const recurringNext = formatShortDate(u.recurringNext);
 
   const displayAddress = walletAddress
     ? truncateAddress(walletAddress)
@@ -179,17 +181,6 @@ export function ProfileScreen() {
         .join(" · ")
     : "No wallet connected";
 
-  const recurringSub =
-    recurringCount > 0
-      ? [
-          `${recurringCount} plan${recurringCount === 1 ? "" : "s"}`,
-          `${formatUsd(recurringMonthly)} a month`,
-          recurringNext && `next ${recurringNext}`,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : "Set up an automatic buy";
-
   // ---- handlers ----
   const handleCopy = async () => {
     if (!walletAddress) return;
@@ -206,12 +197,32 @@ export function ProfileScreen() {
       setPulling(false);
     }
   };
+  const { idToken } = useAuth();
+
+  const transactionsQuery = useUserTransactions(idToken!);
+
+  const recurringQuery = useUserRecurringBuyAssets(idToken!);
+
+  const txCount = transactionsQuery.data?.data?.length ?? 0;
+
+  const recurringCount =
+    recurringQuery.data?.data?.filter((item) => item.isActive).length ?? 0;
+
+  const recurringSub =
+    recurringCount > 0
+      ? `${recurringCount} active request${recurringCount === 1 ? "" : "s"}`
+      : "Set up an automatic buy";
 
   // TODO: wire these to your navigation / flows
   const onAddFunds = () => {};
   const onConnectedWallet = () => {};
-  const onRecurringBuys = () => {};
-  const onTransactions = () => {};
+  const onRecurringBuys = () => {
+    navigation.navigate("RecurringBuys");
+  };
+
+  const onTransactions = () => {
+    navigation.navigate("Transactions");
+  };
   const onExportTax = () => {};
   const onSupport = () => {};
   const onTerms = () => {};
@@ -312,15 +323,16 @@ export function ProfileScreen() {
             </Pressable>
           </View>
 
-          <Row
+          {/* <Row
             title="Connected wallet"
             subtitle={connectedSub}
             onPress={onConnectedWallet}
             right={<Chevron />}
-          />
+          /> */}
+
           <Row
             title="Recurring buys"
-            subtitle={recurringSub}
+            subtitle={recurringQuery.isLoading ? "Loading..." : recurringSub}
             onPress={onRecurringBuys}
             right={<Chevron />}
             last
@@ -335,19 +347,22 @@ export function ProfileScreen() {
             onPress={onTransactions}
             right={
               <View style={s.rightInline}>
-                <Text style={s.count}>{txCount}</Text>
+                <Text style={s.count}>
+                  {transactionsQuery.isLoading ? "..." : txCount}
+                </Text>
+
                 <Chevron />
               </View>
             }
           />
-          <Row
+          {/* <Row
             title="Export for tax"
             subtitle="CSV of every buy, sell and fee, by tax year"
             onPress={onExportTax}
             right={
               <Ionicons name="download-outline" size={18} color={C.muted} />
             }
-          />
+          /> */}
         </View>
 
         {/* Footer */}

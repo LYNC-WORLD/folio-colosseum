@@ -8,3 +8,5 @@ export * from "./ProfileScreen";
 export * from "./SignalsScreen";
 export * from "./StocksScreen";
 export * from "./StockDetail";
+export * from "./TransactionsScreen";
+export * from "./RecurringBuysScreen";
