@@ -37,31 +37,34 @@ enum TransactionStatus {
 }
 
 model User {
-    id              String       @id @default(cuid())
-    userId          String       @unique
-    walletId        String       @unique
-    email           String       @unique
-    name            String
-    walletAddress   String       @unique
-    googleSubjectId String       @unique
-    investments     Investment[]
-    trades          Trades[]
-    createdAt       DateTime     @default(now())
-    updatedAt       DateTime     @updatedAt
+    id                  String                @id @default(cuid())
+    userId              String                @unique
+    walletId            String                @unique
+    email               String                @unique
+    name                String
+    walletAddress       String                @unique
+    googleSubjectId     String                @unique
+    investments         Investment[]
+    trades              Trades[]
+    recurringBuyRequest RecurringBuyRequest[]
+    createdAt           DateTime              @default(now())
+    updatedAt           DateTime              @updatedAt
 
     @@index([userId])
     @@index([walletId])
 }
 
 model Stocks {
-    tokenAddress    String    @id
+    tokenAddress    String                @id
     price           String
     name            String
-    decimals        Int       @default(8)
+    decimals        Int                   @default(8)
     symbol          String
     imageUrl        String
-    marketOpenPrice String    @default("0")
-    stockType       StockType @default(USStock)
+    marketOpenPrice String                @default("0")
+    stockType       StockType             @default(USStock)
+    recurringBuys   RecurringBuyRequest[]
+    indexFunds      IndexFunds[]
 }
 
 model Investment {
@@ -83,6 +86,10 @@ model Trades {
     tradeType        TradeType
     createdAt        DateTime  @default(now()) @db.Timestamp(3)
     user             User      @relation(fields: [userId], references: [userId])
+
+    @@index([userId])
+    @@index([userId, createdAt])
+    @@index([stockAddress])
 }
 
 model LoginDetails {
@@ -93,11 +100,22 @@ model LoginDetails {
     positionHold     String
     expectToHold     String
 }
-model RecurringBuyRequest{
-    id String @id @default(cuid())
+
+model RecurringBuyRequest {
+    id           String  @id @default(cuid())
     stockAddress String
-    userId String
-    usdcAmount String?
-    stockAmount String?
-    buyDate String
+    userId       String
+    usdcAmount   String?
+    stockAmount  String?
+    buyDate      String
+    isActive     Boolean @default(true)
+    user         User    @relation(fields: [userId], references: [userId])
+    stock        Stocks  @relation(fields: [stockAddress], references: [tokenAddress])
+}
+
+model IndexFunds {
+    id     String   @id @default(cuid())
+    name   String
+    stocks Stocks[]
+    price  String
 }

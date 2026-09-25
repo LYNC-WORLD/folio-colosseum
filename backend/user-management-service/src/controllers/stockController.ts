@@ -192,4 +192,23 @@ export class StockController {
       });
     }
   };
+
+  public getIndexFunds = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const indexFunds = await this.stockService.getIndexFunds();
+
+      res.status(200).json({
+        success: true,
+        message: "list of index funds",
+        data: indexFunds,
+      });
+    } catch (error) {
+      console.error("can not fetch index funds:", error);
+
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
 }

@@ -149,4 +149,14 @@ export class StockService {
       throw error;
     }
   }
+
+  public async getIndexFunds() {
+    try {
+      const stockDetails = await prisma.indexFunds.findMany();
+      return stockDetails;
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
 }

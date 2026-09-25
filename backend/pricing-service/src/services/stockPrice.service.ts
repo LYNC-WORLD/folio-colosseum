@@ -138,7 +138,7 @@ async function updatePreStocksPrice(updateDailyPrice: boolean) {
           tokenAddress: dbStock.tokenAddress,
         },
         data: {
-          mark: String(apiStock.tokenPrice),
+          price: String(apiStock.tokenPrice),
         },
       });
 
@@ -164,10 +164,10 @@ interface PreStock {
   supply: number;
 }
 
-(async () => {
-  try {
-    const data = await updateStockPrices();
-  } catch (error) {
-    console.error("Error executing async code:", error);
-  }
-})();
+// (async () => {
+//   try {
+//     const data = await updateStockPrices();
+//   } catch (error) {
+//     console.error("Error executing async code:", error);
+//   }
+// })();

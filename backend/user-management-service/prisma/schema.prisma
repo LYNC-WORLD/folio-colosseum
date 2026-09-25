@@ -64,6 +64,7 @@ model Stocks {
     marketOpenPrice String                @default("0")
     stockType       StockType             @default(USStock)
     recurringBuys   RecurringBuyRequest[]
+    indexFunds      IndexFunds[]
 }
 
 model Investment {
@@ -110,4 +111,23 @@ model RecurringBuyRequest {
     isActive     Boolean @default(true)
     user         User    @relation(fields: [userId], references: [userId])
     stock        Stocks  @relation(fields: [stockAddress], references: [tokenAddress])
+}
+
+model IndexFunds {
+    id     String   @id @default(cuid())
+    name   String
+    stocks Stocks[]
+    price  String
+
+    IndexHolding IndexFundsHolding[]
+
+    @@index([id])
+}
+
+model IndexFundsHolding {
+    id            String     @id @default(cuid())
+    userId        String
+    indexId       String
+    indexQuantity String
+    indexDatils   IndexFunds @relation(fields: [id], references: [id])
 }

@@ -14,4 +14,6 @@ router.post("/stock-sell", authMiddleware, tradeController.sellStocks);
 
 router.post("/start-recurring-buy", authMiddleware, tradeController.startRecurringBuy);
 
+router.post("/buy-index-funds");
+
 export { router as tradeRoutes };

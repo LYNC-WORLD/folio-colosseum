@@ -16,4 +16,6 @@ router.get("/pre-ipo/:stockSymbol",authMiddleware, stockController.getPreIPOsByS
 
 router.get("/trades,", stockController.getLatestBuy);
 
+router.get("/index-funds", stockController.getIndexFunds);
+
 export { router as stockRoutes };
