@@ -1,11 +1,11 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { C, FONT } from "../theme";
 import {
   HomeScreen,
   PreIpoScreen,
   StockDetail,
   StocksScreen,
 } from "../screens";
+import { stackOptions } from "./stackOptions";
 
 export type HomeStackParamList = {
   HomeMain: undefined;
@@ -20,16 +20,7 @@ const Stack = createNativeStackNavigator<HomeStackParamList>();
 
 export function HomeStack() {
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: C.bg },
-        headerShadowVisible: false,
-        headerTintColor: C.bone,
-        headerTitleStyle: { fontFamily: FONT.display600, fontSize: 17 },
-        headerBackButtonDisplayMode: "minimal",
-        contentStyle: { backgroundColor: C.bg },
-      }}
-    >
+    <Stack.Navigator screenOptions={stackOptions}>
       <Stack.Screen
         name="HomeMain"
         component={HomeScreen}

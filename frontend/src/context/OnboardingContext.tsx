@@ -1,3 +1,14 @@
+// src/context/OnboardingContext.tsx
+//
+// The four onboarding questions, answers, and profile — taken word for word
+// from the prototype (Folio_Prototype.html, #s-onb1…4 and the PROFILE script).
+//
+// Backend payload keeps the same shape (see ProfileSummaryScreen):
+//   interestedStocks: AssetKey[]   → "stocks" | "preipo" | "commodities" | "treasuries"
+//   amountToPutIn:    number       → CAPITAL_DEFS[capital].amount (lower bound of the range)
+//   question1:        RiskId       → "buy" | "hold" | "trim" | "out"
+//   question2:        HorizonId    → "weeks" | "months" | "years" | "decades"
+
 import {
   createContext,
   useCallback,
@@ -7,189 +18,104 @@ import {
   type ReactNode,
 } from "react";
 
-export type AssetKey =
-  | "stocks"
-  | "preipo"
-  | "commodities"
-  | "crypto"
-  | "etf"
-  | "rwa";
+// ---------- Question 1 — What do you want to own? (multi-select) ----------
+export type AssetKey = "stocks" | "preipo" | "commodities" | "treasuries";
 
 export const ASSET_DEFS: { id: AssetKey; label: string; note: string }[] = [
-  { id: "stocks", label: "US stocks", note: "Apple, Nvidia, Tesla" },
-  { id: "preipo", label: "Pre-IPO", note: "SpaceX, Stripe, OpenAI" },
+  {
+    id: "stocks",
+    label: "US stocks",
+    note: "NVIDIA, Apple, Tesla and 400 more",
+  },
+  { id: "preipo", label: "Pre-IPOs", note: "SpaceX, OpenAI, Stripe, Anduril" },
   { id: "commodities", label: "Commodities", note: "Gold, silver, oil" },
-  { id: "crypto", label: "Crypto", note: "BTC, ETH and majors" },
-  { id: "etf", label: "Index & ETFs", note: "S&P 500, Nasdaq 100" },
-  { id: "rwa", label: "Tokenized RWAs", note: "Treasuries, credit" },
+  {
+    id: "treasuries",
+    label: "Treasuries",
+    note: "Short-dated US government debt",
+  },
 ];
 
-export type AmountPreset = 50 | 100 | 250 | 500 | 1000 | "custom";
+// ---------- Question 2 — What are you starting with? ----------
+export type CapitalId = "a" | "b" | "c" | "d";
 
-export const AMOUNT_PRESETS: {
-  v: AmountPreset;
+export const CAPITAL_DEFS: {
+  id: CapitalId;
   label: string;
   note: string;
-}[] = [
-  { v: 50, label: "$50", note: "a toe in the water" },
-  { v: 100, label: "$100", note: "a starter position" },
-  { v: 250, label: "$250", note: "enough to feel it" },
-  { v: 500, label: "$500", note: "a real position" },
-  { v: 1000, label: "$1,000", note: "a conviction position" },
-  { v: "custom", label: "Custom", note: "you set it per trade" },
-];
-
-export type RiskId = "buy" | "hold" | "sell";
-
-export const RISK_DEFS: {
-  id: RiskId;
-  label: string;
-  note: string;
-  tag: string;
-  color: string;
-  consequence: string;
+  amount: string;
 }[] = [
   {
-    id: "buy",
-    label: "Buy more of it",
-    note: "A drawdown reads as a discount to you.",
-    tag: "High",
-    color: "#D9954E",
-    consequence:
-      "We surface dip alerts and higher-volatility names, and we will not nag you during drawdowns.",
+    id: "a",
+    label: "$10 - $100",
+    note: "Testing the water",
+    amount: "$10 - $100",
   },
   {
-    id: "hold",
-    label: "Hold and wait it out",
-    note: "You sized it right and you are not in a hurry.",
-    tag: "Balanced",
-    color: "#F5F0E8",
-    consequence:
-      "Alerts stay weekly. We flag position sizes that drift above 25% of your portfolio.",
+    id: "b",
+    label: "$100 - $1,000",
+    note: "Building a base",
+    amount: "$100 - $1,000",
   },
   {
-    id: "sell",
-    label: "Get out and rethink",
-    note: "You would rather protect the capital.",
-    tag: "Low",
-    color: "#7FA8FF",
-    consequence:
-      "We lead with lower-volatility assets, show a stop-loss prompt on every buy, and cap suggested position size at 10%.",
+    id: "c",
+    label: "$1,000 - $10,000",
+    note: "Serious position",
+    amount: "$1,000 - $10,000",
   },
+  { id: "d", label: "$10,000+", note: "Allocating", amount: "$10,000+" },
 ];
 
-export type HorizonId = "short" | "mid" | "long";
+// ---------- Question 3 — Your position drops 20% in a week ----------
+export type RiskId = "buy" | "hold" | "trim" | "out";
 
-export const HORIZON_DEFS: {
-  id: HorizonId;
-  label: string;
-  note: string;
-  w: `${number}%`;
-  consequence: string;
-  chartLabel: string;
-  chartSub: string;
-}[] = [
-  {
-    id: "short",
-    label: "Days to weeks",
-    note: "You are trading momentum and news.",
-    w: "22%",
-    consequence:
-      "Charts open on 1D. Signals refresh intraday and momentum sits at the top of your feed.",
-    chartLabel: "Charts open on 1D",
-    chartSub: "Signals refresh intraday, momentum first",
-  },
-  {
-    id: "mid",
-    label: "A few months",
-    note: "You are riding a thesis, not a tick.",
-    w: "55%",
-    consequence:
-      "Charts open on 3M. Signals refresh daily, weighted toward flow and earnings.",
-    chartLabel: "Charts open on 3M",
-    chartSub: "Signals refresh daily, weighted toward flow & earnings",
-  },
-  {
-    id: "long",
-    label: "Years",
-    note: "You buy and mostly leave it alone.",
-    w: "100%",
-    consequence:
-      "Charts open on 1Y and only valuation-grade alerts reach your phone.",
-    chartLabel: "Charts open on 1Y, signals weekly",
-    chartSub: "Intraday noise stays off your phone",
-  },
+export const RISK_DEFS: { id: RiskId; label: string; summary: string }[] = [
+  { id: "buy", label: "I buy more", summary: "Buys more" },
+  { id: "hold", label: "I sit on my hands", summary: "Sits on their hands" },
+  { id: "trim", label: "I trim some of it", summary: "Trims some" },
+  { id: "out", label: "I get out", summary: "Gets out" },
 ];
 
-const ARCHETYPES: Record<
-  string,
-  { title: string; description: string; tagline: string }
-> = {
-  "buy-short": {
-    title: "The Opportunist",
-    description:
-      "You want to catch the dip and move again before the next one. Speed matters more than a thesis.",
-    tagline: "Move first, ask later",
+// ---------- Question 4 — How long are you holding? ----------
+export type HorizonId = "weeks" | "months" | "years" | "decades";
+
+export const HORIZON_DEFS: { id: HorizonId; label: string; note: string }[] = [
+  { id: "weeks", label: "Weeks", note: "Trading the move" },
+  { id: "months", label: "Months", note: "Riding a thesis" },
+  { id: "years", label: "3-5 years", note: "Compounding" },
+  { id: "decades", label: "Decades", note: "Never selling" },
+];
+
+// ---------- Profile names: horizon × drawdown reaction ----------
+const NAMES: Record<HorizonId, Record<RiskId, string>> = {
+  weeks: {
+    buy: "The Dip Buyer",
+    hold: "The Swing Trader",
+    trim: "The Tactician",
+    out: "The Sprinter",
   },
-  "buy-mid": {
-    title: "The Conviction Buyer",
-    description:
-      "You size up when others panic and give a trade a real quarter to work before you judge it.",
-    tagline: "Size up on weakness",
+  months: {
+    buy: "The Accumulator",
+    hold: "The Thesis Holder",
+    trim: "The Rebalancer",
+    out: "The Cautious One",
   },
-  "buy-long": {
-    title: "The Accumulator",
-    description:
-      "Drawdowns read as a discount. You keep adding and expect to still be holding this in five years.",
-    tagline: "Every dip is a discount",
+  years: {
+    buy: "The Conviction Buyer",
+    hold: "The Patient Builder",
+    trim: "The Steady Hand",
+    out: "The Careful Compounder",
   },
-  "hold-short": {
-    title: "The Tactical Trader",
-    description:
-      "You move fast but you do not panic. A bad week is data, not a verdict.",
-    tagline: "Fast hands, steady head",
-  },
-  "hold-mid": {
-    title: "The Steady Hand",
-    description:
-      "You sized it right the first time and you are not in a hurry to prove anything.",
-    tagline: "Sized right, held steady",
-  },
-  "hold-long": {
-    title: "The Patient Builder",
-    description:
-      "You want equity in things you rate, you can sit through a bad quarter, and you would rather compound than trade.",
-    tagline: "Quality you can sit on",
-  },
-  "sell-short": {
-    title: "The Risk Manager",
-    description:
-      "You would rather take a small loss on purpose than a large one by accident.",
-    tagline: "Small losses, on purpose",
-  },
-  "sell-mid": {
-    title: "The Capital Protector",
-    description:
-      "A thesis is good until the price says otherwise. You protect capital first, upside second.",
-    tagline: "Capital first, upside second",
-  },
-  "sell-long": {
-    title: "The Cautious Long-Termer",
-    description:
-      "You are in this for years, but you sleep better knowing you would get out if it really turned.",
-    tagline: "In for years, ready to exit",
+  decades: {
+    buy: "The Lifer",
+    hold: "The Vault",
+    trim: "The Long Trimmer",
+    out: "The Reluctant Holder",
   },
 };
 
-type OnboardingState = {
-  picked: Record<AssetKey, boolean>;
-  showEverything: boolean;
-  amountPreset: AmountPreset;
-  customAmount: string;
-  risk: RiskId;
-  horizon: HorizonId;
-};
-
+// Same shape as before (so lib/onboardingProfile and anything reading the saved
+// profile keep working) plus the prototype's extra fields.
 export type OnboardingProfile = {
   title: string;
   description: string;
@@ -200,102 +126,121 @@ export type OnboardingProfile = {
   amountSub: string;
   chartTitle: string;
   chartSub: string;
+  /** prototype "WHAT CHANGES" sentence */
+  whatChanges: string;
+  /** answer labels, for the result cards and the Account / Folio screens */
+  owns: string[];
+  capitalLabel: string;
+  riskSummary: string;
+  horizonLabel: string;
+  horizon: HorizonId;
 };
 
-type OnboardingValue = OnboardingState & {
+type OnboardingValue = {
+  picked: Record<AssetKey, boolean>;
+  pickedCount: number;
   togglePicked: (key: AssetKey) => void;
-  setShowEverything: (v: boolean) => void;
-  setAmountPreset: (v: AmountPreset) => void;
-  setCustomAmount: (v: string) => void;
+  capital: CapitalId;
+  setCapital: (v: CapitalId) => void;
+  risk: RiskId;
   setRisk: (v: RiskId) => void;
+  horizon: HorizonId;
   setHorizon: (v: HorizonId) => void;
+  /** number sent to the backend as amountToPutIn */
   resolvedAmount: number;
   computeProfile: () => OnboardingProfile;
 };
 
 const OnboardingContext = createContext<OnboardingValue | null>(null);
 
+/** "A", "A and B", "A, B and C" */
+function joinAnd(list: string[]) {
+  if (list.length <= 1) return list[0] ?? "";
+  return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+}
+
 export function OnboardingProvider({ children }: { children: ReactNode }) {
+  // prototype defaults
   const [picked, setPicked] = useState<Record<AssetKey, boolean>>({
     stocks: true,
     preipo: true,
     commodities: false,
-    crypto: false,
-    etf: false,
-    rwa: false,
+    treasuries: false,
   });
-  const [showEverything, setShowEverything] = useState(false);
-  const [amountPreset, setAmountPreset] = useState<AmountPreset>(250);
-  const [customAmount, setCustomAmount] = useState("");
+  const [capital, setCapital] = useState<CapitalId>("b");
   const [risk, setRisk] = useState<RiskId>("hold");
-  const [horizon, setHorizon] = useState<HorizonId>("long");
+  const [horizon, setHorizon] = useState<HorizonId>("years");
 
   const togglePicked = useCallback((key: AssetKey) => {
     setPicked((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  const resolvedAmount =
-    amountPreset === "custom" ? Number(customAmount) || 0 : amountPreset;
+  const pickedCount = Object.values(picked).filter(Boolean).length;
+  const capitalDef =
+    CAPITAL_DEFS.find((c) => c.id === capital) ?? CAPITAL_DEFS[1];
+  const resolvedAmount = capitalDef.amount;
 
-  const computeProfile = useCallback(() => {
-    const archetype =
-      ARCHETYPES[`${risk}-${horizon}`] ?? ARCHETYPES["hold-long"];
+  const computeProfile = useCallback((): OnboardingProfile => {
+    const owns = ASSET_DEFS.filter((a) => picked[a.id]).map((a) => a.label);
+    const riskDef = RISK_DEFS.find((r) => r.id === risk) ?? RISK_DEFS[1];
     const horizonDef =
       HORIZON_DEFS.find((h) => h.id === horizon) ?? HORIZON_DEFS[2];
 
-    const pickedLabels = ASSET_DEFS.filter((a) => picked[a.id]).map(
-      (a) => a.label,
-    );
-    let feedTitle: string;
-    let feedSub: string;
-    if (showEverything || pickedLabels.length === 0) {
-      feedTitle = "Feed shows everything";
-      feedSub = "No bias — every asset class gets equal room";
-    } else {
-      const lead = pickedLabels.slice(0, 2).join(" & ");
-      const extra = pickedLabels.length - 2;
-      feedTitle = `Feed leads with ${lead}${extra > 0 ? ` +${extra} more` : ""}`;
-      feedSub = "Everything else stays one tap away";
-    }
+    const description =
+      risk === "out"
+        ? "You would rather miss a run than sit through a drawdown, and we will keep the loudest things away from your home screen."
+        : horizon === "weeks"
+          ? "You are here for the move, not the decade. Expect a busier, noisier home screen."
+          : "You hold through drawdowns and you are here for the next few years, not the next few days.";
+
+    const lead = joinAnd(owns);
+    const intraday =
+      horizon === "weeks" ? "shows intraday movement" : "hides intraday noise";
+    const whatChanges = `Your home screen leads with ${lead}, ${intraday}, and suggests a monthly recurring buy instead of one-off trades.`;
 
     return {
-      title: archetype.title,
-      description: archetype.description,
-      tagline: archetype.tagline,
-      feedTitle,
-      feedSub,
-      amountTitle: `Default buy size $${resolvedAmount.toLocaleString("en-US")}`,
-      amountSub: "One tap to buy, always editable",
-      chartTitle: horizonDef.chartLabel,
-      chartSub: horizonDef.chartSub,
+      title: NAMES[horizon][risk],
+      description,
+      tagline: `${horizonDef.label} · ${riskDef.summary}`,
+      feedTitle: `Home leads with ${lead}`,
+      feedSub: "Everything else stays one tap away",
+      amountTitle: `Starts with ${capitalDef.label}`,
+      amountSub: capitalDef.note,
+      chartTitle:
+        horizon === "weeks"
+          ? "Shows intraday movement"
+          : "Hides intraday noise",
+      chartSub: "Suggests a monthly recurring buy",
+      whatChanges,
+      owns,
+      capitalLabel: capitalDef.label,
+      riskSummary: riskDef.summary,
+      horizonLabel: horizonDef.label,
+      horizon,
     };
-  }, [picked, showEverything, resolvedAmount, risk, horizon]);
+  }, [picked, risk, horizon, capitalDef]);
 
   const value = useMemo(
     () => ({
       picked,
-      showEverything,
-      amountPreset,
-      customAmount,
-      risk,
-      horizon,
+      pickedCount,
       togglePicked,
-      setShowEverything,
-      setAmountPreset,
-      setCustomAmount,
+      capital,
+      setCapital,
+      risk,
       setRisk,
+      horizon,
       setHorizon,
       resolvedAmount,
       computeProfile,
     }),
     [
       picked,
-      showEverything,
-      amountPreset,
-      customAmount,
+      pickedCount,
+      togglePicked,
+      capital,
       risk,
       horizon,
-      togglePicked,
       resolvedAmount,
       computeProfile,
     ],

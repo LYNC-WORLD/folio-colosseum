@@ -1,15 +1,20 @@
+// Result — prototype #s-result
+// Submit logic is unchanged: same endpoint, same payload keys.
 import { useState } from "react";
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
-
-import { Ionicons } from "@expo/vector-icons";
+import { StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-
-import { GhostLink, PrimaryButton } from "../../components";
 import { useAuth, useOnboarding } from "../../context";
 import { saveOnboardingProfile } from "../../lib";
 import { submitLoginForm } from "../../services/onboarding";
-import { C, RADIUS, FONT } from "../../theme";
-
+import { hError, hSuccess } from "../../lib/haptics";
+import { C, FONT, em, h1Size } from "../../theme";
+import { Button, Rise } from "../../components/ui";
+import {
+  AFTER_HEADER,
+  HEADER_STEP,
+  OnboardingScaffold,
+  Wash,
+} from "../../components/onboarding/OnboardingScaffold";
 import type { OnboardingStackParamList } from "../../navigation";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "ProfileSummary">;
@@ -32,8 +37,6 @@ export function ProfileSummaryScreen({ navigation, route }: Props) {
       setIsSubmitting(true);
       setError(null);
 
-      // Replace this with your actual token retrieval.
-
       const interestedStocks = Object.entries(picked)
         .filter(([, selected]) => selected)
         .map(([assetId]) => assetId);
@@ -44,178 +47,131 @@ export function ProfileSummaryScreen({ navigation, route }: Props) {
         question1: risk,
         question2: horizon,
       };
-      await submitLoginForm(payload, idToken!);
-
+      // console.log("====================================");
+      // console.log(payload);
+      // console.log("====================================");
+      const data = await submitLoginForm(payload, idToken!);
+      console.log("====================================");
+      console.log("hellos", data);
+      console.log("====================================");
       saveOnboardingProfile(profile);
+      hSuccess();
       onComplete?.();
     } catch (err) {
       console.error("Failed to submit onboarding form:", err);
-
+      hError();
       setError("We couldn't save your answers. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const rows = [
-    {
-      icon: "stats-chart-outline" as const,
-      title: profile.feedTitle,
-      sub: profile.feedSub,
-    },
-    {
-      icon: "cash-outline" as const,
-      title: profile.amountTitle,
-      sub: profile.amountSub,
-    },
-    {
-      icon: "time-outline" as const,
-      title: profile.chartTitle,
-      sub: profile.chartSub,
-    },
+  const rows: [string, string][] = [
+    ["OWNS", profile.owns.join(" · ")],
+    ["STARTS WITH", profile.capitalLabel],
+    ["DRAWDOWN", profile.riskSummary],
+    ["HORIZON", profile.horizonLabel],
   ];
 
   return (
-    <SafeAreaView style={s.safe}>
-      <View style={s.container}>
-        <Text style={s.eyebrow}>YOUR PROFILE</Text>
-
-        <Text style={s.h1}>{profile.title}</Text>
-
-        <Text style={s.sub}>{profile.description}</Text>
-
-        <View style={s.rows}>
-          {rows.map((r, i) => (
-            <View
-              key={r.title}
-              style={[
-                s.row,
-                i === 0 && s.rowFirst,
-                i === rows.length - 1 && s.rowLast,
-              ]}
-            >
-              <View style={s.rowIcon}>
-                <Ionicons name={r.icon} size={18} color={C.bone} />
+    <OnboardingScaffold
+      label="YOUR PROFILE"
+      title={profile.title}
+      titleStyle={h1Size(44)}
+      body={profile.description}
+      bodyStyle={{ color: C.ink2 }}
+      headerGap={12}
+      footer={
+        <>
+          {error ? (
+            <Rise key={error} distance={8} duration={320}>
+              <View
+                style={s.error}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                <View style={s.errorBar} />
+                <Text style={s.errorText}>{error}</Text>
               </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={s.rowTitle}>{r.title}</Text>
-                <Text style={s.rowSub}>{r.sub}</Text>
-              </View>
+            </Rise>
+          ) : null}
+          <Button
+            title="Start investing"
+            loading={isSubmitting}
+            onPress={handleEnter}
+          />
+          <Button
+            variant="link"
+            size="sm"
+            title="Retake the questions"
+            disabled={isSubmitting}
+            onPress={() => navigation.navigate("WhatToOwn")}
+          />
+        </>
+      }
+    >
+      <View style={s.rows}>
+        {rows.map(([k, v], i) => (
+          <Rise key={k} delay={AFTER_HEADER + i * HEADER_STEP}>
+            <View style={s.row}>
+              <Text style={s.rowKey}>{k}</Text>
+              <Text style={s.rowVal}>{v}</Text>
             </View>
-          ))}
-        </View>
-
-        {error && <Text style={s.errorText}>{error}</Text>}
-
-        <View style={s.note}>
-          <Text style={s.noteText}>
-            Your profile is a starting point, not a cage. Folio re-reads it from
-            what you actually buy.
-          </Text>
-        </View>
-
-        <View style={{ flexGrow: 1 }} />
-
-        <PrimaryButton
-          label={isSubmitting ? "Saving..." : "Enter Folio"}
-          onPress={handleEnter}
-          disabled={isSubmitting}
-        />
-
-        <GhostLink
-          label="Change my answers"
-          onPress={() => navigation.navigate("WhatToOwn")}
-        />
+          </Rise>
+        ))}
       </View>
-    </SafeAreaView>
+
+      <Rise delay={AFTER_HEADER + rows.length * HEADER_STEP}>
+        <Wash label="WHAT CHANGES">
+          <Text style={s.change}>{profile.whatChanges}</Text>
+        </Wash>
+      </Rise>
+    </OnboardingScaffold>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
-  container: {
-    flex: 1,
-    paddingTop: 32,
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-  },
-
-  eyebrow: {
-    fontFamily: FONT.display600,
-    fontSize: 10,
-    letterSpacing: 1.8,
-    color: C.inkMuted,
-  },
-  h1: {
-    marginTop: 10,
-    fontFamily: FONT.display800,
-    fontSize: 46,
-    lineHeight: 46,
-    letterSpacing: -2.3,
-    color: C.bone,
-  },
-  sub: {
-    marginTop: 14,
-    fontFamily: FONT.display400,
-    fontSize: 15,
-    lineHeight: 23,
-    color: C.inkSecondary,
-  },
-
-  rows: {
-    marginTop: 26,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: C.hairline,
-    overflow: "hidden",
-  },
+  rows: { gap: 10 },
   row: {
+    minHeight: 56,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: C.surface,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 16,
-    backgroundColor: C.card,
-    borderTopWidth: 1,
-    borderTopColor: C.hairline,
   },
-  rowFirst: { borderTopWidth: 0 },
-  rowLast: {},
-  rowIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 7,
-    backgroundColor: C.raised,
-    alignItems: "center",
-    justifyContent: "center",
+  rowKey: {
+    flex: 1,
+    fontFamily: FONT.mono400,
+    fontSize: 10,
+    letterSpacing: em(10, 0.18),
+    color: C.ink3,
   },
-  rowTitle: { fontFamily: FONT.display600, fontSize: 14, color: C.bone },
-  rowSub: {
-    marginTop: 2,
-    fontFamily: FONT.display400,
-    fontSize: 12,
-    color: C.inkMuted,
+  rowVal: {
+    flexShrink: 1,
+    maxWidth: "68%",
+    textAlign: "right",
+    fontFamily: FONT.sans600,
+    fontSize: 14.5,
+    letterSpacing: em(14.5, -0.015),
+    color: C.ink1,
+  },
+  change: {
+    fontFamily: FONT.sans400,
+    fontSize: 13,
+    lineHeight: 20,
+    color: C.ink2,
   },
 
-  note: {
-    marginTop: 18,
-    padding: 16,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: "#453D37",
-  },
-  noteText: {
-    fontFamily: FONT.display400,
-    fontSize: 13,
-    lineHeight: 19,
-    color: C.inkSecondary,
-  },
+  error: { flexDirection: "row", alignItems: "stretch", gap: 12 },
+  errorBar: { width: 3, borderRadius: 2, backgroundColor: C.loss },
   errorText: {
-    marginTop: 16,
-    fontFamily: FONT.display400,
-    fontSize: 13,
-    lineHeight: 19,
-    color: "#E57373",
+    flex: 1,
+    fontFamily: FONT.sans500,
+    fontSize: 13.5,
+    lineHeight: 20,
+    color: C.loss,
   },
 });

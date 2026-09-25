@@ -1,280 +1,125 @@
+// src/screens/LoginScreen.tsx — prototype: #s-signin
+//
+// No entrance animation of its own: on app open it is revealed by the splash
+// crossfade, and after sign-out it is shown with the same 280ms fade.
+// Auth logic is unchanged — this only renders useAuth().
+
 import {
   ActivityIndicator,
-  Pressable,
-  SafeAreaView,
-  StatusBar,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../context";
-import { C, RADIUS, FONT } from "../theme";
-
-const PREVIEW_ASSETS: {
-  ticker: string;
-  price: string;
-  delta?: string;
-  deltaColor?: string;
-  tag?: string;
-}[] = [
-  { ticker: "NVDA", price: "$184.20", delta: "+2.4%", deltaColor: C.jade },
-  { ticker: "SPACEX", price: "$212.50", tag: "Pre-IPO" },
-  { ticker: "XAUT", price: "$3,412", delta: "+0.6%", deltaColor: C.jade },
-  { ticker: "TSLA", price: "$402.90", delta: "−1.1%", deltaColor: C.clay },
-];
+import { C, FONT, TYPE, em, h1Size } from "../theme";
+import { Button, Mark, Rise } from "../components/ui";
 
 export function LoginScreen() {
   const { signIn, busy, error } = useAuth();
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-
-      <View style={s.container}>
-        {/* Wordmark row */}
-        <View style={s.brandRow}>
-          <Text style={s.brand}>Folio</Text>
-          <View style={s.brandRule} />
-          <Text style={s.brandTag}>Non-custodial</Text>
-        </View>
-
-        {/* Headline */}
-        <View style={s.headlineBlock}>
-          <Text style={s.headline}>
-            <Text style={s.headlineDim}>
-              Own what{"\n"}you actually{"\n"}
-            </Text>
-            <Text style={s.headlineBright}>believe in.</Text>
+    <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
+      <ScrollView
+        contentContainerStyle={s.page}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero — centred in the free space above the button */}
+        <View style={s.hero}>
+          <Mark height={86} />
+          <Text style={[TYPE.h1, h1Size(48)]} accessibilityRole="header">
+            Own the{"\n"}world's best{"\n"}companies.
           </Text>
-          <Text style={s.subtitle}>
-            US stocks, pre-IPOs, commodities and tokenized assets — bought with
-            stablecoins, held in a wallet only you control.
+          <Text style={[TYPE.body, s.body]}>
+            Stocks, pre-IPOs, gold and treasuries — bought with stablecoins,
+            held in a wallet only you control.
           </Text>
         </View>
-
-        {/* Preview grid */}
-        <View style={s.grid}>
-          {PREVIEW_ASSETS.map((a) => (
-            <View key={a.ticker} style={s.card}>
-              <Text style={s.cardTicker}>{a.ticker}</Text>
-              <Text style={s.cardPrice}>{a.price}</Text>
-              {a.tag ? (
-                <Text style={s.cardTag}>{a.tag}</Text>
-              ) : (
-                <Text style={[s.cardDelta, { color: a.deltaColor }]}>
-                  {a.delta}
-                </Text>
-              )}
-            </View>
-          ))}
-        </View>
-
-        <View style={{ flexGrow: 1 }} />
 
         {/* Actions */}
-        {error ? (
-          <View
-            style={s.error}
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-          >
-            <View style={s.errorBar} />
-            <Text style={s.errorText}>{error}</Text>
-          </View>
-        ) : null}
+        <View style={s.actions}>
+          {error ? (
+            <Rise key={error} distance={8} duration={320}>
+              <View
+                style={s.error}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                <View style={s.errorBar} />
+                <Text style={s.errorText}>{error}</Text>
+              </View>
+            </Rise>
+          ) : null}
 
-        <Pressable
-          onPress={signIn}
-          disabled={busy}
-          accessibilityRole="button"
-          accessibilityLabel="Continue with Google"
-          accessibilityState={{ disabled: busy, busy }}
-          style={({ pressed }) => [
-            s.primaryButton,
-            pressed && s.pressed,
-            busy && s.busy,
-          ]}
-        >
-          {busy ? (
-            <ActivityIndicator size="small" color={C.buttonInk} />
-          ) : (
-            <View style={s.gBadge}>
-              <Text style={s.gLetter}>G</Text>
-            </View>
-          )}
-          <Text style={s.primaryLabel}>
-            {busy ? "Signing in…" : "Continue with Google"}
-          </Text>
-        </Pressable>
+          <Button
+            title={busy ? "Signing in…" : "Continue with Google"}
+            onPress={busy ? undefined : signIn}
+            icon={
+              busy ? (
+                <ActivityIndicator size="small" color={C.onMint} />
+              ) : (
+                <View style={s.g}>
+                  <Text style={s.gLetter}>G</Text>
+                </View>
+              )
+            }
+          />
 
-        {/* <Pressable
-          onPress={() => {
-            // TODO: wire up once wallet-connect is added to AuthContext.
-            // Left as a visible, disabled-feeling affordance for now so the
-            // screen matches the design — no wallet flow exists yet.
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Connect a wallet instead"
-          style={({ pressed }) => [s.secondaryButton, pressed && s.pressed]}
-        >
-          <Text style={s.secondaryLabel}>Connect a wallet instead</Text>
-        </Pressable> */}
-
-        <Text style={s.legal}>
-          Non-custodial · settles on-chain · 1% per trade
-        </Text>
-      </View>
+          <Text style={s.legal}>NON-CUSTODIAL · SETTLES ON-CHAIN</Text>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
-  container: {
-    flex: 1,
-    paddingTop: 32,
-    paddingHorizontal: 24,
-    paddingBottom: 16,
+  safe: { flex: 1, backgroundColor: C.ground },
+  // prototype .screen padding: 26px 20px 24px
+  page: {
+    flexGrow: 1,
+    paddingTop: 26,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
   },
 
-  brandRow: { flexDirection: "row", alignItems: "baseline", gap: 10 },
-  brand: {
-    fontFamily: FONT.display800,
-    fontSize: 30,
-    letterSpacing: -1.8,
-    color: C.bone,
-  },
-  brandRule: { flexGrow: 1, height: 1, backgroundColor: C.hairline },
-  brandTag: {
-    fontFamily: FONT.mono500,
-    fontSize: 10,
-    letterSpacing: 1.4,
-    textTransform: "uppercase",
-    color: C.inkMuted,
-  },
+  hero: { flexGrow: 1, justifyContent: "center", gap: 28, paddingVertical: 12 },
+  body: { maxWidth: 300 },
 
-  headlineBlock: { marginTop: 40, gap: 16 },
-  headline: {
-    fontFamily: FONT.display800,
-    fontSize: 50,
-    lineHeight: 48,
-    letterSpacing: -2.7,
-  },
-  headlineDim: { color: C.inkMuted },
-  headlineBright: { color: C.bone },
-  subtitle: {
-    fontFamily: FONT.display400,
-    fontSize: 15,
-    lineHeight: 23,
-    color: C.inkSecondary,
-    maxWidth: 300,
-  },
+  actions: { gap: 16 },
 
-  grid: {
-    marginTop: 32,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  card: {
-    width: "48%",
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.hairline,
-    borderRadius: RADIUS.md,
-    padding: 14,
-    gap: 6,
-  },
-  cardTicker: {
-    fontFamily: FONT.mono400,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    color: C.inkMuted,
-  },
-  cardPrice: {
-    fontFamily: FONT.mono500,
-    fontSize: 18,
-    color: C.bone,
-  },
-  cardDelta: {
-    fontFamily: FONT.display400,
-    fontSize: 12,
-  },
-  cardTag: {
-    fontFamily: FONT.display600,
-    fontSize: 11,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-    color: C.inkMuted,
-  },
-
-  primaryButton: {
-    height: 56,
-    borderRadius: RADIUS.md,
-    backgroundColor: C.buttonBg,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  gBadge: {
+  // "G" avatar inside the button: on-mint circle, mint letter
+  g: {
     width: 22,
     height: 22,
-    borderRadius: 11,
-    borderWidth: 1,
-    borderColor: C.inkSecondary,
+    borderRadius: 999,
+    backgroundColor: C.onMint,
     alignItems: "center",
     justifyContent: "center",
   },
   gLetter: {
-    fontFamily: FONT.display600,
-    fontSize: 13,
-    color: C.inkMuted,
-  },
-  primaryLabel: {
-    fontFamily: FONT.display600,
-    fontSize: 16,
-    color: C.buttonInk,
-  },
-  pressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
-  busy: { opacity: 0.75 },
-
-  secondaryButton: {
-    height: 52,
-    marginTop: 10,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: C.hairline,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  secondaryLabel: {
-    fontFamily: FONT.display500,
-    fontSize: 15,
-    color: C.inkSecondary,
+    fontFamily: FONT.sans800,
+    fontSize: 12,
+    color: C.mint,
+    includeFontPadding: false,
   },
 
   legal: {
-    marginTop: 18,
-    fontFamily: FONT.display400,
-    fontSize: 12,
-    lineHeight: 18,
     textAlign: "center",
-    color: C.inkMuted,
+    fontFamily: FONT.mono400,
+    fontSize: 9.5,
+    letterSpacing: em(9.5, 0.2),
+    color: C.ink4,
   },
 
-  error: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    gap: 12,
-    marginBottom: 12,
-  },
-  errorBar: { width: 3, borderRadius: 2, backgroundColor: C.clay },
+  error: { flexDirection: "row", alignItems: "stretch", gap: 12 },
+  errorBar: { width: 3, borderRadius: 2, backgroundColor: C.loss },
   errorText: {
     flex: 1,
-    fontFamily: FONT.display400,
-    color: C.clay,
-    fontSize: 14,
+    fontFamily: FONT.sans500,
+    fontSize: 13.5,
     lineHeight: 20,
+    color: C.loss,
   },
 });

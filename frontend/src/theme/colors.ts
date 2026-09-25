@@ -1,54 +1,116 @@
 // src/theme/colors.ts
 //
-// "Ink, bone and the market's own colour."
-// Folio has no brand colour. The ground is warm graphite, the action colour
-// is bone, and every hue on screen belongs to data — direction or asset
-// class. Nothing decorative is ever coloured, so colour always means
-// something.
+// Folio — dark ground, one action colour (mint), loss in red.
+// Tokens mirror the prototype's CSS variables 1:1.
 //
-// NOTE: the original key names (bg, card, ink, muted, ring, accent,
-// buttonBg, buttonInk, error, success) are kept so every screen that
-// already imports `C` re-themes automatically — nothing else needs to
-// change just to pick up the new look. New tokens are added alongside.
+// Legacy keys (bg, card, ink, muted, ring, accent, buttonBg, buttonInk,
+// error, success, raised, hairline, bone, inkSecondary, inkMuted, jade,
+// clay, amber, series) are kept and repointed, so every existing screen
+// re-themes automatically.
+
+// ---- prototype tokens ----
+const ground = "#0A0B0E";
+const surface = "#14171E";
+const raised = "#1A1F28";
+const sunk = "#101822";
+const hair = "#1C2129";
+const stroke = "#262C36";
+
+const ink1 = "#FFFFFF";
+const ink2 = "#A8AEB6";
+const ink3 = "#8A9099";
+const ink4 = "#7C838C";
+
+const mint = "#37E099";
+const mintHi = "#4FF6BB";
+const mintLo = "#01D794";
+const mintDeep = "#0C9A6C";
+const onMint = "#06120D";
+
+const loss = "#F0604D";
+const amber = "#E8A33D";
 
 export const C = {
-  // ---- ground & ink (backward-compatible keys) ----
-  bg: "#0D0B0A", // ground
-  card: "#161311", // surface
-  ink: "#F5F0E8", // bone — text & action
-  muted: "#A39A90", // ink secondary
-  ring: "#2C2724", // hairline
-  accent: "#F5F0E8", // no brand colour — accents are bone, not a hue
-  buttonBg: "#FFFFFF",
-  buttonInk: "#0D0B0A",
-  error: "#E8705A", // clay — losses only
-  success: "#4FC98F", // jade — gains, live, confirmed
+  // surfaces
+  ground,
+  surface,
+  raised,
+  sunk,
+  hair,
+  stroke,
+  strokeHi: "#2F3642",
+  track: "#242A34", // progress / bar backgrounds
+  dotRing: "#3A404A", // unselected radio ring
+  grab: "#333B46", // sheet grab handle
 
-  // ---- extended ink scale ----
-  raised: "#201C19", // raised / selected surface
-  hairline: "#2C2724",
-  bone: "#F5F0E8",
-  inkSecondary: "#A39A90",
-  inkMuted: "#8A8078",
+  // ink
+  ink1,
+  ink2,
+  ink3,
+  ink4,
 
-  // ---- semantic (the only colour allowed to mean something) ----
-  jade: "#4FC98F", // up
-  clay: "#E8705A", // down
-  amber: "#D9954E", // caution / premium / crowded / cooling
+  // action
+  mint,
+  mintHi,
+  mintLo,
+  mintDeep,
+  onMint,
+  mintWash: "rgba(55,224,153,0.12)",
+  mintEdge: "rgba(55,224,153,0.42)",
+  mintGlow: "rgba(55,224,153,0.18)",
 
-  // ---- asset-class series colours (charts, tags, dots — never UI chrome) ----
+  // semantic
+  loss,
+  amber,
+
+  // overlays
+  scrim: "rgba(4,5,7,0.68)",
+  tabBg: "rgba(10,11,14,0.92)",
+
+  // avatar fills (people in Leaders / Groups)
+  avatar: [
+    "#37E099",
+    "#6FA8F5",
+    "#F07F9B",
+    "#C79BF0",
+    "#7FD3E0",
+    "#E8A33D",
+    "#7FD8A8",
+    "#F0A07F",
+  ],
+
+  // ---- legacy keys, repointed ----
+  bg: ground,
+  card: surface,
+  ink: ink1,
+  muted: ink2,
+  ring: hair,
+  accent: mint,
+  buttonBg: mint,
+  buttonInk: onMint,
+  error: loss,
+  success: mint,
+  hairline: hair,
+  bone: ink1,
+  inkSecondary: ink2,
+  inkMuted: ink4,
+  jade: mint,
+  clay: loss,
   series: {
-    usStocks: "#3987e5",
-    preIpo: "#d95926",
-    commodities: "#199e70",
-    crypto: "#c98500",
+    usStocks: "#6FA8F5",
+    preIpo: "#F0A07F",
+    commodities: "#E8A33D",
+    crypto: "#C79BF0",
   },
 } as const;
 
 export const RADIUS = {
-  sm: 8,
-  md: 10,
+  sm: 9,
+  md: 12,
   lg: 14,
+  card: 16,
+  wash: 18,
+  sheet: 26,
   pill: 999,
 };
 
