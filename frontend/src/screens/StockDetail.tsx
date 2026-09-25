@@ -40,6 +40,7 @@ import Animated, {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Path, Rect } from "react-native-svg";
+import { DepositFlow } from "../components/folio/FolioSheets";
 import {
   useNavigation,
   useRoute,
@@ -109,7 +110,13 @@ export function StockDetail() {
     error,
     reload,
   } = useStockDetail(params.category, params.symbol);
-  const { usdc, tokens, loading: walletLoading } = useWallet();
+  const {
+    usdc,
+    tokens,
+    walletAddress,
+    loading: walletLoading,
+    refresh: refreshWallet,
+  } = useWallet();
   const sheet = useSheet();
   const toast = useToast();
 
@@ -203,29 +210,41 @@ export function StockDetail() {
   const over = amt > balance + 1e-9;
   const zero = amt <= 0;
   const blockedRec = rep && !!activeRec;
+  const needFunds = !walletLoading && !blockedRec && (balance <= 0 || over);
+
   const hint = walletLoading
     ? "Checking your balance…"
-    : over
-      ? `More than the ${money(balance)} you have available`
-      : zero
-        ? "Enter an amount in USDC"
-        : `≈ ${units(price ? amt / price : 0)} ${stock.symbol} at ${money(price)}`;
+    : balance <= 0
+      ? "You have no USDC yet. Add funds to buy."
+      : over
+        ? `More than the ${money(balance)} you have available`
+        : zero
+          ? "Enter an amount in USDC"
+          : `≈ ${units(price ? amt / price : 0)} ${stock.symbol} at ${money(price)}`;
+
   const buyTitle = blockedRec
     ? "Recurring buy already on"
-    : over
-      ? "Not enough USDC"
+    : needFunds
+      ? "Add funds"
       : zero
         ? "Enter an amount"
         : rep
           ? `Buy ${money(amt)} every month`
           : `Buy ${stock.symbol}`;
-  const buyDisabled = walletLoading || over || zero || blockedRec;
+
+  const buyDisabled = walletLoading || blockedRec || (zero && !needFunds);
 
   const pcts = [25, 50, 75, 100].map((p) => ({
     label: p === 100 ? "Max" : `${p}%`,
     value: Math.floor(balance * p) / 100,
   }));
-
+  const openDeposit = () => {
+    amountRef.current?.blur();
+    sheet.open(<DepositFlow address={walletAddress} />, {
+      label: "Add funds",
+      onClose: () => refreshWallet(), // pick up a deposit as soon as the sheet closes
+    });
+  };
   // ---------- actions ----------
   const openBuy = () => {
     amountRef.current?.blur();
@@ -546,7 +565,7 @@ export function StockDetail() {
         locked={isPre && PRE_IPO_LOCKED}
         buyTitle={buyTitle}
         buyDisabled={buyDisabled}
-        onBuy={openBuy}
+        onBuy={needFunds ? openDeposit : openBuy}
         onSell={openSell}
         bottom={insets.bottom}
       />

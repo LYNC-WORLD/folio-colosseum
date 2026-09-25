@@ -323,11 +323,11 @@ export function ProfileScreen() {
 
         {/* disclosure + sign out */}
         <Rise {...r(8)} style={{ gap: 18 }}>
-          <Text style={s.fee}>
+          {/* <Text style={s.fee}>
             Folio charges <Text style={s.feeBold}>1%</Text> on each buy and sell
             and <Text style={s.feeBold}>5%</Text> of profit when you exit in the
             green. No monthly fee, no spread markup, no payment for order flow.
-          </Text>
+          </Text> */}
 
           <PressScale
             dim
