@@ -13,9 +13,13 @@ export interface LoginFormResponse {
   data?: unknown;
 }
 
-export const submitLoginForm = (payload: LoginForm, idToken: string) =>
+export const submitLoginForm = (payload: LoginForm, idToken: string) => {
+  console.log("====================================");
+  console.log("hello");
+  console.log("====================================");
   request<LoginFormResponse>("/api/user/login-form", {
     method: "POST",
     token: idToken,
     body: payload,
   });
+};

@@ -1,20 +1,28 @@
+// Bottom tabs: Home · Groups · Folio · Leaderboard · AI Analyst
+//
+// Route names are unchanged (Home, Portfolio, Signals, Leaders, Profile) so
+// every existing navigate("…") call keeps working. "Profile" is still a tab
+// route but has no button — it opens from the gear on Folio, like the
+// prototype's Account screen, and highlights Folio while open.
+
+import { Easing } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { NavigatorScreenParams } from "@react-navigation/native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { View } from "react-native";
-import { C } from "../theme";
 
-import { LeadersScreen, PortfolioScreen, SignalsScreen } from "../screens";
+import { PortfolioScreen, SignalsScreen } from "../screens";
+import { GroupsStack, type GroupsStackParamList } from "./GroupsStack";
 
-import { HomeStack, HomeStackParamList } from "./HomeStack";
+import { HomeStack, type HomeStackParamList } from "./HomeStack";
 import { ProfileStack } from "./ProfileStack";
+import { LeadersStack, type LeadersStackParamList } from "./LeadersStack";
+import { TabBar } from "./TabBar";
 
 export type TabParamList = {
   Home: NavigatorScreenParams<HomeStackParamList> | undefined;
+  Groups: NavigatorScreenParams<GroupsStackParamList> | undefined;
   Portfolio: undefined;
   Signals: undefined;
-  Leaders: undefined;
+  Leaders: NavigatorScreenParams<LeadersStackParamList> | undefined;
   Profile: undefined;
   UserRecords: {
     initialTab?: "transactions" | "recurring";
@@ -23,59 +31,27 @@ export type TabParamList = {
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
-const ICONS: Record<keyof TabParamList, keyof typeof Ionicons.glyphMap> = {
-  Home: "home-outline",
-  Portfolio: "pie-chart-outline",
-  Signals: "pulse-outline",
-  Leaders: "podium-outline",
-  Profile: "person-outline",
-  UserRecords: "add-circle",
-};
-
 export function RootTabs() {
-  const insets = useSafeAreaInsets();
-
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      tabBar={(props) => <TabBar {...props} />}
+      backBehavior="history"
+      screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: C.bone,
-        tabBarInactiveTintColor: C.inkMuted,
-
-        tabBarStyle: {
-          backgroundColor: C.bg,
-          borderTopColor: C.hairline,
-          borderTopWidth: 0.5,
-          height: 56 + insets.bottom,
-          paddingBottom: insets.bottom + 6,
-          paddingTop: 8,
+        // tab switches crossfade (prototype: 'fade' = opacity .28s linear)
+        animation: "fade",
+        transitionSpec: {
+          animation: "timing",
+          config: { duration: 280, easing: Easing.linear },
         },
-
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "600",
-        },
-
-        tabBarIcon: ({ color, size }) => (
-          <View>
-            <Ionicons name={ICONS[route.name]} size={size} color={color} />
-          </View>
-        ),
-      })}
+      }}
     >
       <Tab.Screen name="Home" component={HomeStack} />
-
+      <Tab.Screen name="Groups" component={GroupsStack} />
       <Tab.Screen name="Portfolio" component={PortfolioScreen} />
-
+      <Tab.Screen name="Leaders" component={LeadersStack} />
       <Tab.Screen name="Signals" component={SignalsScreen} />
-
-      <Tab.Screen name="Leaders" component={LeadersScreen} />
-
-      <Tab.Screen
-        name="Profile"
-        component={ProfileStack}
-        options={{ tabBarLabel: "You" }}
-      />
+      <Tab.Screen name="Profile" component={ProfileStack} />
     </Tab.Navigator>
   );
 }

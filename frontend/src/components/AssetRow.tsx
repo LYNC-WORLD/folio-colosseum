@@ -1,5 +1,12 @@
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { C, RADIUS, FONT } from "../theme";
+// List row for an asset (prototype resultRow): avatar, name, ticker · kind,
+// price and today's move on the right. Same props as before, plus optional
+// change / kind, so existing screens keep working.
+import { StyleSheet, Text, View } from "react-native";
+import { C, FONT, TYPE } from "../theme";
+import { money, pct } from "../lib/format";
+import { hTap } from "../lib/haptics";
+import { PressScale } from "./ui/PressScale";
+import { AssetAvatar } from "./AssetAvatar";
 
 type Props = {
   symbol: string;
@@ -7,72 +14,51 @@ type Props = {
   price: number;
   imageUrl: string;
   onPress?: () => void;
+  /** % move today; omitted = not shown */
+  change?: number | null;
+  /** "Stock", "Pre-IPO" … shown after the ticker */
+  kind?: string;
+  /** hide the hairline under the last row */
+  last?: boolean;
 };
 
-function formatPrice(n: number) {
-  return n.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  });
-}
-
-export function AssetRow({ symbol, name, price, imageUrl, onPress }: Props) {
+export function AssetRow({ symbol, name, price, imageUrl, onPress, change, kind, last }: Props) {
+  const sub = kind ? (symbol === name ? kind : `${symbol} · ${kind}`) : symbol;
   return (
-    <Pressable
-      style={({ pressed }) => [s.row, pressed && s.pressed]}
-      onPress={onPress}
+    <PressScale
+      scaleTo={0.985}
+      onPress={() => {
+        hTap();
+        onPress?.();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`${name}, ${money(price)}${change != null ? `, ${pct(change)} today` : ""}`}
+      style={[s.row, !last && s.hair]}
     >
-      <View style={s.iconWrap}>
-        {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={s.icon} />
-        ) : (
-          <Text style={s.iconFallback}>{symbol.charAt(0).toUpperCase()}</Text>
-        )}
-      </View>
+      <AssetAvatar symbol={symbol} imageUrl={imageUrl} />
       <View style={s.info}>
-        <Text style={s.name} numberOfLines={1}>
+        <Text style={TYPE.ttl} numberOfLines={1}>
           {name}
         </Text>
-        <Text style={s.symbol}>{symbol}</Text>
+        <Text style={TYPE.sub} numberOfLines={1}>
+          {sub}
+        </Text>
       </View>
       <View style={s.right}>
-        <Text style={s.price}>{formatPrice(price)}</Text>
+        <Text style={s.price}>{money(price)}</Text>
+        {change != null ? (
+          <Text style={[s.change, { color: change >= 0 ? C.mint : C.loss }]}>{pct(change)}</Text>
+        ) : null}
       </View>
-    </Pressable>
+    </PressScale>
   );
 }
 
 const s = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 13,
-    paddingHorizontal: 14,
-    gap: 12,
-  },
-  pressed: { opacity: 0.7 },
-  iconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: RADIUS.sm,
-    backgroundColor: C.raised,
-    borderWidth: 1,
-    borderColor: C.hairline,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  icon: { width: "100%", height: "100%" },
-  iconFallback: { fontFamily: FONT.mono400, fontSize: 13, color: C.bone },
-  info: { flex: 1, minWidth: 0 },
-  name: { fontFamily: FONT.display600, fontSize: 15, color: C.bone },
-  symbol: {
-    marginTop: 3,
-    fontFamily: FONT.mono400,
-    fontSize: 12,
-    color: C.inkMuted,
-  },
-  right: { alignItems: "flex-end" },
-  price: { fontFamily: FONT.mono400, fontSize: 15, color: C.bone },
+  row: { minHeight: 66, flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10 },
+  hair: { borderBottomWidth: 1, borderBottomColor: C.hair },
+  info: { flex: 1, minWidth: 0, gap: 3 },
+  right: { alignItems: "flex-end", gap: 3 },
+  price: { fontFamily: FONT.mono400, fontSize: 13, color: "#D6DAE0", fontVariant: ["tabular-nums"] },
+  change: { fontFamily: FONT.mono400, fontSize: 11.5, fontVariant: ["tabular-nums"] },
 });

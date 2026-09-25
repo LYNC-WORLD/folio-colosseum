@@ -1,496 +1,509 @@
-import { ReactNode, useState } from "react";
+// Account — prototype #s-account (opened from Folio's gear / avatar, Home's avatar)
+//
+//   ‹ Back
+//   (S) Shanu
+//       SINCE SEP 2026 · 3 POSITIONS
+//       shanu@gmail.com
+//   [ $1,240 ] [ 14 ] [ 2 ]        TOTAL VALUE · TRADES · FOLLOWING
+//   ┌ INVESTOR PROFILE ─────────────────┐
+//   │ The Patient Builder               │
+//   │ US stocks · Pre-IPOs · …          │
+//   │ [ Retake the questions ]          │
+//   WALLET
+//   [ 4a91…f2c7  SELF-CUSTODY      ⧉ ]
+//   $440.00 USDC                [Add funds]
+//   Standing orders           2 active  ›
+//   Every transaction              14  ›
+//   NOTIFY ME WHEN  (switches)
+//   fee disclosure
+//   [ Sign out ]
+
+import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Image,
-  Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
-import { Ionicons } from "@expo/vector-icons";
-import { useAuth, useWallet } from "../context";
-import { C } from "../theme";
-import { SafeScreen } from "../components";
-import {
-  useUserRecurringBuyAssets,
-  useUserTransactions,
-} from "../hooks/useUserRecords";
+import Svg, { Path, Rect } from "react-native-svg";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+
+import { useAuth, type OnboardingProfile } from "../context";
+import { useWallet } from "../context/WalletContext";
+import { useAppFlow } from "../context/AppFlowContext";
+import { useUserTransactions } from "../hooks/useUserRecords";
+import { useRecurringBuys } from "../hooks/useTrade";
+import { useCountUp } from "../hooks/useCountUp";
+import { getOnboardingProfile } from "../lib";
 import type { ProfileStackParamList } from "../navigation/ProfileStack";
+import { useTabBarSpace } from "../navigation/TabBar";
+import { C, FONT, TYPE, em, h1Size } from "../theme";
+import { Button, PressScale, Pop, Rise, Switch } from "../components/ui";
+import { BackLink } from "../components/BackLink";
+import { useSheet } from "../components/Sheet";
+import { useToast } from "../components/Toast";
+import { DepositFlow, shortAddr } from "../components/folio/FolioSheets";
+import { useFollowing } from "../lib/follows";
+import { NOTIFY_OPTIONS, setNotify, useNotifyPrefs } from "../lib/notifyPrefs";
+import { money, money0 } from "../lib/format";
+import { hTap } from "../lib/haptics";
 
-const MONO = Platform.select({
-  ios: "Menlo",
-  android: "monospace",
-  default: "monospace",
-});
 const APP_VERSION = "0.9.2";
-
-/* ---------------- helpers ---------------- */
-
-function truncateAddress(addr: string) {
-  if (addr.length <= 10) return addr;
-  return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
-}
-function formatUsdc(n: number) {
-  return `${n.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} USDC`;
-}
-
-function formatUsd(n: number) {
-  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
-
-function formatPct(n: number) {
-  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
-}
-
-function formatShortDate(d?: string | number | Date) {
-  if (!d) return null;
-  const date = new Date(d);
-  if (isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-
-/* ---------------- small pieces ---------------- */
-
-/** 2x2 quadrant avatar derived from the wallet address, using theme colors. */
-function WalletAvatar({
-  address,
-  size = 60,
-}: {
-  address?: string | null;
-  size?: number;
-}) {
-  const palette = [C.accent, C.success, C.ink, C.card, C.muted];
-  const seed = (address ?? "0x00000000").replace(/^0x/, "");
-  const colors = [0, 1, 2, 3].map(
-    (i) => palette[parseInt(seed.charAt(i * 2) || "0", 16) % palette.length],
-  );
-  const half = size / 2;
-
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: half,
-        overflow: "hidden",
-        flexDirection: "row",
-        flexWrap: "wrap",
-      }}
-    >
-      {colors.map((c, i) => (
-        <View
-          key={i}
-          style={{ width: half, height: half, backgroundColor: c }}
-        />
-      ))}
-    </View>
-  );
-}
-
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <View style={s.sectionLabelRow}>
-      <Text style={s.sectionLabel}>{children}</Text>
-      <View style={s.sectionLabelLine} />
-    </View>
-  );
-}
-
-function Row({
-  title,
-  subtitle,
-  right,
-  onPress,
-  last,
-}: {
-  title: string;
-  subtitle?: string | null;
-  right?: ReactNode;
-  onPress?: () => void;
-  last?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      style={({ pressed }) => [s.row, !last && s.divider, pressed && s.pressed]}
-    >
-      <View style={{ flex: 1, gap: 3 }}>
-        <Text style={s.rowTitle}>{title}</Text>
-        {!!subtitle && <Text style={s.rowSub}>{subtitle}</Text>}
-      </View>
-      {right}
-    </Pressable>
-  );
-}
-
-const Chevron = () => (
-  <Ionicons name="chevron-forward" size={18} color={C.muted} />
-);
-
-/* ---------------- screen ---------------- */
+type Nav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
 
 export function ProfileScreen() {
-  const { user, signOut } = useAuth();
+  const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
+  const bottom = useTabBarSpace();
+  const sheet = useSheet();
+  const toast = useToast();
+  const { retakeOnboarding } = useAppFlow();
+
+  const { user, idToken, signOut } = useAuth();
   const {
     walletAddress,
+    usdcValue,
     usdValue,
-    loading: walletLoading,
-    error: walletError,
+    tokens,
+    loading,
+    refreshing,
     refresh,
   } = useWallet();
-  const navigation =
-    useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
-  const [copied, setCopied] = useState(false);
-  const [pulling, setPulling] = useState(false);
+  const txs = useUserTransactions(idToken ?? undefined);
+  const { recurringBuys, reload: reloadRecurring } = useRecurringBuys();
+  const following = useFollowing();
+  const prefs = useNotifyPrefs();
+
+  const [profile, setProfile] = useState<OnboardingProfile | null>(null);
+  useEffect(() => {
+    getOnboardingProfile().then(setProfile);
+  }, []);
+
+  const total = useCountUp(usdValue);
+  const [signingOut, setSigningOut] = useState(false);
 
   if (!user) return null;
-  const u = user as any;
 
-  // ---- data (swap these for real fields once the backend exposes them) ----
-  const pnl30dPct: number = u.pnl30dPct ?? 0;
-  const followers: number = u.followers ?? 0;
-  const following: number = u.following ?? 0;
+  const name = (user.name ?? "").trim() || user.email.split("@")[0];
+  const txList = txs.data?.data ?? [];
+  const firstTx = txList.length
+    ? new Date(Math.min(...txList.map((t) => +new Date(t.createdAt))))
+    : null;
+  const activeRec = recurringBuys.filter((r) => r.isActive).length;
+  const meta = [
+    firstTx
+      ? `SINCE ${firstTx.toLocaleDateString("en-GB", { month: "short", year: "numeric" }).toUpperCase()}`
+      : null,
+    `${tokens.length} ${tokens.length === 1 ? "POSITION" : "POSITIONS"}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
-  const walletProvider: string | undefined = u.walletProvider;
-  const walletChain: string | undefined = u.walletChain ?? "Base";
-  const walletConnectedAt = formatShortDate(u.walletConnectedAt);
+  const stats: [string, string, string?][] = [
+    [loading ? "…" : money0(total), "TOTAL VALUE"],
+    [String(txList.length), "TRADES"],
+    [String(following.size), "FOLLOWING"],
+  ];
 
-  const displayAddress = walletAddress
-    ? truncateAddress(walletAddress)
-    : walletLoading
-      ? "Loading wallet…"
-      : "Wallet unavailable";
+  const profSub = profile
+    ? profile.owns?.length
+      ? [
+          profile.owns.join(" · "),
+          profile.riskSummary?.toLowerCase(),
+          profile.horizonLabel,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : profile.tagline
+    : "Answer four quick questions and Folio shapes your home screen around them.";
 
-  const connectedSub = walletAddress
-    ? [
-        walletProvider,
-        walletChain,
-        walletConnectedAt && `connected ${walletConnectedAt}`,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "No wallet connected";
-
-  // ---- handlers ----
-  const handleCopy = async () => {
-    if (!walletAddress) return;
-    await Clipboard.setStringAsync(walletAddress);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  const back = () => {
+    if (nav.canGoBack()) nav.goBack();
+    else nav.getParent()?.navigate("Portfolio" as never);
   };
 
-  const handlePullRefresh = async () => {
-    setPulling(true);
+  const copy = async () => {
+    if (!walletAddress) return;
+    hTap();
     try {
-      await refresh();
-    } finally {
-      setPulling(false);
+      await Clipboard.setStringAsync(walletAddress);
+      toast("Address copied", "SELF-CUSTODY WALLET");
+    } catch {
+      toast("Copy did not work", "SELECT IT BY HAND");
     }
   };
-  const { idToken } = useAuth();
 
-  const transactionsQuery = useUserTransactions(idToken!);
-
-  const recurringQuery = useUserRecurringBuyAssets(idToken!);
-
-  const txCount = transactionsQuery.data?.data?.length ?? 0;
-
-  const recurringCount =
-    recurringQuery.data?.data?.filter((item) => item.isActive).length ?? 0;
-
-  const recurringSub =
-    recurringCount > 0
-      ? `${recurringCount} active request${recurringCount === 1 ? "" : "s"}`
-      : "Set up an automatic buy";
-
-  // TODO: wire these to your navigation / flows
-  const onAddFunds = () => {};
-  const onConnectedWallet = () => {};
-  const onRecurringBuys = () => {
-    navigation.navigate("RecurringBuys");
-  };
-
-  const onTransactions = () => {
-    navigation.navigate("Transactions");
-  };
-  const onExportTax = () => {};
-  const onSupport = () => {};
-  const onTerms = () => {};
+  const r = (i: number) => ({ delay: i * 55, duration: 440 });
 
   return (
-    <SafeScreen>
+    <View style={s.safe}>
       <ScrollView
-        contentContainerStyle={s.container}
+        contentContainerStyle={[
+          s.page,
+          { paddingTop: insets.top + 12, paddingBottom: bottom },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            refreshing={pulling}
-            onRefresh={handlePullRefresh}
-            tintColor={C.ink}
+            refreshing={refreshing}
+            onRefresh={() => {
+              refresh();
+              txs.refetch();
+              reloadRecurring();
+            }}
+            tintColor={C.mint}
+            colors={[C.mint]}
+            progressBackgroundColor={C.raised}
           />
         }
       >
-        {/* Title */}
-        <Text style={s.title}>You</Text>
+        <BackLink onPress={back} />
 
-        {/* Identity */}
-        <View style={s.identity}>
-          {u.photo ? (
-            <Image source={{ uri: u.photo }} style={s.avatar} />
-          ) : (
-            <WalletAvatar address={walletAddress} size={60} />
-          )}
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={s.address}>{displayAddress}</Text>
-            <Text style={s.signedIn} numberOfLines={1}>
-              Signed in as {user.email}
-            </Text>
-          </View>
-          <Pressable
-            onPress={handleCopy}
-            disabled={!walletAddress}
-            style={({ pressed }) => [s.copyBtn, pressed && s.pressed]}
-            hitSlop={8}
-          >
-            <Ionicons
-              name={copied ? "checkmark" : "copy-outline"}
-              size={18}
-              color={copied ? C.success : walletAddress ? C.ink : C.muted}
-            />
-          </Pressable>
-        </View>
-
-        {/* Stats */}
-        <View style={s.stats}>
-          <View style={s.stat}>
-            <Text style={s.statLabel}>30-DAY</Text>
-            <Text
-              style={[
-                s.statValue,
-                { color: pnl30dPct >= 0 ? C.success : C.error },
-              ]}
-            >
-              {formatPct(pnl30dPct)}
-            </Text>
-          </View>
-          <View style={s.stat}>
-            <Text style={s.statLabel}>FOLLOWERS</Text>
-            <Text style={s.statValue}>{followers}</Text>
-          </View>
-          <View style={s.stat}>
-            <Text style={s.statLabel}>FOLLOWING</Text>
-            <Text style={s.statValue}>{following}</Text>
-          </View>
-        </View>
-
-        {/* Wallet */}
-        <View>
-          <SectionLabel>WALLET</SectionLabel>
-
-          <View style={[s.row, s.divider]}>
-            <View style={{ flex: 1, gap: 4 }}>
-              {walletLoading ? (
-                <ActivityIndicator
-                  color={C.ink}
-                  style={{ alignSelf: "flex-start", height: 26 }}
-                />
-              ) : (
-                <Text style={s.balance}>
-                  {walletError ? "—" : formatUsdc(usdValue ?? 0)}
-                </Text>
-              )}
-              <Text style={s.rowSub}>
-                {walletError
-                  ? "Couldn't load balance. Pull to retry."
-                  : "Held in your wallet, not by Folio"}
-              </Text>
-            </View>
-            <Pressable
-              onPress={onAddFunds}
-              style={({ pressed }) => [s.pillBtn, pressed && s.pressed]}
-            >
-              <Text style={s.pillBtnText}>Add funds</Text>
-            </Pressable>
-          </View>
-
-          {/* <Row
-            title="Connected wallet"
-            subtitle={connectedSub}
-            onPress={onConnectedWallet}
-            right={<Chevron />}
-          /> */}
-
-          <Row
-            title="Recurring buys"
-            subtitle={recurringQuery.isLoading ? "Loading..." : recurringSub}
-            onPress={onRecurringBuys}
-            right={<Chevron />}
-            last
-          />
-        </View>
-
-        {/* Records */}
-        <View>
-          <SectionLabel>RECORDS</SectionLabel>
-          <Row
-            title="Every transaction"
-            onPress={onTransactions}
-            right={
-              <View style={s.rightInline}>
-                <Text style={s.count}>
-                  {transactionsQuery.isLoading ? "..." : txCount}
-                </Text>
-
-                <Chevron />
+        {/* identity */}
+        <View style={s.head}>
+          <Pop duration={320}>
+            {user.photo ? (
+              <Image source={{ uri: user.photo }} style={s.av} />
+            ) : (
+              <View style={[s.av, s.avFallback]}>
+                <Text style={s.avText}>{name.charAt(0).toUpperCase()}</Text>
               </View>
-            }
-          />
-          {/* <Row
-            title="Export for tax"
-            subtitle="CSV of every buy, sell and fee, by tax year"
-            onPress={onExportTax}
-            right={
-              <Ionicons name="download-outline" size={18} color={C.muted} />
-            }
-          /> */}
+            )}
+          </Pop>
+          <Rise {...r(1)} style={{ flex: 1, gap: 6 }}>
+            <Text
+              style={[TYPE.h1, h1Size(28)]}
+              numberOfLines={1}
+              accessibilityRole="header"
+            >
+              {name}
+            </Text>
+            <Text style={s.meta}>{meta}</Text>
+            <Text style={TYPE.sub} numberOfLines={1}>
+              {user.email}
+            </Text>
+          </Rise>
         </View>
 
-        {/* Footer */}
-        <View style={s.footer}>
-          <Text style={s.feeText}>
+        {/* stats */}
+        <View style={s.stats}>
+          {stats.map(([v, l], i) => (
+            <Rise key={l} {...r(2 + i)} style={{ flex: 1 }}>
+              <View style={s.stat}>
+                <Text style={s.statVal} numberOfLines={1} adjustsFontSizeToFit>
+                  {v}
+                </Text>
+                <Text style={s.statLbl}>{l}</Text>
+              </View>
+            </Rise>
+          ))}
+        </View>
+
+        {/* investor profile */}
+        <Rise {...r(5)}>
+          <View style={s.wash}>
+            <Text style={TYPE.lbl}>INVESTOR PROFILE</Text>
+            <Text style={TYPE.h2}>{profile?.title ?? "No profile yet"}</Text>
+            <Text style={s.washText}>{profSub}</Text>
+            <Button
+              variant="ghost"
+              size="sm"
+              title={profile ? "Retake the questions" : "Answer the questions"}
+              onPress={retakeOnboarding}
+            />
+          </View>
+        </Rise>
+
+        {/* wallet */}
+        <Rise {...r(6)} style={{ gap: 12 }}>
+          <Text style={TYPE.lbl}>WALLET</Text>
+          <View style={s.walletCard}>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={s.addr}>
+                {walletAddress
+                  ? shortAddr(walletAddress)
+                  : loading
+                    ? "Loading wallet…"
+                    : "Wallet unavailable"}
+              </Text>
+              <Text style={s.tiny}>SELF-CUSTODY · YOU HOLD THE KEYS</Text>
+            </View>
+            <PressScale
+              scaleTo={0.9}
+              onPress={copy}
+              disabled={!walletAddress}
+              style={s.copy}
+              accessibilityRole="button"
+              accessibilityLabel="Copy wallet address"
+            >
+              <Svg
+                width={18}
+                height={18}
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke={C.mint}
+                strokeWidth={1.7}
+                strokeLinejoin="round"
+              >
+                <Rect x="7" y="7" width="9" height="9" rx="2" />
+                <Path d="M13 5.5A1.5 1.5 0 0 0 11.5 4h-6A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13" />
+              </Svg>
+            </PressScale>
+          </View>
+
+          <View>
+            <View style={[s.row, s.hair]}>
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text style={s.balance}>
+                  {loading ? "…" : `${money(usdcValue)} USDC`}
+                </Text>
+                <Text style={TYPE.sub}>
+                  Cash in your wallet, not held by Folio
+                </Text>
+              </View>
+              <PressScale
+                scaleTo={0.95}
+                onPress={() => {
+                  hTap();
+                  sheet.open(<DepositFlow address={walletAddress} />, {
+                    label: "Deposit",
+                  });
+                }}
+                style={s.pill}
+                accessibilityRole="button"
+              >
+                <Text style={s.pillText}>Add funds</Text>
+              </PressScale>
+            </View>
+            <LinkRow
+              title="Standing orders"
+              value={activeRec ? `${activeRec} active` : "None"}
+              onPress={() => nav.navigate("RecurringBuys")}
+            />
+            <LinkRow
+              title="Every transaction"
+              value={txs.isPending ? "…" : String(txList.length)}
+              onPress={() => nav.navigate("Transactions")}
+              last
+            />
+          </View>
+        </Rise>
+
+        {/* notifications */}
+        <Rise {...r(7)} style={{ gap: 12 }}>
+          <Text style={TYPE.lbl}>NOTIFY ME WHEN</Text>
+          <View>
+            {NOTIFY_OPTIONS.map((o, i) => (
+              <View
+                key={o.key}
+                style={[
+                  s.row,
+                  { minHeight: 58 },
+                  i < NOTIFY_OPTIONS.length - 1 && s.hair,
+                ]}
+              >
+                <Text style={[TYPE.ttl, { flex: 1, fontFamily: FONT.sans600 }]}>
+                  {o.label}
+                </Text>
+                <Switch
+                  value={prefs[o.key]}
+                  onValueChange={(v) => setNotify(o.key, v)}
+                  accessibilityLabel={o.label}
+                />
+              </View>
+            ))}
+          </View>
+          <Text style={s.tiny}>SAVED ON THIS PHONE</Text>
+        </Rise>
+
+        {/* disclosure + sign out */}
+        <Rise {...r(8)} style={{ gap: 18 }}>
+          <Text style={s.fee}>
             Folio charges <Text style={s.feeBold}>1%</Text> on each buy and sell
             and <Text style={s.feeBold}>5%</Text> of profit when you exit in the
             green. No monthly fee, no spread markup, no payment for order flow.
           </Text>
 
-          <View style={s.links}>
-            <Pressable onPress={onSupport} hitSlop={6}>
-              <Text style={s.link}>Support</Text>
-            </Pressable>
-            <Pressable onPress={onTerms} hitSlop={6}>
-              <Text style={s.link}>Terms & disclosures</Text>
-            </Pressable>
-          </View>
-
-          <Pressable
-            onPress={signOut}
-            hitSlop={6}
-            style={({ pressed }) => [
-              { alignSelf: "flex-start" },
-              pressed && s.pressed,
-            ]}
+          <PressScale
+            dim
+            onPress={async () => {
+              if (signingOut) return;
+              hTap();
+              setSigningOut(true);
+              try {
+                await signOut();
+              } finally {
+                setSigningOut(false);
+              }
+            }}
+            style={s.signOut}
+            accessibilityRole="button"
+            accessibilityState={{ busy: signingOut }}
           >
-            <Text style={s.signOutText}>Sign out</Text>
-          </Pressable>
+            <Text style={s.signOutText}>
+              {signingOut ? "Signing out…" : "Sign out"}
+            </Text>
+          </PressScale>
 
-          <Text style={s.version}>
-            Folio {APP_VERSION} · non-custodial · you hold the keys
+          <Text style={[s.tiny, { textAlign: "center" }]}>
+            FOLIO {APP_VERSION} · NON-CUSTODIAL
           </Text>
-        </View>
+        </Rise>
       </ScrollView>
-    </SafeScreen>
+    </View>
   );
 }
 
-/* ---------------- styles ---------------- */
+function LinkRow({
+  title,
+  value,
+  onPress,
+  last,
+}: {
+  title: string;
+  value: string;
+  onPress: () => void;
+  last?: boolean;
+}) {
+  return (
+    <PressScale
+      scaleTo={0.985}
+      onPress={() => {
+        hTap();
+        onPress();
+      }}
+      style={[s.row, !last && s.hair]}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}, ${value}`}
+    >
+      <Text style={[TYPE.ttl, { flex: 1, fontFamily: FONT.sans600 }]}>
+        {title}
+      </Text>
+      <Text style={s.value}>{value}</Text>
+      <Text style={s.chev}>›</Text>
+    </PressScale>
+  );
+}
 
 const s = StyleSheet.create({
-  container: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 48,
-    gap: 28,
+  safe: { flex: 1, backgroundColor: C.ground },
+  page: { paddingHorizontal: 20, gap: 20 },
+
+  head: { flexDirection: "row", alignItems: "center", gap: 14 },
+  av: { width: 60, height: 60, borderRadius: 999 },
+  avFallback: {
+    backgroundColor: "#232833",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  pressed: { opacity: 0.6 },
+  avText: { fontFamily: FONT.sans800, fontSize: 24, color: C.ink1 },
+  meta: {
+    fontFamily: FONT.mono400,
+    fontSize: 9.5,
+    letterSpacing: em(9.5, 0.14),
+    color: C.ink3,
+  },
 
-  title: { color: C.ink, fontSize: 36, fontWeight: "800", letterSpacing: -1 },
+  stats: { flexDirection: "row", gap: 10 },
+  stat: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    gap: 6,
+  },
+  statVal: {
+    fontFamily: FONT.mono400,
+    fontSize: 17,
+    letterSpacing: em(17, -0.02),
+    color: C.ink1,
+    fontVariant: ["tabular-nums"],
+  },
+  statLbl: {
+    fontFamily: FONT.mono400,
+    fontSize: 8.5,
+    letterSpacing: em(8.5, 0.14),
+    color: C.ink4,
+  },
 
-  identity: { flexDirection: "row", alignItems: "center", gap: 16 },
-  avatar: { width: 60, height: 60, borderRadius: 30 },
-  address: { color: C.ink, fontSize: 18, fontFamily: MONO },
-  signedIn: { color: C.muted, fontSize: 13 },
-  copyBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: C.ring,
+  wash: { backgroundColor: C.sunk, borderRadius: 18, padding: 16, gap: 12 },
+  washText: {
+    fontFamily: FONT.sans400,
+    fontSize: 12.5,
+    lineHeight: 19,
+    color: C.ink2,
+  },
+
+  walletCard: {
+    minHeight: 62,
+    paddingLeft: 16,
+    paddingRight: 6,
+    borderRadius: 16,
+    backgroundColor: C.surface,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  addr: { fontFamily: FONT.mono400, fontSize: 13, color: C.ink1 },
+  tiny: {
+    fontFamily: FONT.mono400,
+    fontSize: 8.5,
+    letterSpacing: em(8.5, 0.14),
+    color: C.ink4,
+  },
+  copy: {
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  stats: {
-    flexDirection: "row",
-    paddingVertical: 18,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: C.ring,
-    marginTop: -8,
-  },
-  stat: { flex: 1, gap: 6 },
-  statLabel: {
-    color: C.muted,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 1.5,
-  },
-  statValue: { color: C.ink, fontSize: 20, fontFamily: MONO },
-
-  sectionLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 4,
-  },
-  sectionLabel: {
-    color: C.muted,
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 2,
-  },
-  sectionLabelLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: C.ring,
-  },
-
   row: {
+    minHeight: 60,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingVertical: 16,
+    paddingVertical: 10,
   },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: C.ring },
-  rowTitle: { color: C.ink, fontSize: 17, fontWeight: "600" },
-  rowSub: { color: C.muted, fontSize: 13 },
-  rightInline: { flexDirection: "row", alignItems: "center", gap: 10 },
-  count: { color: C.muted, fontSize: 14, fontFamily: MONO },
-
-  balance: { color: C.ink, fontSize: 20, fontFamily: MONO },
-  pillBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+  hair: { borderBottomWidth: 1, borderBottomColor: C.hair },
+  balance: {
+    fontFamily: FONT.mono400,
+    fontSize: 17,
+    color: C.ink1,
+    fontVariant: ["tabular-nums"],
+  },
+  pill: {
+    height: 38,
+    paddingHorizontal: 15,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: C.ring,
+    borderColor: "#313844",
+    backgroundColor: "#1D222B",
+    justifyContent: "center",
   },
-  pillBtnText: { color: C.ink, fontSize: 15, fontWeight: "500" },
+  pillText: { fontFamily: FONT.sans700, fontSize: 13.5, color: C.ink1 },
+  value: { fontFamily: FONT.mono400, fontSize: 13, color: C.ink3 },
+  chev: { fontSize: 17, color: C.ink4 },
 
-  footer: { gap: 18 },
-  feeText: { color: C.muted, fontSize: 13, lineHeight: 20 },
-  feeBold: { color: C.ink, fontWeight: "700" },
-  links: { flexDirection: "row", gap: 20 },
-  link: { color: C.ink, fontSize: 15, opacity: 0.85 },
-  signOutText: { color: C.error, fontSize: 15, fontWeight: "500" },
-  version: { color: C.muted, fontSize: 12, fontFamily: MONO },
+  fee: {
+    fontFamily: FONT.sans400,
+    fontSize: 12.5,
+    lineHeight: 19,
+    color: C.ink3,
+  },
+  feeBold: { fontFamily: FONT.sans700, color: C.ink1 },
+  signOut: {
+    height: 54,
+    borderRadius: 999,
+    backgroundColor: C.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  signOutText: { fontFamily: FONT.sans700, fontSize: 16, color: C.loss },
 });
