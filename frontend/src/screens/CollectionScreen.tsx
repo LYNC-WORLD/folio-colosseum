@@ -27,6 +27,7 @@ import { AssetAvatar } from "../components/AssetAvatar";
 import { COLLECTIONS, toAsset, type Asset } from "../lib/assets";
 import { money, pct } from "../lib/format";
 import { hSelect, hTap } from "../lib/haptics";
+import { PRE_IPO_LOCKED } from "../lib/trade";
 
 type SortMode = "priceDesc" | "priceAsc" | "name";
 const SORT_LABEL: Record<SortMode, string> = {
@@ -198,7 +199,7 @@ function CollectionCard({ a, onPress }: { a: Asset; onPress: () => void }) {
           </Text>
         </View>
         {isPre ? (
-          <Badge label="LOCKED" />
+          <Badge label={PRE_IPO_LOCKED ? "LOCKED" : "PRE-IPO"} />
         ) : a.change != null ? (
           <Text style={[s.fig, { color: a.change >= 0 ? C.mint : C.loss }]}>{pct(a.change)}</Text>
         ) : null}

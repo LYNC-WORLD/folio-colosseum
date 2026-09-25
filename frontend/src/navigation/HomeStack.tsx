@@ -18,25 +18,13 @@ export type HomeStackParamList = {
 };
 const Stack = createNativeStackNavigator<HomeStackParamList>();
 
+// Every Home screen now draws its own "‹ Back" link, like the prototype.
 export function HomeStack() {
   return (
-    <Stack.Navigator screenOptions={stackOptions}>
-      <Stack.Screen
-        name="HomeMain"
-        component={HomeScreen}
-        options={{ headerShown: false }}
-      />
-      {/* collections draw their own "‹ Home" link, like the prototype */}
-      <Stack.Screen
-        name="Stocks"
-        component={StocksScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="PreIPO"
-        component={PreIpoScreen}
-        options={{ headerShown: false }}
-      />
+    <Stack.Navigator screenOptions={{ ...stackOptions, headerShown: false }}>
+      <Stack.Screen name="HomeMain" component={HomeScreen} />
+      <Stack.Screen name="Stocks" component={StocksScreen} />
+      <Stack.Screen name="PreIPO" component={PreIpoScreen} />
       <Stack.Screen name="StockDetail" component={StockDetail} />
     </Stack.Navigator>
   );

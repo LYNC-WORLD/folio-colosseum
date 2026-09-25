@@ -1,4 +1,3 @@
-export * from "./DashboardScreen";
 export * from "./HomeScreen";
 export * from "./LeadersScreen";
 export * from "./LoginScreen";

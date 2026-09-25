@@ -10,3 +10,5 @@ export * from "./Bar";
 export * from "./Badge";
 export * from "./IconButton";
 export * from "./Skeleton";
+export * from "./ProcBar";
+export * from "./SuccessTick";

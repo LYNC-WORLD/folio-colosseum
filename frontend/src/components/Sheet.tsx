@@ -45,6 +45,8 @@ type SheetApi = {
   open: (content: ReactNode, options?: SheetOptions) => void;
   /** swap the content without re-animating (processing → success) */
   update: (content: ReactNode, options?: SheetOptions) => void;
+  /** change options of the open sheet, e.g. block dismissal while an order runs */
+  setOptions: (options: Partial<SheetOptions>) => void;
   close: () => void;
   isOpen: boolean;
 };
@@ -86,6 +88,10 @@ export function SheetProvider({ children }: { children: ReactNode }) {
   const update = useCallback((node: ReactNode, opts?: SheetOptions) => {
     if (opts) options.current = opts;
     setContent(node);
+  }, []);
+
+  const setOptions = useCallback((opts: Partial<SheetOptions>) => {
+    options.current = { ...options.current, ...opts };
   }, []);
 
   const close = useCallback(() => {
@@ -147,7 +153,10 @@ export function SheetProvider({ children }: { children: ReactNode }) {
     return { opacity: p.value * (1 - dragged) };
   });
 
-  const api = useMemo(() => ({ open, update, close, isOpen }), [open, update, close, isOpen]);
+  const api = useMemo(
+    () => ({ open, update, setOptions, close, isOpen }),
+    [open, update, setOptions, close, isOpen],
+  );
 
   return (
     <SheetContext.Provider value={api}>
