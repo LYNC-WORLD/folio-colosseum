@@ -90,8 +90,8 @@ const SEED: Group[] = [
     ],
   },
   {
-    id: "bhilwara",
-    name: "Bhilwara Bulls",
+    id: "LA",
+    name: "Los Angeles Investors",
     members: [M.R, M.N, M.A, M.D],
     memberCount: 5,
     joined: true,

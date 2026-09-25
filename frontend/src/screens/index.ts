@@ -1,4 +1,6 @@
 export * from "./HomeScreen";
+export * from "./IndexFundDetail";
+export * from "./IndexFundsScreen";
 export * from "./LeadersScreen";
 export * from "./LoginScreen";
 export * from "./PortfolioScreen";

@@ -1,6 +1,8 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import {
   HomeScreen,
+  IndexFundDetail,
+  IndexFundsScreen,
   PreIpoScreen,
   StockDetail,
   StocksScreen,
@@ -11,6 +13,8 @@ export type HomeStackParamList = {
   HomeMain: undefined;
   Stocks: undefined;
   PreIPO: undefined;
+  IndexFunds: undefined;
+  IndexFundDetail: { id: string };
   StockDetail: {
     symbol: string;
     category: "us-stock" | "pre-ipo";
@@ -25,6 +29,8 @@ export function HomeStack() {
       <Stack.Screen name="HomeMain" component={HomeScreen} />
       <Stack.Screen name="Stocks" component={StocksScreen} />
       <Stack.Screen name="PreIPO" component={PreIpoScreen} />
+      <Stack.Screen name="IndexFunds" component={IndexFundsScreen} />
+      <Stack.Screen name="IndexFundDetail" component={IndexFundDetail} />
       <Stack.Screen name="StockDetail" component={StockDetail} />
     </Stack.Navigator>
   );

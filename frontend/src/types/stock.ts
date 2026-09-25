@@ -77,3 +77,18 @@ export type StockDetailResponse = {
   message: string;
   data: StockDetailData;
 };
+
+// Index funds: a basket of stocks bought in one go. The API's `price` is the
+// plain average of its stocks' prices (one unit = 1/N of each stock).
+export type IndexFund = {
+  id: string;
+  name: string;
+  price: string;
+  stocks: Stock[];
+};
+
+export type IndexFundsResponse = {
+  success: boolean;
+  message: string;
+  data: IndexFund[];
+};

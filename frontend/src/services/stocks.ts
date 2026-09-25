@@ -1,4 +1,8 @@
-import { StockDetailResponse, StocksResponse } from "../types";
+import {
+  IndexFundsResponse,
+  StockDetailResponse,
+  StocksResponse,
+} from "../types";
 import { request } from "./api/client";
 
 export type StockCategory = "us-stock" | "pre-ipo";
@@ -14,3 +18,6 @@ export const getStockBySymbol = (
   request<StockDetailResponse>(`/api/stocks/${category}/${symbol}`, {
     token: idToken,
   });
+
+export const getIndexFunds = (idToken: string) =>
+  request<IndexFundsResponse>("/api/stocks/index-funds", { token: idToken });

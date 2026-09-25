@@ -48,12 +48,6 @@ const NEXT_SORT: Record<SortMode, SortMode> = {
   name: "priceDesc",
 };
 
-const NOTE: Record<StockCategory, string> = {
-  "us-stock":
-    "Every share settles on-chain and is bought with stablecoins. Prices refresh automatically about once a minute.",
-  "pre-ipo":
-    "Private marks update on new rounds, not daily. You hold a token that tracks the last primary round.",
-};
 
 export function CollectionScreen({ category }: { category: StockCategory }) {
   const nav = useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
@@ -193,11 +187,6 @@ export function CollectionScreen({ category }: { category: StockCategory }) {
               </Rise>
             ))
           )}
-        </View>
-
-        <View style={s.note}>
-          <Text style={s.noteDot}>●</Text>
-          <Text style={s.noteText}>{NOTE[category]}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

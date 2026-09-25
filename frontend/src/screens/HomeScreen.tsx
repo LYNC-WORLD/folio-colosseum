@@ -4,7 +4,7 @@
 //   [ search ……………………… ]  Cancel          ← sticks to the top while scrolling
 //   ● AVAILABLE ANYWHERE   USDC $440        ← balance counts up
 //   POPULAR NOW     three cards
-//   COLLECTIONS     US stocks / Pre-IPOs
+//   COLLECTIONS     US stocks / Pre-IPOs / Index funds
 //   TRENDING        top movers today
 //
 // Tapping search swaps the page for RECENT + BROWSE BY THEME, then live
@@ -27,7 +27,7 @@ import Svg, { Circle, Path } from "react-native-svg";
 import { useNavigation, useScrollToTop } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
-import { useStocks, useWalletBalance } from "../hooks";
+import { useIndexFunds, useStocks, useWalletBalance } from "../hooks";
 import { useCountUp } from "../hooks/useCountUp";
 import { useAuth } from "../context";
 import type { HomeStackParamList } from "../navigation/HomeStack";
@@ -51,6 +51,7 @@ import {
   toAsset,
   type Asset,
 } from "../lib/assets";
+import { searchFunds, toFund, type Fund } from "../lib/indexFunds";
 import { loadRecents, saveRecents, withRecent } from "../lib/recentSearches";
 import { money, pct } from "../lib/format";
 import { hTap } from "../lib/haptics";
@@ -75,6 +76,7 @@ export function HomeScreen() {
 
   const us = useStocks("us-stock");
   const pre = useStocks("pre-ipo");
+  const idx = useIndexFunds();
   const {
     wallet,
     loading: walletLoading,
@@ -92,6 +94,7 @@ export function HomeScreen() {
     [pre.stocks],
   );
   const all = useMemo(() => [...stocks, ...preIpos], [stocks, preIpos]);
+  const funds = useMemo(() => idx.funds.map(toFund), [idx.funds]);
 
   // ---------- search ----------
   const inputRef = useRef<TextInput>(null);
@@ -103,6 +106,7 @@ export function HomeScreen() {
   }, []);
 
   const hits = useMemo(() => searchAssets(all, query), [all, query]);
+  const fundHits = useMemo(() => searchFunds(funds, query), [funds, query]);
   const mode: Mode =
     !searching && !query ? "home" : !query.trim() ? "recent" : "results";
 
@@ -127,6 +131,11 @@ export function HomeScreen() {
     // prototype resets search when you come back to Home; do it once the push has covered it
     if (searching) setTimeout(exitSearch, 450);
   };
+  const openFund = (f: Fund) => {
+    if (query.trim()) remember(query);
+    nav.navigate("IndexFundDetail", { id: f.id });
+    if (searching) setTimeout(exitSearch, 450);
+  };
 
   // ---------- home content ----------
   const popular = [stocks[0], stocks[1], preIpos[0]].filter(Boolean) as Asset[];
@@ -139,7 +148,7 @@ export function HomeScreen() {
 
   const firstInitial = (user?.name ?? "").trim().charAt(0).toUpperCase() || "·";
   const loading = us.loading || pre.loading;
-  const refreshing = us.refreshing || pre.refreshing;
+  const refreshing = us.refreshing || pre.refreshing || idx.refreshing;
 
   return (
     <SafeAreaView style={s.safe} edges={["top"]}>
@@ -156,6 +165,7 @@ export function HomeScreen() {
             onRefresh={() => {
               us.refresh();
               pre.refresh();
+              idx.refresh();
             }}
             tintColor={C.mint}
             colors={[C.mint]}
@@ -193,7 +203,9 @@ export function HomeScreen() {
               setQuery("");
               inputRef.current?.focus();
             }}
-            onSubmit={() => hits[0] && openAsset(hits[0])}
+            onSubmit={() =>
+              hits[0] ? openAsset(hits[0]) : fundHits[0] && openFund(fundHits[0])
+            }
           />
           <LinearGradient
             pointerEvents="none"
@@ -266,6 +278,12 @@ export function HomeScreen() {
                     sub={`${COLLECTIONS["pre-ipo"].blurb.split(".")[0]} · ${pre.loading ? "…" : preIpos.length + " " + COLLECTIONS["pre-ipo"].countWord}`}
                     badge="NEW"
                     onPress={() => nav.navigate("PreIPO")}
+                  />
+                  <CollectionRow
+                    icon="index"
+                    title={COLLECTIONS["index-fund"].title}
+                    sub={`${COLLECTIONS["index-fund"].blurb.split(".")[0]} · ${idx.loading ? "…" : funds.length + " " + COLLECTIONS["index-fund"].countWord}`}
+                    onPress={() => nav.navigate("IndexFunds")}
                   />
                 </View>
               </Rise>
@@ -341,8 +359,10 @@ export function HomeScreen() {
             <Results
               query={query}
               hits={hits}
+              fundHits={fundHits}
               loading={loading}
               onOpen={openAsset}
+              onOpenFund={openFund}
               onFill={fill}
               suggestions={all}
             />
@@ -397,6 +417,8 @@ function PopularCard({ a, onPress }: { a: Asset; onPress: () => void }) {
 const COLL_ICONS: Record<string, string> = {
   stocks: "M3 16V9M8.3 16V4M13.7 16v-5M19 16V7",
   preipo: "M5 15 15 5M15 5H8M15 5v7",
+  index:
+    "M4.7 3.5h3.1a1.2 1.2 0 0 1 1.2 1.2v3.1a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V4.7a1.2 1.2 0 0 1 1.2-1.2Z M12.2 3.5h3.1a1.2 1.2 0 0 1 1.2 1.2v3.1a1.2 1.2 0 0 1-1.2 1.2H12.2a1.2 1.2 0 0 1-1.2-1.2V4.7a1.2 1.2 0 0 1 1.2-1.2Z M4.7 11h3.1a1.2 1.2 0 0 1 1.2 1.2v3.1a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V12.2a1.2 1.2 0 0 1 1.2-1.2Z M12.2 11h3.1a1.2 1.2 0 0 1 1.2 1.2v3.1a1.2 1.2 0 0 1-1.2 1.2H12.2a1.2 1.2 0 0 1-1.2-1.2V12.2a1.2 1.2 0 0 1 1.2-1.2Z",
 };
 
 function CollectionRow({
@@ -490,19 +512,23 @@ function TrendRow({
 function Results({
   query,
   hits,
+  fundHits,
   loading,
   onOpen,
+  onOpenFund,
   onFill,
   suggestions,
 }: {
   query: string;
   hits: Asset[];
+  fundHits: Fund[];
   loading: boolean;
   onOpen: (a: Asset) => void;
+  onOpenFund: (f: Fund) => void;
   onFill: (q: string) => void;
   suggestions: Asset[];
 }) {
-  if (loading && !hits.length) {
+  if (loading && !hits.length && !fundHits.length) {
     return (
       <View style={{ gap: 14 }}>
         {[0, 1, 2, 3].map((i) => (
@@ -512,7 +538,7 @@ function Results({
     );
   }
 
-  if (!hits.length) {
+  if (!hits.length && !fundHits.length) {
     const ideas = [
       suggestions.find((a) => a.kind === "Stock")?.symbol,
       suggestions.find((a) => a.kind === "Pre-IPO")?.name,
@@ -576,6 +602,31 @@ function Results({
           })}
         </View>
       ))}
+      {fundHits.length ? (
+        <View style={groups.length ? { marginTop: 20 } : undefined}>
+          <Text style={[TYPE.lbl, { marginBottom: 4 }]}>
+            INDEX FUNDS · {fundHits.length}
+          </Text>
+          {fundHits.map((f, j) => (
+            <Rise
+              key={`${query}-fund-${f.id}`}
+              delay={Math.min(i++, 10) * 40}
+              duration={400}
+            >
+              <AssetRow
+                symbol={f.name}
+                name={f.name}
+                price={f.price}
+                imageUrl=""
+                change={f.change}
+                kind={`Index fund · ${f.holdings.length} stocks`}
+                last={j === fundHits.length - 1}
+                onPress={() => onOpenFund(f)}
+              />
+            </Rise>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }

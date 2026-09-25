@@ -9,6 +9,8 @@ export type HomeStackParamList = {
   Home: undefined;
   Stocks: undefined;
   PreIPO: undefined;
+  IndexFunds: undefined;
+  IndexFundDetail: { id: string };
   StockDetail: { symbol: string; category: StockCategory };
 };
 

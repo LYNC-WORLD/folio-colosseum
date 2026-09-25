@@ -20,8 +20,13 @@ export type Asset = {
 };
 
 export const COLLECTIONS: Record<
-  StockCategory,
-  { title: string; blurb: string; route: "Stocks" | "PreIPO"; countWord: string }
+  StockCategory | "index-fund",
+  {
+    title: string;
+    blurb: string;
+    route: "Stocks" | "PreIPO" | "IndexFunds";
+    countWord: string;
+  }
 > = {
   "us-stock": {
     title: "US stocks",
@@ -34,6 +39,12 @@ export const COLLECTIONS: Record<
     blurb: "Private companies, priced off their last round. Locked until the company lists or is acquired.",
     route: "PreIPO",
     countWord: "open",
+  },
+  "index-fund": {
+    title: "Index funds",
+    blurb: "Several companies in one buy. Each fund holds the real stocks, split by weight.",
+    route: "IndexFunds",
+    countWord: "funds",
   },
 };
 
@@ -71,6 +82,7 @@ export const THEMES: Record<string, string> = {
   Space: "space",
   Fintech: "fintech",
   Defence: "defence",
+  "Index funds": "index fund",
 };
 
 // Same ranking as the prototype: exact ticker, ticker prefix, name prefix, …
