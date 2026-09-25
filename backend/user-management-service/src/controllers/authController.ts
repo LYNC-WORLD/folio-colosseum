@@ -17,7 +17,7 @@ export class AuthController {
           message: "Access token required"
         });
       }
-      const user = this.authService.getOrCreateUser(idToken);
+      const user = await this.authService.getOrCreateUser(idToken);
       if(!user){
         res.status(401).json({
           success: false,

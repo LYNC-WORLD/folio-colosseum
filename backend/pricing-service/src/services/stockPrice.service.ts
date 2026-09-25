@@ -1,3 +1,4 @@
+import { dailyStartStockPriceCron } from "../cron/DailyStockPrice";
 import { prisma } from "../server";
 
 const XSTOCKS_API = "https://api.xstocks.fi/api/v2";
@@ -18,6 +19,7 @@ export async function updateStockPrices(): Promise<void> {
     console.error("Stock price cron failed:", error);
   }
 }
+
 
 export async function updateDailyOpenPrices(): Promise<void> {
   try {
@@ -80,7 +82,7 @@ async function updateUSStocksPrice(updateDailyPrice: boolean) {
           price: String(data.quote),
         },
       });
-      console.log(`Updated prestock Prices`);
+      console.log(`Updated usstock Prices`);
     } catch (error) {
       console.error(`Error updating ${stock.symbol}:`, error);
     }
@@ -151,7 +153,6 @@ async function updatePreStocksPrice(updateDailyPrice: boolean) {
   }
   return;
 }
-
 interface PreStock {
   name: string;
   symbol: string;
@@ -163,11 +164,3 @@ interface PreStock {
   impliedValuation: number;
   supply: number;
 }
-
-// (async () => {
-//   try {
-//     const data = await updateStockPrices();
-//   } catch (error) {
-//     console.error("Error executing async code:", error);
-//   }
-// })();

@@ -7,7 +7,7 @@ export class AuthService {
     if (!googleAccessToken) {
       return;
     }
-    const {subjectId, username, email} = await verifyGoogleIdToken(googleAccessToken)
+    const {subjectId, username, email} = await verifyGoogleIdToken(googleAccessToken);
 
     const user = await prisma.user.findUnique({
       where: {
@@ -32,12 +32,14 @@ export class AuthService {
         address: newUser.walletAddress,
         email: newUser.email,
         name: newUser.name,
+        formFilled: false
       };
     }
     return {
       address: user.walletAddress,
       email: user.email,
       name: user.name,
+      formFilled: true
     };
   }
 }

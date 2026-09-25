@@ -152,8 +152,19 @@ export class StockService {
 
   public async getIndexFunds() {
     try {
-      const stockDetails = await prisma.indexFunds.findMany();
-      return stockDetails;
+      const indexFunds = await prisma.indexFunds.findMany({
+        include: {
+          stocks: true
+        }
+      });
+      indexFunds.forEach(indexFund => {
+        var totalPrice = 0;
+        indexFund.stocks.forEach(stock => {
+          totalPrice += Number(stock.price);
+        });
+        indexFund.price = (totalPrice / indexFund.stocks.length).toString();
+      });
+      return indexFunds;
     } catch (error) {
       console.error(error);
       return;

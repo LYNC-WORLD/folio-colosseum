@@ -71,10 +71,18 @@ export class UserService {
   }
   public async setLoginFormData(email: string, data: loginForm) {
     try {
+      const form = await prisma.loginDetails.findUnique({
+        where: {
+          email: email
+        }
+      });
+      if(form){
+        return form;
+      }
       const responce = await prisma.loginDetails.create({
         data: {
           email: email,
-          amountToPutIn: 0,
+          amountToPutIn: data.amountToPutIn,
           expectToHold: data.question2,
           positionHold: data.question1,
           interestedStocks: data.interestedStocks,
@@ -171,7 +179,7 @@ export class UserService {
 
 interface loginForm {
   interestedStocks: string[];
-  amountToPutIn: number;
+  amountToPutIn: string;
   question1: string;
   question2: string;
 }

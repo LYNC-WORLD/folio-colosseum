@@ -206,7 +206,7 @@ export class UserController {
 
 interface loginForm {
   interestedStocks: string[];
-  amountToPutIn: number;
+  amountToPutIn: string;
   question1: string;
   question2: string;
 }

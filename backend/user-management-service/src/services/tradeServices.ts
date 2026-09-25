@@ -1,6 +1,7 @@
 import { env } from "../config/env";
 import { prisma } from "../lib/prisma";
 import { getTransectionResults, privy } from "../lib/privy";
+import { getUSDCBalance } from "../lib/solana";
 
 const XSTOCKS_API = "https://api.xstocks.fi/api/v2";
 
@@ -144,21 +145,26 @@ export class TradeService {
             stockAmount: stockAmount,
             stockSymbol: stockSymbol,
             userId: userId,
-            investmesntAmount: usdcAmount,
+            investmentAmount: usdcAmount,
+            averageStockPrice: price.toString(),
           },
         });
       } else {
         const investmentUSDCAmount =
-          currentInvestedInStock.investmesntAmount + usdcAmount;
+          currentInvestedInStock.investmentAmount + usdcAmount;
         const investedStockAmount =
           currentInvestedInStock.stockAmount + stockAmount;
+        const averageStockPrice =
+          (currentInvestedInStock.investmentAmount + usdcAmount) /
+          (currentInvestedInStock.stockAmount + stockAmount);
         await prisma.investment.update({
           where: {
             id: currentInvestedInStock.id,
           },
           data: {
             stockAmount: investedStockAmount,
-            investmesntAmount: investmentUSDCAmount,
+            investmentAmount: investmentUSDCAmount,
+            averageStockPrice: averageStockPrice.toString(),
           },
         });
       }
@@ -226,12 +232,12 @@ export class TradeService {
             stockAmount: 0,
             stockSymbol: stockSymbol,
             userId: userId,
-            investmesntAmount: 0,
+            investmentAmount: 0,
           },
         });
       } else {
         const investmentUSDCAmount =
-          currentInvestedInStock.investmesntAmount - usdcAmount;
+          currentInvestedInStock.investmentAmount - usdcAmount;
         const investedStockAmount =
           currentInvestedInStock.stockAmount - stockAmount;
         await prisma.investment.update({
@@ -240,7 +246,7 @@ export class TradeService {
           },
           data: {
             stockAmount: investedStockAmount,
-            investmesntAmount: investmentUSDCAmount,
+            investmentAmount: investmentUSDCAmount,
           },
         });
       }
@@ -283,6 +289,206 @@ export class TradeService {
       return;
     }
   }
+
+  // Index Funds
+  public async buyIndexFunds(
+    indexId: string,
+    indexAmount: number | undefined,
+    usdcAmount: number | undefined,
+    walletId: string,
+  ) {
+    // Index details
+    const indexDetails = await prisma.indexFunds.findUnique({
+      where: { id: indexId },
+      include: { stocks: true },
+    });
+    // User details
+    const user = await prisma.user.findUnique({
+      where: { walletId: walletId },
+    });
+    if (!user) return;
+    // Get USDC balance
+    if (Number(usdcAmount) > (await getUSDCBalance(user?.walletAddress ?? "")))
+      return;
+    // Get Index Price
+    var combinedPrice: number = 0;
+    (indexDetails?.stocks ?? []).forEach(async (stock) => {
+      const price = await getStockPrice(
+        stock.stockType,
+        stock.tokenAddress,
+        stock.symbol,
+      );
+      combinedPrice += price;
+    });
+    const indexFundPrice = combinedPrice / (indexDetails?.stocks ?? []).length;
+    var usdcAmountPerStock = 0;
+    if (indexFundPrice == 0) {
+      return;
+    }
+    // check inputs and calculate usdc / stock
+    if (!usdcAmount && !indexAmount) return;
+    if (!usdcAmount && indexAmount) {
+      usdcAmountPerStock = indexAmount * indexFundPrice;
+    }
+    if (usdcAmount && !indexAmount) {
+      usdcAmountPerStock = usdcAmount / (indexDetails?.stocks ?? []).length;
+      indexAmount = usdcAmount / combinedPrice;
+    }
+    // Buy stock
+    (indexDetails?.stocks ?? []).forEach(async (stock) => {
+      const responce = await buyStockOnChain(
+        stock.tokenAddress,
+        usdcAmountPerStock,
+        walletId,
+      );
+      const result = await getTransectionResults(walletId, responce.id);
+      if (!(result == "succeeded")) {
+        console.log("Retrying buying");
+
+        const responce = await buyStockOnChain(
+          stock.tokenAddress,
+          usdcAmountPerStock,
+          user?.id,
+        );
+      }
+    });
+    // Check if user bought it before
+    const ownedIndexFund = await prisma.indexFundsHolding.findFirst({
+      where: {
+        indexId: indexId,
+        userId: user.id,
+      },
+    });
+    if (ownedIndexFund) {
+      const totalIndexFund =
+        Number(ownedIndexFund.indexQuantity) + (indexAmount ?? 0);
+      // Get average Price per stock
+      const averagePrice =
+        indexFundPrice * (indexAmount ?? 0) +
+        (Number(ownedIndexFund.indexQuantity) *
+          Number(ownedIndexFund.indexPrice)) /
+          totalIndexFund;
+      // UPdate prisma
+      await prisma.indexFundsHolding.updateMany({
+        where: {
+          indexId: indexId,
+          userId: user.id,
+        },
+        data: {
+          indexQuantity: totalIndexFund.toString(),
+          indexPrice: averagePrice.toString(),
+        },
+      });
+      return {
+        success: true,
+        message: "index fund bought",
+        data: { indexFundAmount: indexAmount },
+      };
+    }
+    // If first time buy, add to holdings
+    await prisma.indexFundsHolding.create({
+      data: {
+        indexId: indexId,
+        indexQuantity: (indexAmount ?? 0).toString(),
+        userId: user.userId,
+        indexPrice: indexFundPrice.toString(),
+      },
+    });
+    return {
+      success: true,
+      message: "index fund bought",
+      data: { indexFundAmount: indexAmount },
+    };
+  }
+
+  public async sellIndexFunds(
+    indexId: string,
+    indexAmount: number | undefined,
+    usdcAmount: number | undefined,
+    walletId: string,
+  ) {
+    // Get index fund details
+    const indexDetails = await prisma.indexFunds.findUnique({
+      where: { id: indexId },
+      include: { stocks: true },
+    });
+    // Get user details
+    const user = await prisma.user.findUnique({
+      where: { walletId: walletId },
+    });
+    if (!user) return;
+    // Get stock price
+    var combinedPrice: number = 0;
+    (indexDetails?.stocks ?? []).forEach(async (stock) => {
+      const price = await getStockPrice(
+        stock.stockType,
+        stock.tokenAddress,
+        stock.symbol,
+      );
+      combinedPrice += price;
+    });
+    const indexFundPrice = combinedPrice / (indexDetails?.stocks ?? []).length;
+
+    // var usdcAmountPerStock = 0;
+    if (indexFundPrice == 0) {
+      return;
+    }
+    // Get stock sell amount
+    if (!usdcAmount && !indexAmount) return;
+    if (!usdcAmount && indexAmount) {
+      usdcAmount = indexAmount * indexFundPrice;
+    }
+    if (usdcAmount && !indexAmount) {
+      indexAmount = usdcAmount / combinedPrice;
+    }
+    // Get index holding and check if user is selling more then he hold
+    const indexHolding = await prisma.indexFundsHolding.findFirst({
+      where: {
+        indexId: indexId,
+        userId: user.id,
+      },
+      include: {
+        indexDatils: true,
+      },
+    });
+    if (Number(indexHolding?.indexQuantity) > (indexAmount ?? 0)) return;
+    // Sell stock
+    (indexDetails?.stocks ?? []).forEach(async (stock) => {
+      const responce = await sellStockOnChain(
+        stock.tokenAddress,
+        indexAmount ?? 0,
+        walletId,
+        stock.decimals,
+      );
+      const result = await getTransectionResults(walletId, responce.id);
+      if (!(result == "succeeded")) {
+        console.log("Retrying buying");
+
+        const responce = await sellStockOnChain(
+          stock.tokenAddress,
+          indexAmount ?? 0,
+          walletId,
+          stock.decimals,
+        );
+      }
+    });
+    // Update holding in db
+    const totalHolding = Number(indexHolding) - (indexAmount ?? 0);
+    prisma.indexFundsHolding.updateMany({
+      where: {
+        indexId: indexId,
+        userId: user.id,
+      },
+      data: {
+        indexQuantity: totalHolding.toString(),
+      },
+    });
+    return {
+      success: true,
+      message: "index fund bought",
+      data: { indexFundAmount: indexAmount },
+    };
+  }
 }
 
 async function buyStockOnChain(
@@ -316,6 +522,21 @@ async function sellStockOnChain(
   walletId: string,
   tokenDecimal: number,
 ) {
+  console.log("Sell request: ", {
+    destination: {
+      asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    },
+    source: {
+      asset_address: stockAddress,
+      caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    },
+    base_amount: String(stockAmount * 10 ** tokenDecimal).split(".")[0],
+    amount_type: "exact_input",
+    authorization_context: {
+      authorization_private_keys: [env.PRIVY_AUTH_KEY!],
+    },
+  });
+
   const responce = await privy
     .wallets()
     .swaps()
@@ -336,20 +557,35 @@ async function sellStockOnChain(
   return responce;
 }
 
-async function getUSStockPrice(walletSymbol: string) {
+// Price functions
+async function getStockPrice(
+  stockType: string,
+  stockAddress: string,
+  stockSymbol: string,
+) {
+  var price;
+  if (stockType == "USStock") {
+    price = await getUSStockPrice(stockSymbol);
+  } else {
+    price = await getPreIPOStockPrice(stockAddress);
+  }
+  return Number(price);
+}
+
+async function getUSStockPrice(stockSymbol: string) {
   try {
     const url = `${XSTOCKS_API}/public/assets/${encodeURIComponent(
-      walletSymbol,
+      stockSymbol,
     )}/price-data`;
     const response = await fetch(url);
 
     if (!response.ok) {
-      console.error(`Failed to fetch ${walletSymbol}: ${response.status}`);
+      console.error(`Failed to fetch ${stockSymbol}: ${response.status}`);
       return;
     }
     const data = (await response.json()) as XStocksPriceResponse;
     if (data.quote === undefined || data.quote === null) {
-      console.error(`No price returned for ${walletSymbol}`);
+      console.error(`No price returned for ${stockSymbol}`);
       return;
     }
     return data.quote;
@@ -359,7 +595,6 @@ async function getUSStockPrice(walletSymbol: string) {
   }
 }
 
-// Price functions
 async function getPreIPOStockPrice(
   stockAddress: string,
 ): Promise<string | null> {

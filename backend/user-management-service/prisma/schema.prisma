@@ -49,6 +49,7 @@ model User {
     recurringBuyRequest RecurringBuyRequest[]
     createdAt           DateTime              @default(now())
     updatedAt           DateTime              @updatedAt
+    indexFundsHoldings  IndexFundsHolding[]
 
     @@index([userId])
     @@index([walletId])
@@ -73,7 +74,8 @@ model Investment {
     stockSymbol       String
     stockAmount       Float
     stockAddress      String
-    investmesntAmount Float  @default(0)
+    averageStockPrice String @default("0")
+    investmentAmount Float  @default(0)
     user              User   @relation(fields: [userId], references: [userId])
 }
 
@@ -96,7 +98,7 @@ model LoginDetails {
     id               String   @id @default(cuid())
     email            String   @unique
     interestedStocks String[]
-    amountToPutIn    Float
+    amountToPutIn    String   @default("100")
     positionHold     String
     expectToHold     String
 }
@@ -129,5 +131,7 @@ model IndexFundsHolding {
     userId        String
     indexId       String
     indexQuantity String
+    indexPrice    String
     indexDatils   IndexFunds @relation(fields: [id], references: [id])
+    user          User       @relation(fields: [userId], references: [id])
 }

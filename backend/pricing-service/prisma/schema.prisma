@@ -73,7 +73,7 @@ model Investment {
     stockSymbol       String
     stockAmount       Float
     stockAddress      String
-    investmesntAmount Float  @default(0)
+    investmentAmount Float  @default(0)
     user              User   @relation(fields: [userId], references: [userId])
 }
 
