@@ -164,7 +164,7 @@ export function HomeScreen() {
         }
       >
         <View style={s.brand}>
-          <Mark height={24} />
+          <Mark height={32} />
           <Text style={s.word}>Folio</Text>
           <Pressable
             onPress={() => {
