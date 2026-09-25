@@ -1,9 +1,13 @@
+import { useState } from "react";
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+
 import { GhostLink, PrimaryButton } from "../../components";
-import { useOnboarding } from "../../context";
+import { useAuth, useOnboarding } from "../../context";
 import { saveOnboardingProfile } from "../../lib";
+import { submitLoginForm } from "../../services/onboarding";
 import { C, RADIUS, FONT } from "../../theme";
 
 import type { OnboardingStackParamList } from "../../navigation";
@@ -11,13 +15,46 @@ import type { OnboardingStackParamList } from "../../navigation";
 type Props = NativeStackScreenProps<OnboardingStackParamList, "ProfileSummary">;
 
 export function ProfileSummaryScreen({ navigation, route }: Props) {
-  const { computeProfile } = useOnboarding();
+  const { computeProfile, picked, resolvedAmount, risk, horizon } =
+    useOnboarding();
+
   const profile = computeProfile();
   const onComplete = route.params?.onComplete;
 
-  const handleEnter = () => {
-    saveOnboardingProfile(profile);
-    onComplete?.();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { idToken } = useAuth();
+
+  const handleEnter = async () => {
+    if (isSubmitting) return;
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+
+      // Replace this with your actual token retrieval.
+
+      const interestedStocks = Object.entries(picked)
+        .filter(([, selected]) => selected)
+        .map(([assetId]) => assetId);
+
+      const payload = {
+        interestedStocks,
+        amountToPutIn: resolvedAmount,
+        question1: risk,
+        question2: horizon,
+      };
+      await submitLoginForm(payload, idToken!);
+
+      saveOnboardingProfile(profile);
+      onComplete?.();
+    } catch (err) {
+      console.error("Failed to submit onboarding form:", err);
+
+      setError("We couldn't save your answers. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const rows = [
@@ -42,7 +79,9 @@ export function ProfileSummaryScreen({ navigation, route }: Props) {
     <SafeAreaView style={s.safe}>
       <View style={s.container}>
         <Text style={s.eyebrow}>YOUR PROFILE</Text>
+
         <Text style={s.h1}>{profile.title}</Text>
+
         <Text style={s.sub}>{profile.description}</Text>
 
         <View style={s.rows}>
@@ -58,6 +97,7 @@ export function ProfileSummaryScreen({ navigation, route }: Props) {
               <View style={s.rowIcon}>
                 <Ionicons name={r.icon} size={18} color={C.bone} />
               </View>
+
               <View style={{ flex: 1 }}>
                 <Text style={s.rowTitle}>{r.title}</Text>
                 <Text style={s.rowSub}>{r.sub}</Text>
@@ -65,6 +105,8 @@ export function ProfileSummaryScreen({ navigation, route }: Props) {
             </View>
           ))}
         </View>
+
+        {error && <Text style={s.errorText}>{error}</Text>}
 
         <View style={s.note}>
           <Text style={s.noteText}>
@@ -75,7 +117,12 @@ export function ProfileSummaryScreen({ navigation, route }: Props) {
 
         <View style={{ flexGrow: 1 }} />
 
-        <PrimaryButton label="Enter Folio" onPress={handleEnter} />
+        <PrimaryButton
+          label={isSubmitting ? "Saving..." : "Enter Folio"}
+          onPress={handleEnter}
+          disabled={isSubmitting}
+        />
+
         <GhostLink
           label="Change my answers"
           onPress={() => navigation.navigate("WhatToOwn")}
@@ -163,5 +210,12 @@ const s = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: C.inkSecondary,
+  },
+  errorText: {
+    marginTop: 16,
+    fontFamily: FONT.display400,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#E57373",
   },
 });
