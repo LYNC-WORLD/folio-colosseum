@@ -16,8 +16,18 @@
 //   [ Sell ][      Buy NVDA      ]     Sell slides in only when you hold some
 
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -30,7 +40,11 @@ import Animated, {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Path, Rect } from "react-native-svg";
-import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { useStockDetail } from "../hooks/useStockDetail";
@@ -39,9 +53,17 @@ import { useWallet } from "../context/WalletContext";
 import type { HomeStackParamList } from "../navigation/HomeStack";
 import { C, EASE, FONT, TYPE, em, h1Size } from "../theme";
 import { timing } from "../theme/motion";
-import { Badge, Button, PressScale, Rise, Segmented, Skeleton } from "../components/ui";
+import {
+  Badge,
+  Button,
+  PressScale,
+  Rise,
+  Segmented,
+  Skeleton,
+} from "../components/ui";
 import { PriceChart, type ChartChange } from "../components/PriceChart";
 import { AmountField } from "../components/AmountField";
+import { DayPicker } from "../components/DayPicker";
 import { useSheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { BuyFlow, type BuyOutcome } from "../components/trade/BuyFlow";
@@ -60,7 +82,7 @@ import {
   units,
   PRE_IPO_LOCKED,
 } from "../lib/trade";
-import { hSelect, hTap } from "../lib/haptics";
+import { hTap } from "../lib/haptics";
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, "StockDetail">;
 
@@ -73,16 +95,20 @@ const PERIOD_WORD: Record<ChartPeriod, string> = {
 };
 
 const SLIDE = LinearTransition.duration(380).easing(EASE);
-const DAYS = Array.from({ length: 30 }, (_, i) => i + 1);
 
 export function StockDetail() {
   const nav = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { params } = useRoute<RouteProp<HomeStackParamList, "StockDetail">>();
-  const { stock, investment, recurringBuy, latestBuys, loading, error, reload } = useStockDetail(
-    params.category,
-    params.symbol,
-  );
+  const {
+    stock,
+    investment,
+    recurringBuy,
+    latestBuys,
+    loading,
+    error,
+    reload,
+  } = useStockDetail(params.category, params.symbol);
   const { usdc, tokens, loading: walletLoading } = useWallet();
   const sheet = useSheet();
   const toast = useToast();
@@ -111,12 +137,21 @@ export function StockDetail() {
   const kb = useAnimatedKeyboard();
   const kbSpace = useAnimatedStyle(() => ({ height: kb.height.value }));
 
-  if (loading) return <LoadingState top={insets.top} onBack={() => nav.goBack()} />;
+  if (loading)
+    return <LoadingState top={insets.top} onBack={() => nav.goBack()} />;
   if (error || !stock) {
     return (
       <SafeAreaView style={[s.safe, s.center]}>
-        <Text style={[TYPE.sub, { color: C.loss }]}>{error ?? "Stock not found"}</Text>
-        <Button variant="quiet" size="sm" title="Retry" onPress={() => reload()} style={{ width: 140 }} />
+        <Text style={[TYPE.sub, { color: C.loss }]}>
+          {error ?? "Stock not found"}
+        </Text>
+        <Button
+          variant="quiet"
+          size="sm"
+          title="Retry"
+          onPress={() => reload()}
+          style={{ width: 140 }}
+        />
       </SafeAreaView>
     );
   }
@@ -126,15 +161,20 @@ export function StockDetail() {
   const kind = isPre ? "Pre-IPO" : "Stock";
 
   // position
-  const token = tokens?.find((t: { mint: string }) => t.mint === stock.tokenAddress);
+  const token = tokens?.find(
+    (t: { mint: string }) => t.mint === stock.tokenAddress,
+  );
   const holding = investment?.hasInvestment ? investment.data[0] : undefined;
   const held = token?.balance ?? holding?.stockAmount ?? 0;
   const posValue = held * price;
   const invested = holding?.investmesntAmount;
-  const ret = invested && invested > 0 ? ((posValue - invested) / invested) * 100 : null;
+  const ret =
+    invested && invested > 0 ? ((posValue - invested) / invested) * 100 : null;
 
   // recurring
-  const activeRec = recurringBuy?.hasRecurringBuy ? recurringBuy.data.find((r) => r.isActive) : undefined;
+  const activeRec = recurringBuy?.hasRecurringBuy
+    ? recurringBuy.data.find((r) => r.isActive)
+    : undefined;
   const recLabel = activeRec
     ? activeRec.usdcAmount
       ? `${money(Number(activeRec.usdcAmount))} every month`
@@ -144,11 +184,19 @@ export function StockDetail() {
   // header: scrubbed point, else price + period change
   const shownPrice = scrub ? scrub.close : price;
   const headerSub = scrub
-    ? new Date(scrub.time * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+    ? new Date(scrub.time * 1000).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
     : change
       ? `${pct(change.changePct)} ${PERIOD_WORD[change.period]}`
       : " ";
-  const headerColor = scrub ? C.ink3 : (change?.changeAbs ?? 0) >= 0 ? C.mint : C.loss;
+  const headerColor = scrub
+    ? C.ink3
+    : (change?.changeAbs ?? 0) >= 0
+      ? C.mint
+      : C.loss;
 
   // amount validation (prototype renderAmt)
   const rep = mode === 1;
@@ -173,34 +221,58 @@ export function StockDetail() {
           : `Buy ${stock.symbol}`;
   const buyDisabled = walletLoading || over || zero || blockedRec;
 
-  const pcts = [25, 50, 75, 100].map((p) => ({ label: p === 100 ? "Max" : `${p}%`, value: Math.floor(balance * p) / 100 }));
+  const pcts = [25, 50, 75, 100].map((p) => ({
+    label: p === 100 ? "Max" : `${p}%`,
+    value: Math.floor(balance * p) / 100,
+  }));
 
   // ---------- actions ----------
   const openBuy = () => {
     amountRef.current?.blur();
     sheet.open(
       <BuyFlow
-        stock={{ tokenAddress: stock.tokenAddress, symbol: stock.symbol, price }}
+        stock={{
+          tokenAddress: stock.tokenAddress,
+          symbol: stock.symbol,
+          price,
+        }}
         amount={amt}
         recurringDay={rep ? day : null}
         isPreIpo={isPre}
         canMakeRecurring={!activeRec}
         onFinish={(o, sum) => afterBuy(o, sum)}
       />,
-      { label: rep ? "Confirm recurring buy" : "Confirm order", onClose: () => reload() },
+      {
+        label: rep ? "Confirm recurring buy" : "Confirm order",
+        onClose: () => reload(),
+      },
     );
   };
 
   const afterBuy = (o: BuyOutcome, sum: { amount: number; units: number }) => {
     sheet.close();
     if (rep) toast("Recurring buy is on", `${money(sum.amount)} EVERY MONTH`);
-    else toast(`${stock.symbol} is in your Folio`, `${money(sum.amount)} · SETTLED`);
+    else
+      toast(
+        `${stock.symbol} is in your Folio`,
+        `${money(sum.amount)} · SETTLED`,
+      );
     if (o === "folio") nav.getParent()?.navigate("Portfolio" as never);
     // Standing orders live in the Profile stack (opened from Folio's gear)
-    if (o === "orders") (nav.getParent() as any)?.navigate("Profile", { screen: "RecurringBuys" });
+    if (o === "orders")
+      (nav.getParent() as any)?.navigate("Profile", {
+        screen: "RecurringBuys",
+      });
     if (o === "makeRecurring") {
       setMode(1);
-      setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, segY.current - 20), animated: true }), 450);
+      setTimeout(
+        () =>
+          scrollRef.current?.scrollTo({
+            y: Math.max(0, segY.current - 20),
+            animated: true,
+          }),
+        450,
+      );
     }
   };
 
@@ -211,12 +283,19 @@ export function StockDetail() {
     }
     sheet.open(
       <SellFlow
-        stock={{ tokenAddress: stock.tokenAddress, symbol: stock.symbol, price }}
+        stock={{
+          tokenAddress: stock.tokenAddress,
+          symbol: stock.symbol,
+          price,
+        }}
         balance={held}
         recurringLabel={recLabel}
         onFinish={(o, sum) => {
           sheet.close();
-          toast(`Sold ${stock.symbol}`, `${money(sum.usd)} USDC · IN YOUR WALLET`);
+          toast(
+            `Sold ${stock.symbol}`,
+            `${money(sum.usd)} USDC · IN YOUR WALLET`,
+          );
           if (o === "folio") nav.getParent()?.navigate("Portfolio" as never);
           if (o === "cancelRecurring") setTimeout(openCancel, 480);
         }}
@@ -228,7 +307,12 @@ export function StockDetail() {
   const openCancel = () => {
     if (!activeRec) return;
     sheet.open(
-      <CancelRecurringFlow recurringId={activeRec.id} symbol={stock.symbol} label={recLabel ?? ""} onCancelled={() => reload()} />,
+      <CancelRecurringFlow
+        recurringId={activeRec.id}
+        symbol={stock.symbol}
+        label={recLabel ?? ""}
+        onCancelled={() => reload()}
+      />,
       { label: "Cancel recurring buy" },
     );
   };
@@ -238,7 +322,10 @@ export function StockDetail() {
     <View style={s.safe}>
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={[s.page, { paddingTop: insets.top + 12, paddingBottom: 130 + insets.bottom }]}
+        contentContainerStyle={[
+          s.page,
+          { paddingTop: insets.top + 12, paddingBottom: 130 + insets.bottom },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -257,7 +344,12 @@ export function StockDetail() {
         <Rise duration={420}>
           <View style={s.head}>
             <View style={{ flex: 1, gap: 6 }}>
-              <Text style={[TYPE.h1, h1Size(40)]} numberOfLines={1} adjustsFontSizeToFit accessibilityRole="header">
+              <Text
+                style={[TYPE.h1, h1Size(40)]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                accessibilityRole="header"
+              >
                 {stock.symbol}
               </Text>
               <Text style={TYPE.sub} numberOfLines={1}>
@@ -272,7 +364,11 @@ export function StockDetail() {
         </Rise>
 
         <Rise duration={420} delay={60}>
-          <PriceChart mint={stock.tokenAddress} onChange={setChange} onScrub={setScrub} />
+          <PriceChart
+            mint={stock.tokenAddress}
+            onChange={setChange}
+            onScrub={setScrub}
+          />
         </Rise>
 
         {held > 0 ? (
@@ -280,7 +376,9 @@ export function StockDetail() {
             <View style={s.card}>
               <View style={s.cardHead}>
                 <Text style={[TYPE.lbl, { flex: 1 }]}>YOUR POSITION</Text>
-                {isPre && PRE_IPO_LOCKED ? <Badge label="LOCKED UNTIL LISTING" /> : null}
+                {isPre && PRE_IPO_LOCKED ? (
+                  <Badge label="LOCKED UNTIL LISTING" />
+                ) : null}
               </View>
               <View style={s.posRow}>
                 <View style={{ flex: 1, gap: 5 }}>
@@ -291,7 +389,11 @@ export function StockDetail() {
                 </View>
                 {ret != null ? (
                   <View style={{ alignItems: "flex-end", gap: 5 }}>
-                    <Text style={[s.fig, { color: ret >= 0 ? C.mint : C.loss }]}>{pct(ret)}</Text>
+                    <Text
+                      style={[s.fig, { color: ret >= 0 ? C.mint : C.loss }]}
+                    >
+                      {pct(ret)}
+                    </Text>
                     <Text style={s.tinyLbl}>RETURN</Text>
                   </View>
                 ) : null}
@@ -309,9 +411,16 @@ export function StockDetail() {
               </View>
               <View style={{ gap: 4 }}>
                 <Text style={[TYPE.ttl, { fontSize: 16 }]}>{recLabel}</Text>
-                <Text style={TYPE.sub}>Next buy {dayDate(new Date(activeRec.buyDate))}</Text>
+                <Text style={TYPE.sub}>
+                  Next buy {dayDate(new Date(activeRec.buyDate))}
+                </Text>
               </View>
-              <Pressable onPress={openCancel} hitSlop={10} style={s.linkDanger} accessibilityRole="button">
+              <Pressable
+                onPress={openCancel}
+                hitSlop={10}
+                style={s.linkDanger}
+                accessibilityRole="button"
+              >
                 <Text style={s.linkDangerText}>Cancel recurring buy</Text>
               </Pressable>
             </View>
@@ -319,7 +428,11 @@ export function StockDetail() {
         ) : null}
 
         <View onLayout={(e) => (segY.current = e.nativeEvent.layout.y)}>
-          <Segmented options={["Buy", "Recurring"]} index={mode} onChange={(i) => setMode(i as 0 | 1)} />
+          <Segmented
+            options={["Buy", "Recurring"]}
+            index={mode}
+            onChange={(i) => setMode(i as 0 | 1)}
+          />
         </View>
 
         <View onLayout={(e) => (amountY.current = e.nativeEvent.layout.y)}>
@@ -341,18 +454,30 @@ export function StockDetail() {
             hint={hint}
             bad={over}
             onFocus={() =>
-              setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, amountY.current - 90), animated: true }), 250)
+              setTimeout(
+                () =>
+                  scrollRef.current?.scrollTo({
+                    y: Math.max(0, amountY.current - 90),
+                    animated: true,
+                  }),
+                250,
+              )
             }
           />
         </View>
 
         {rep ? (
-          <Animated.View entering={FadeIn.duration(260)} exiting={FadeOut.duration(160)} style={{ gap: 12 }}>
+          <Animated.View
+            entering={FadeIn.duration(260)}
+            exiting={FadeOut.duration(160)}
+            style={{ gap: 12 }}
+          >
             {activeRec ? (
               <View style={s.wash}>
                 <Text style={[TYPE.sub, { color: C.ink2, lineHeight: 19 }]}>
-                  You already buy {stock.symbol} {recLabel?.replace(/^\$[\d,.]+ /, "")}. Cancel that one above to set up a
-                  new amount.
+                  You already buy {stock.symbol}{" "}
+                  {recLabel?.replace(/^\$[\d,.]+ /, "")}. Cancel that one above
+                  to set up a new amount.
                 </Text>
               </View>
             ) : (
@@ -375,22 +500,37 @@ export function StockDetail() {
         </Animated.View>
 
         <Animated.View layout={SLIDE} style={{ gap: 4 }}>
-          <Text style={[TYPE.lbl, { marginTop: 8, marginBottom: 4 }]}>RECENT ACTIVITY</Text>
+          <Text style={[TYPE.lbl, { marginTop: 8, marginBottom: 4 }]}>
+            RECENT ACTIVITY
+          </Text>
           {latestBuys.length === 0 ? (
             <Text style={TYPE.sub}>No trades yet. Be the first.</Text>
           ) : (
             latestBuys.map((b, i) => (
-              <View key={b.id} style={[s.actRow, i < latestBuys.length - 1 && s.hair]}>
-                <View style={[s.actDot, { backgroundColor: b.tradeType === "BUY" ? C.mint : C.loss }]} />
+              <View
+                key={b.id}
+                style={[s.actRow, i < latestBuys.length - 1 && s.hair]}
+              >
+                <View
+                  style={[
+                    s.actDot,
+                    {
+                      backgroundColor: b.tradeType === "BUY" ? C.mint : C.loss,
+                    },
+                  ]}
+                />
                 <View style={{ flex: 1, gap: 3 }}>
                   <Text style={[TYPE.ttl, { fontFamily: FONT.sans600 }]}>
-                    {b.tradeType === "BUY" ? "Bought" : "Sold"} {money(b.investmentAmount)}
+                    {b.tradeType === "BUY" ? "Bought" : "Sold"}{" "}
+                    {money(b.investmentAmount)}
                   </Text>
                   <Text style={s.actSub}>
                     {maskUserId(b.userId)} · {timeAgo(b.createdAt)}
                   </Text>
                 </View>
-                <Text style={[s.fig, { color: "#D6DAE0" }]}>{money(b.stockPrice)}</Text>
+                <Text style={[s.fig, { color: "#D6DAE0" }]}>
+                  {money(b.stockPrice)}
+                </Text>
               </View>
             ))
           )}
@@ -414,52 +554,24 @@ export function StockDetail() {
 
 // ---------- pieces ----------
 
-function WashRow({ k, v, last, hairOnly }: { k: string; v: string; last?: boolean; hairOnly?: boolean }) {
+function WashRow({
+  k,
+  v,
+  last,
+  hairOnly,
+}: {
+  k: string;
+  v: string;
+  last?: boolean;
+  hairOnly?: boolean;
+}) {
   return (
-    <View style={[s.washRow, hairOnly ? { minHeight: 44 } : null, !last && s.hair]}>
+    <View
+      style={[s.washRow, hairOnly ? { minHeight: 44 } : null, !last && s.hair]}
+    >
       <Text style={s.washKey}>{k}</Text>
       <Text style={[s.fig, { color: "#D6DAE0" }]}>{v}</Text>
     </View>
-  );
-}
-
-function DayPicker({ day, onPick }: { day: number; onPick: (d: number) => void }) {
-  const ref = useRef<ScrollView>(null);
-  return (
-    <ScrollView
-      ref={ref}
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 8, paddingRight: 8 }}
-      onLayout={() => ref.current?.scrollTo({ x: Math.max(0, (day - 3) * 50), animated: false })}
-    >
-      {DAYS.map((d) => (
-        <DayChip
-          key={d}
-          d={d}
-          on={d === day}
-          onPress={() => {
-            hSelect();
-            onPick(d);
-          }}
-        />
-      ))}
-    </ScrollView>
-  );
-}
-
-function DayChip({ d, on, onPress }: { d: number; on: boolean; onPress: () => void }) {
-  return (
-    <PressScale
-      scaleTo={0.92}
-      onPress={onPress}
-      style={[s.day, on && s.dayOn]}
-      accessibilityRole="radio"
-      accessibilityState={{ checked: on }}
-      accessibilityLabel={`Day ${d}`}
-    >
-      <Text style={[s.dayText, on && { color: C.onMint }]}>{d}</Text>
-    </PressScale>
   );
 }
 
@@ -495,10 +607,24 @@ function Dock({
   }));
 
   return (
-    <View style={[s.dock, { paddingBottom: 16 + bottom }]} pointerEvents="box-none">
-      <LinearGradient pointerEvents="none" colors={["rgba(10,11,14,0)", C.ground]} locations={[0, 0.34]} style={StyleSheet.absoluteFill} />
-      <View style={s.dockRow} onLayout={(e) => (w.value = e.nativeEvent.layout.width)}>
-        <Animated.View style={[{ overflow: "hidden" }, sell]} pointerEvents={held ? "auto" : "none"}>
+    <View
+      style={[s.dock, { paddingBottom: 16 + bottom }]}
+      pointerEvents="box-none"
+    >
+      <LinearGradient
+        pointerEvents="none"
+        colors={["rgba(10,11,14,0)", C.ground]}
+        locations={[0, 0.34]}
+        style={StyleSheet.absoluteFill}
+      />
+      <View
+        style={s.dockRow}
+        onLayout={(e) => (w.value = e.nativeEvent.layout.width)}
+      >
+        <Animated.View
+          style={[{ overflow: "hidden" }, sell]}
+          pointerEvents={held ? "auto" : "none"}
+        >
           <PressScale
             onPress={() => {
               hTap();
@@ -509,7 +635,15 @@ function Dock({
             accessibilityLabel={locked ? "Sell, locked until listing" : "Sell"}
           >
             {locked ? (
-              <Svg width={13} height={13} viewBox="0 0 16 16" fill="none" stroke={C.ink1} strokeWidth={1.8} strokeLinecap="round">
+              <Svg
+                width={13}
+                height={13}
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke={C.ink1}
+                strokeWidth={1.8}
+                strokeLinecap="round"
+              >
                 <Rect x="3" y="7" width="10" height="7" rx="2" />
                 <Path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
               </Svg>
@@ -529,8 +663,16 @@ function Dock({
 
 function LoadingState({ top, onBack }: { top: number; onBack: () => void }) {
   return (
-    <View style={[s.safe, { paddingTop: top + 12, paddingHorizontal: 20, gap: 18 }]}>
-      <Pressable onPress={onBack} style={s.back} hitSlop={8} accessibilityRole="button" accessibilityLabel="Back">
+    <View
+      style={[s.safe, { paddingTop: top + 12, paddingHorizontal: 20, gap: 18 }]}
+    >
+      <Pressable
+        onPress={onBack}
+        style={s.back}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+      >
         <Ionicons name="chevron-back" size={16} color={C.mint} />
         <Text style={s.backText}>Back</Text>
       </Pressable>
@@ -556,38 +698,95 @@ const s = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center", gap: 14 },
   page: { paddingHorizontal: 20, gap: 18 },
 
-  back: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", minHeight: 44, marginLeft: -4, marginVertical: -8 },
+  back: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    minHeight: 44,
+    marginLeft: -4,
+    marginVertical: -8,
+  },
   backText: { fontFamily: FONT.sans600, fontSize: 13, color: C.mint },
 
   head: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   headRight: { alignItems: "flex-end", gap: 6, paddingTop: 4 },
-  price: { fontFamily: FONT.mono400, fontSize: 20, letterSpacing: em(20, -0.03), color: C.ink1, fontVariant: ["tabular-nums"] },
-  fig: { fontFamily: FONT.mono400, fontSize: 13, fontVariant: ["tabular-nums"] },
+  price: {
+    fontFamily: FONT.mono400,
+    fontSize: 20,
+    letterSpacing: em(20, -0.03),
+    color: C.ink1,
+    fontVariant: ["tabular-nums"],
+  },
+  fig: {
+    fontFamily: FONT.mono400,
+    fontSize: 13,
+    fontVariant: ["tabular-nums"],
+  },
 
   card: { backgroundColor: C.surface, borderRadius: 16, padding: 16, gap: 12 },
   cardHead: { flexDirection: "row", alignItems: "center", gap: 8 },
   liveDot: { width: 6, height: 6, borderRadius: 999, backgroundColor: C.mint },
   posRow: { flexDirection: "row", alignItems: "flex-end", gap: 12 },
-  posValue: { fontFamily: FONT.mono400, fontSize: 24, letterSpacing: em(24, -0.03), color: C.ink1, fontVariant: ["tabular-nums"] },
+  posValue: {
+    fontFamily: FONT.mono400,
+    fontSize: 24,
+    letterSpacing: em(24, -0.03),
+    color: C.ink1,
+    fontVariant: ["tabular-nums"],
+  },
   posQty: { fontFamily: FONT.mono400, fontSize: 11.5, color: C.ink3 },
-  tinyLbl: { fontFamily: FONT.mono400, fontSize: 9, letterSpacing: em(9, 0.14), color: C.ink4 },
-  linkDanger: { alignSelf: "flex-start", minHeight: 32, justifyContent: "center" },
+  tinyLbl: {
+    fontFamily: FONT.mono400,
+    fontSize: 9,
+    letterSpacing: em(9, 0.14),
+    color: C.ink4,
+  },
+  linkDanger: {
+    alignSelf: "flex-start",
+    minHeight: 32,
+    justifyContent: "center",
+  },
   linkDangerText: { fontFamily: FONT.sans600, fontSize: 13.5, color: C.loss },
 
-  wash: { backgroundColor: C.sunk, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14 },
-  washRow: { minHeight: 42, flexDirection: "row", alignItems: "center", gap: 12 },
-  washKey: { flex: 1, fontFamily: FONT.mono400, fontSize: 10, letterSpacing: em(10, 0.18), color: C.ink4 },
+  wash: {
+    backgroundColor: C.sunk,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  washRow: {
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  washKey: {
+    flex: 1,
+    fontFamily: FONT.mono400,
+    fontSize: 10,
+    letterSpacing: em(10, 0.18),
+    color: C.ink4,
+  },
   hair: { borderBottomWidth: 1, borderBottomColor: C.hair },
 
-  day: { width: 42, height: 42, borderRadius: 12, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" },
-  dayOn: { backgroundColor: C.mint },
-  dayText: { fontFamily: FONT.mono400, fontSize: 14, color: C.ink2 },
-
-  actRow: { minHeight: 58, flexDirection: "row", alignItems: "center", gap: 12 },
+  actRow: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   actDot: { width: 7, height: 7, borderRadius: 999 },
   actSub: { fontFamily: FONT.mono400, fontSize: 11, color: C.ink4 },
 
-  dock: { position: "absolute", left: 0, right: 0, bottom: 0, paddingTop: 22, paddingHorizontal: 20 },
+  dock: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: 22,
+    paddingHorizontal: 20,
+  },
   dockRow: { flexDirection: "row", alignItems: "center" },
   sellBtn: {
     height: 54,

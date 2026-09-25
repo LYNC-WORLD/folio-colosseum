@@ -18,6 +18,7 @@ import Animated, {
   Easing,
   interpolate,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -55,6 +56,7 @@ export function SplashIntro({ ready, onDone }: Props) {
   const [started, setStarted] = useState(false);
   const [minDone, setMinDone] = useState(false);
   const leaving = useRef(false);
+  const reduced = useReducedMotion();
 
   const glow = useSharedValue(0);
   const mark = useSharedValue(0);
@@ -93,21 +95,18 @@ export function SplashIntro({ ready, onDone }: Props) {
     }
     // Still waiting on auth (slow network) → show the prototype's processing bar.
     wait.value = withTiming(1, timing(300));
-    slide.value = withRepeat(
-      withTiming(1, { duration: 1050, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      false,
-    );
+    if (reduced) {
+      slide.value = 0.35;
+      return;
+    }
+    slide.value = withRepeat(withTiming(1, { duration: 1050, easing: Easing.inOut(Easing.ease) }), -1, false);
   }, [minDone, ready]);
 
   const rootStyle = useAnimatedStyle(() => ({ opacity: out.value }));
   const glowStyle = useAnimatedStyle(() => ({ opacity: glow.value }));
   const markStyle = useAnimatedStyle(() => ({
     opacity: mark.value,
-    transform: [
-      { translateY: (1 - mark.value) * 18 },
-      { scale: 0.72 + 0.28 * mark.value },
-    ],
+    transform: [{ translateY: (1 - mark.value) * 18 }, { scale: 0.72 + 0.28 * mark.value }],
   }));
   const wordStyle = useAnimatedStyle(() => ({
     opacity: word.value,
@@ -119,9 +118,7 @@ export function SplashIntro({ ready, onDone }: Props) {
   }));
   const waitStyle = useAnimatedStyle(() => ({ opacity: wait.value }));
   const barStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: interpolate(slide.value, [0, 1], [-1.1 * BAR, 3.2 * BAR]) },
-    ],
+    transform: [{ translateX: interpolate(slide.value, [0, 1], [-1.1 * BAR, 3.2 * BAR]) }],
   }));
 
   return (
@@ -133,32 +130,15 @@ export function SplashIntro({ ready, onDone }: Props) {
       accessibilityLabel="Folio. Loading."
     >
       {/* radial-gradient(55% 38% at 50% 44%, rgba(55,224,153,.18) 0%, transparent 70%) */}
-      <Animated.View
-        style={[StyleSheet.absoluteFill, glowStyle]}
-        pointerEvents="none"
-      >
+      <Animated.View style={[StyleSheet.absoluteFill, glowStyle]} pointerEvents="none">
         <Svg width="100%" height="100%">
           <Defs>
-            <RadialGradient
-              id="splashGlow"
-              cx="50%"
-              cy="44%"
-              rx="55%"
-              ry="38%"
-              fx="50%"
-              fy="44%"
-            >
+            <RadialGradient id="splashGlow" cx="50%" cy="44%" rx="55%" ry="38%" fx="50%" fy="44%">
               <Stop offset="0" stopColor={C.mint} stopOpacity={0.18} />
               <Stop offset="0.7" stopColor={C.mint} stopOpacity={0} />
             </RadialGradient>
           </Defs>
-          <Rect
-            x="0"
-            y="0"
-            width="100%"
-            height="100%"
-            fill="url(#splashGlow)"
-          />
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#splashGlow)" />
         </Svg>
       </Animated.View>
 
@@ -171,9 +151,7 @@ export function SplashIntro({ ready, onDone }: Props) {
           Folio
         </Animated.Text>
 
-        <Animated.Text style={[s.sub, subStyle]}>
-          NON-CUSTODIAL · SETTLES ON-CHAIN
-        </Animated.Text>
+        <Animated.Text style={[s.sub, subStyle]}>NON-CUSTODIAL · SETTLES ON-CHAIN</Animated.Text>
       </View>
 
       <Animated.View style={[s.waitWrap, waitStyle]} pointerEvents="none">
@@ -188,36 +166,9 @@ export function SplashIntro({ ready, onDone }: Props) {
 const s = StyleSheet.create({
   root: { backgroundColor: C.ground, zIndex: 100, elevation: 100 },
   col: { flex: 1, alignItems: "center", justifyContent: "center", gap: 26 },
-  word: {
-    fontFamily: FONT.sans800,
-    fontSize: WORD_SIZE,
-    color: C.ink1,
-    includeFontPadding: false,
-  },
-  sub: {
-    fontFamily: FONT.mono400,
-    fontSize: 10,
-    letterSpacing: em(10, 0.2),
-    color: C.ink4,
-  },
-  waitWrap: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: "18%",
-    alignItems: "center",
-  },
-  track: {
-    width: BAR_TRACK,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: C.track,
-    overflow: "hidden",
-  },
-  bar: {
-    width: BAR,
-    height: "100%",
-    borderRadius: 999,
-    backgroundColor: C.mint,
-  },
+  word: { fontFamily: FONT.sans800, fontSize: WORD_SIZE, color: C.ink1, includeFontPadding: false },
+  sub: { fontFamily: FONT.mono400, fontSize: 10, letterSpacing: em(10, 0.2), color: C.ink4 },
+  waitWrap: { position: "absolute", left: 0, right: 0, bottom: "18%", alignItems: "center" },
+  track: { width: BAR_TRACK, height: 4, borderRadius: 999, backgroundColor: C.track, overflow: "hidden" },
+  bar: { width: BAR, height: "100%", borderRadius: 999, backgroundColor: C.mint },
 });

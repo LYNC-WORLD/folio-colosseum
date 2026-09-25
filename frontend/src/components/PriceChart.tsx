@@ -13,6 +13,7 @@ import Animated, {
   Easing,
   useAnimatedProps,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -100,10 +101,12 @@ export function PriceChart({ mint, initialPeriod = "1Y", onChange, onScrub, onPe
   const areaProps = useAnimatedProps(() => ({ opacity: fill.value }));
 
   // ---- ping ring on the end dot ----
-  const ping = useSharedValue(0);
+  const reduced = useReducedMotion();
+  const ping = useSharedValue(reduced ? 1 : 0); // 1 = ring fully faded out
   useEffect(() => {
+    if (reduced) return; // Reduce Motion: keep the dot, drop the pulsing ring
     ping.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.bezier(0.22, 0.61, 0.36, 1) }), -1, false);
-  }, []);
+  }, [reduced]);
   const scrubbing = active != null;
   const dotStyle = useAnimatedStyle(() => ({ opacity: scrubbing ? 0 : dot.value }));
   const pingStyle = useAnimatedStyle(() => ({

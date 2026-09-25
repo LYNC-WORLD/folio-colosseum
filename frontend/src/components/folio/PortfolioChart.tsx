@@ -7,6 +7,7 @@ import Animated, {
   Easing,
   useAnimatedProps,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -81,10 +82,12 @@ export function PortfolioChart({ points, onScrub, replayKey }: Props) {
   const lineProps = useAnimatedProps(() => ({ strokeDashoffset: (1 - draw.value) * len }));
   const areaProps = useAnimatedProps(() => ({ opacity: fill.value }));
 
-  const ping = useSharedValue(0);
+  const reduced = useReducedMotion();
+  const ping = useSharedValue(reduced ? 1 : 0); // 1 = ring fully faded out
   useEffect(() => {
+    if (reduced) return; // Reduce Motion: keep the dot, drop the pulsing ring
     ping.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.bezier(0.22, 0.61, 0.36, 1) }), -1, false);
-  }, []);
+  }, [reduced]);
   const scrubbing = active != null;
   const dotStyle = useAnimatedStyle(() => ({ opacity: scrubbing ? 0 : dot.value }));
   const pingStyle = useAnimatedStyle(() => ({ opacity: 1 - ping.value, transform: [{ scale: 0.6 + 1.6 * ping.value }] }));
