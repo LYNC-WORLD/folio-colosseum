@@ -24,10 +24,10 @@ async function createIndexFund() {
   // });
   // console.log(JSON.stringify(data, null, 2));
 }
-(async () => {
-  try {
-    const data = await createIndexFund();
-  } catch (error) {
-    console.error("Error executing async code:", error);
-  }
-})();
+// (async () => {
+//   try {
+//     const data = await createIndexFund();
+//   } catch (error) {
+//     console.error("Error executing async code:", error);
+//   }
+// })();

@@ -31,10 +31,10 @@ async function setData() {
 }
 }
 
-(async () => {
-  try {
-    const data = await setData();
-  } catch (error) {
-    console.error("Error executing async code:", error);
-  }
-})();
+// (async () => {
+//   try {
+//     const data = await setData();
+//   } catch (error) {
+//     console.error("Error executing async code:", error);
+//   }
+// })();
