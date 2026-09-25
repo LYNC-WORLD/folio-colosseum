@@ -32,7 +32,7 @@ export class AuthController {
       });
       return;
     } catch (error) {
-      console.log(error);
+      console.log("login error: ", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",

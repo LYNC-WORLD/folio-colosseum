@@ -132,6 +132,6 @@ model IndexFundsHolding {
     indexId       String
     indexQuantity String
     indexPrice    String
-    indexDatils   IndexFunds @relation(fields: [id], references: [id])
+    indexDatils   IndexFunds @relation(fields: [indexId], references: [id])
     user          User       @relation(fields: [userId], references: [id])
 }

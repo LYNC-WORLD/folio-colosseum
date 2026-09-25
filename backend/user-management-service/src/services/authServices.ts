@@ -14,6 +14,8 @@ export class AuthService {
         email: email,
       },
     });
+    console.log(user);
+    
     if (!user) {
       // Creating user
       const privyUser = await createUser(subjectId, email, username);
