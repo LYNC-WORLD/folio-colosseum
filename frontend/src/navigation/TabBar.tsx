@@ -43,30 +43,46 @@ const ICON_PATHS: Record<string, string[]> = {
     "M3 18c0-3 2.5-4.6 5.5-4.6S14 15 14 18",
     "M15 6.2a3 3 0 0 1 0 5.6M16.5 13.6c1.7.6 2.9 2 2.9 4.4",
   ],
-  folio: ["M11 3.2a7.8 7.8 0 1 0 7.8 7.8H11z", "M13.8 3.7a7.8 7.8 0 0 1 4.5 4.5h-4.5z"],
+  folio: [
+    "M11 3.2a7.8 7.8 0 1 0 7.8 7.8H11z",
+    "M13.8 3.7a7.8 7.8 0 0 1 4.5 4.5h-4.5z",
+  ],
   leaders: [
     "M6.5 3.5h9v4.7a4.5 4.5 0 0 1-9 0z",
     "M6.5 5H4a2.4 2.4 0 0 0 2.5 2.4M15.5 5H18a2.4 2.4 0 0 1-2.5 2.4M11 12.7V16M8 19h6",
   ],
-  analyst: ["M11 3.2c.6 4 3.8 7.2 7.8 7.8-4 .6-7.2 3.8-7.8 7.8-.6-4-3.8-7.2-7.8-7.8 4-.6 7.2-3.8 7.8-7.8z"],
+  trade: [
+    "M6.5 3v3M6.5 15v4M15.5 3.5v2.5M15.5 13v3.5",
+    "M5.4 6h2.2a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H5.4a1.2 1.2 0 0 1-1.2-1.2V7.2A1.2 1.2 0 0 1 5.4 6z",
+    "M14.4 6h2.2a1.2 1.2 0 0 1 1.2 1.2v4.6a1.2 1.2 0 0 1-1.2 1.2h-2.2a1.2 1.2 0 0 1-1.2-1.2V7.2A1.2 1.2 0 0 1 14.4 6z",
+  ],
+  analyst: [
+    "M11 3.2c.6 4 3.8 7.2 7.8 7.8-4 .6-7.2 3.8-7.8 7.8-.6-4-3.8-7.2-7.8-7.8 4-.6 7.2-3.8 7.8-7.8z",
+  ],
 };
 
 /** route name → icon + label, in bar order. Routes not listed (Profile) get no button. */
-export const TABS: { route: string; icon: keyof typeof ICON_PATHS; label: string }[] = [
+export const TABS: {
+  route: string;
+  icon: keyof typeof ICON_PATHS;
+  label: string;
+}[] = [
   { route: "Home", icon: "home", label: "Home" },
-  { route: "Groups", icon: "groups", label: "Groups" },
+  { route: "Trade", icon: "trade", label: "Trade" },
   { route: "Portfolio", icon: "folio", label: "Folio" },
-  { route: "Leaders", icon: "leaders", label: "Leaderboard" },
+  { route: "Leaders", icon: "groups", label: "Social" },
   { route: "Signals", icon: "analyst", label: "AI Analyst" },
 ];
-
 /** routes without a button highlight another tab (Account lives under Folio) */
-const HIGHLIGHT_AS: Record<string, string> = { Profile: "Portfolio" };
-
+const HIGHLIGHT_AS: Record<string, string> = {
+  Profile: "Portfolio",
+  Groups: "Leaders",
+};
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const focused = state.routes[state.index];
-  const nestedIndex = (focused.state as { index?: number } | undefined)?.index ?? 0;
+  const nestedIndex =
+    (focused.state as { index?: number } | undefined)?.index ?? 0;
   const hidden = nestedIndex > 0;
   const activeRoute = HIGHLIGHT_AS[focused.name] ?? focused.name;
 
@@ -76,7 +92,9 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
   }, [hidden]);
 
   const barStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: hide.value * (TAB_BAR_HEIGHT + insets.bottom) * 1.1 }],
+    transform: [
+      { translateY: hide.value * (TAB_BAR_HEIGHT + insets.bottom) * 1.1 },
+    ],
   }));
 
   return (
@@ -102,14 +120,20 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
               label={t.label}
               active={isActive}
               onPress={() => {
-                const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+                const event = navigation.emit({
+                  type: "tabPress",
+                  target: route.key,
+                  canPreventDefault: true,
+                });
                 if (!event.defaultPrevented) {
                   if (focused.key !== route.key) hSelect();
                   // re-pressing the focused tab lets the stack pop to its root
                   navigation.navigate(route.name, route.params);
                 }
               }}
-              onLongPress={() => navigation.emit({ type: "tabLongPress", target: route.key })}
+              onLongPress={() =>
+                navigation.emit({ type: "tabLongPress", target: route.key })
+              }
             />
           );
         })}
@@ -192,7 +216,9 @@ const s = StyleSheet.create({
     borderTopColor: C.hair,
     overflow: "hidden",
   },
-  tint: { backgroundColor: Platform.OS === "ios" ? C.tabBg : "rgba(10,11,14,0.97)" },
+  tint: {
+    backgroundColor: Platform.OS === "ios" ? C.tabBg : "rgba(10,11,14,0.97)",
+  },
   row: { flexDirection: "row", height: TAB_BAR_HEIGHT },
   tab: { flex: 1, alignItems: "center", paddingTop: 12, gap: 5 },
   label: { fontFamily: FONT.sans600, fontSize: 10 },

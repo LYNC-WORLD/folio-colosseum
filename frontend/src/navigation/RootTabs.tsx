@@ -16,6 +16,7 @@ import { HomeStack, type HomeStackParamList } from "./HomeStack";
 import { ProfileStack } from "./ProfileStack";
 import { LeadersStack, type LeadersStackParamList } from "./LeadersStack";
 import { TabBar } from "./TabBar";
+import { TradeScreen } from "../screens/TradeScreen";
 
 export type TabParamList = {
   Home: NavigatorScreenParams<HomeStackParamList> | undefined;
@@ -24,6 +25,7 @@ export type TabParamList = {
   Signals: undefined;
   Leaders: NavigatorScreenParams<LeadersStackParamList> | undefined;
   Profile: undefined;
+  Trade: { symbol?: string } | undefined;
   UserRecords: {
     initialTab?: "transactions" | "recurring";
   };
@@ -48,6 +50,7 @@ export function RootTabs() {
     >
       <Tab.Screen name="Home" component={HomeStack} />
       <Tab.Screen name="Groups" component={GroupsStack} />
+      <Tab.Screen name="Trade" component={TradeScreen} />
       <Tab.Screen name="Portfolio" component={PortfolioScreen} />
       <Tab.Screen name="Leaders" component={LeadersStack} />
       <Tab.Screen name="Signals" component={SignalsScreen} />

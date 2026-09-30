@@ -8,10 +8,12 @@ import {
   StocksScreen,
 } from "../screens";
 import { stackOptions } from "./stackOptions";
+import { PerpMarketsScreen } from "../screens/PerpMarketsScreen";
 
 export type HomeStackParamList = {
   HomeMain: undefined;
   Stocks: undefined;
+  PerpMarkets: undefined;
   PreIPO: undefined;
   IndexFunds: undefined;
   IndexFundDetail: { id: string };
@@ -29,6 +31,7 @@ export function HomeStack() {
       <Stack.Screen name="HomeMain" component={HomeScreen} />
       <Stack.Screen name="Stocks" component={StocksScreen} />
       <Stack.Screen name="PreIPO" component={PreIpoScreen} />
+      <Stack.Screen name="PerpMarkets" component={PerpMarketsScreen} />
       <Stack.Screen name="IndexFunds" component={IndexFundsScreen} />
       <Stack.Screen name="IndexFundDetail" component={IndexFundDetail} />
       <Stack.Screen name="StockDetail" component={StockDetail} />

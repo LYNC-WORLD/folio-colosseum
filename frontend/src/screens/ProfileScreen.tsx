@@ -52,6 +52,7 @@ import { useFollowing } from "../lib/follows";
 import { NOTIFY_OPTIONS, setNotify, useNotifyPrefs } from "../lib/notifyPrefs";
 import { money, money0 } from "../lib/format";
 import { hTap } from "../lib/haptics";
+import { usePerpPositions } from "../hooks/usePerpPositions";
 
 const APP_VERSION = "0.9.2";
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
@@ -75,6 +76,8 @@ export function ProfileScreen() {
     refresh,
   } = useWallet();
   const txs = useUserTransactions(idToken ?? undefined);
+  const perp = usePerpPositions();
+
   const { recurringBuys, reload: reloadRecurring } = useRecurringBuys();
   const following = useFollowing();
   const prefs = useNotifyPrefs();
@@ -84,7 +87,7 @@ export function ProfileScreen() {
     getOnboardingProfile().then(setProfile);
   }, []);
 
-  const total = useCountUp(usdValue);
+  const total = useCountUp(usdValue + perp.equity);
   const [signingOut, setSigningOut] = useState(false);
 
   if (!user) return null;
@@ -164,7 +167,6 @@ export function ProfileScreen() {
       >
         <BackLink onPress={back} />
 
-        {/* identity */}
         <View style={s.head}>
           <Pop duration={320}>
             {user.photo ? (
@@ -190,7 +192,6 @@ export function ProfileScreen() {
           </Rise>
         </View>
 
-        {/* stats */}
         <View style={s.stats}>
           {stats.map(([v, l], i) => (
             <Rise key={l} {...r(2 + i)} style={{ flex: 1 }}>
@@ -286,6 +287,13 @@ export function ProfileScreen() {
               onPress={() => nav.navigate("RecurringBuys")}
             />
             <LinkRow
+              title="Perp positions"
+              value={
+                perp.positions.length ? `${perp.positions.length} open` : "None"
+              }
+              onPress={() => nav.getParent()?.navigate("Portfolio" as never)}
+            />
+            <LinkRow
               title="Every transaction"
               value={txs.isPending ? "…" : String(txList.length)}
               onPress={() => nav.navigate("Transactions")}
@@ -294,7 +302,6 @@ export function ProfileScreen() {
           </View>
         </Rise>
 
-        {/* notifications */}
         <Rise {...r(7)} style={{ gap: 12 }}>
           <Text style={TYPE.lbl}>NOTIFY ME WHEN</Text>
           <View>
@@ -321,7 +328,6 @@ export function ProfileScreen() {
           <Text style={s.tiny}>SAVED ON THIS PHONE</Text>
         </Rise>
 
-        {/* disclosure + sign out */}
         <Rise {...r(8)} style={{ gap: 18 }}>
           {/* <Text style={s.fee}>
             Folio charges <Text style={s.feeBold}>1%</Text> on each buy and sell

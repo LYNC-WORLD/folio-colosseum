@@ -11,9 +11,10 @@
 //   +$32.10 30d                           ← follows your finger when scrubbing
 //   ····· chart, full width, draws itself ·····
 //   ($) Cash in wallet  $440          [+] [⋯]
-//   Positions (3)            ( One-time • | Recurring )
+//       + $182 in perps · +$12            ← only when you hold perps
+//   Positions (3)       ( One-time • | Recurring | Perps )
 //   $800 in positions
-//   [All] [Stocks] [Pre-IPOs] [Index funds]
+//   [All] [Stocks] [Pre-IPOs] [Index funds]   (Perps tab: All · Stocks · Index funds · Commodities)
 //   rows…
 //   HELD AT 4a91…f2c7 · SELF-CUSTODY
 
@@ -58,6 +59,11 @@ import {
   MoreSheet,
   shortAddr,
 } from "../components/folio/FolioSheets";
+import {
+  PerpPositionList,
+  PerpSummaryLine,
+  PerpsHeader,
+} from "../components/PerpsPortfolio";
 import { dayChange, money, pct } from "../lib/format";
 import { fundPositions, useFundLots } from "../lib/fundHoldings";
 import { toFund } from "../lib/indexFunds";
@@ -65,6 +71,7 @@ import { dayDate } from "../lib/trade";
 import { hSelect, hTap } from "../lib/haptics";
 import Animated, { FadeIn } from "react-native-reanimated";
 import type { ChartPeriod } from "../hooks";
+import { usePerpPositions, type PerpCategory } from "../hooks/usePerpPositions";
 
 type Nav = BottomTabNavigationProp<TabParamList, "Portfolio">;
 
@@ -76,6 +83,13 @@ const RANGES: { key: string; period: ChartPeriod; label: string }[] = [
   { key: "All", period: "All", label: "all time" },
 ];
 
+type Tab = "open" | "rec" | "perp";
+const TABS: [Tab, string][] = [
+  ["open", "One-time"],
+  ["rec", "Recurring"],
+  ["perp", "Perps"],
+];
+
 type Cat = "all" | "USStock" | "PreIPO" | "index";
 const CATS: [Cat, string][] = [
   ["all", "All"],
@@ -84,12 +98,22 @@ const CATS: [Cat, string][] = [
   ["index", "Index funds"],
 ];
 
+// Perps have no Pre-IPO market; commodities (gold, oil…) are perp-only.
+type PerpCat = "all" | PerpCategory;
+const PERP_CATS: [PerpCat, string][] = [
+  ["all", "All"],
+  ["stocks", "Stocks"],
+  ["index", "Index funds"],
+  ["commodities", "Commodities"],
+];
+
 export function PortfolioScreen() {
   const nav = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const bottom = useTabBarSpace();
   const splashDone = useSplashDone();
   const sheet = useSheet();
+  const perp = usePerpPositions();
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
@@ -133,9 +157,13 @@ export function PortfolioScreen() {
   const { points } = usePortfolioSeries(holdings, usdcValue, range.period);
   const [scrubIdx, setScrubIdx] = useState<number | null>(null);
 
-  const liveTotal = useCountUp(usdValue);
+  // Total value = wallet + perp equity (same rule as the prototype's total).
+  // The chart series is wallet-only, so perp equity is added on top as a flat offset.
+  const liveTotal = useCountUp(usdValue + perp.equity);
   const shownValue =
-    scrubIdx != null ? (points[scrubIdx]?.v ?? usdValue) : liveTotal;
+    scrubIdx != null
+      ? (points[scrubIdx]?.v ?? usdValue) + perp.equity
+      : liveTotal;
   const startV = points[0]?.v ?? usdValue;
   const endV = scrubIdx != null ? (points[scrubIdx]?.v ?? usdValue) : usdValue;
   const delta = endV - startV;
@@ -155,8 +183,9 @@ export function PortfolioScreen() {
   const cash = useCountUp(usdcValue);
 
   // ---------- positions ----------
-  const [tab, setTab] = useState<"open" | "rec">("open");
+  const [tab, setTab] = useState<Tab>("open");
   const [cat, setCat] = useState<Cat>("all");
+  const [perpCat, setPerpCat] = useState<PerpCat>("all");
 
   const moves = useMemo(() => {
     const m = new Map<string, number | null>();
@@ -205,6 +234,16 @@ export function PortfolioScreen() {
     .sort((a, b) => Number(b.isActive) - Number(a.isActive))
     .filter((r) => cat === "all" || r.stock.stockType === cat);
 
+  // chips + active value depend on the tab (Perps has its own set)
+  const chipList: [string, string][] = tab === "perp" ? PERP_CATS : CATS;
+  const activeChip = tab === "perp" ? perpCat : cat;
+  const pickChip = (k: string) => {
+    if (k === activeChip) return;
+    hSelect();
+    if (tab === "perp") setPerpCat(k as PerpCat);
+    else setCat(k as Cat);
+  };
+
   // ---------- identity ----------
   const name = (user?.name ?? "").trim() || "You";
   const initial = name.charAt(0).toUpperCase();
@@ -230,6 +269,13 @@ export function PortfolioScreen() {
     nav.navigate("Home", {
       screen: "IndexFundDetail",
       params: { id },
+      initial: false,
+    });
+  // Trade lives in HomeStack
+  const openTrade = (symbol?: string) =>
+    nav.navigate("Home", {
+      screen: "Trade",
+      params: symbol ? { symbol } : undefined,
       initial: false,
     });
   const toAccount = () => nav.navigate("Profile");
@@ -433,6 +479,11 @@ export function PortfolioScreen() {
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={s.cashLbl}>Cash in wallet</Text>
               <Text style={s.cash}>{loading ? "…" : money(cash)}</Text>
+              <PerpSummaryLine
+                equity={perp.equity}
+                pnl={perp.pnl}
+                count={perp.positions.length}
+              />
             </View>
             <SqButton
               label="Add USDC"
@@ -465,21 +516,33 @@ export function PortfolioScreen() {
 
           {/* positions header */}
           <Rise {...rise(7)} style={s.posHead}>
-            <View style={{ flex: 1, gap: 3 }}>
-              <Text style={s.posTitle}>
-                {tab === "open" ? "Positions" : "Recurring"}{" "}
-                <Text style={{ color: C.ink3 }}>
-                  ({tab === "open" ? positions.length : recurringBuys.length})
-                </Text>
-              </Text>
-              <Text style={s.posSub}>
-                {tab === "open"
-                  ? `${money(tokensValue)} in positions`
-                  : `${money(due30)} due in 30 days`}
-              </Text>
+            <View style={s.posHeadText}>
+              {tab === "perp" ? (
+                <PerpsHeader
+                  count={perp.positions.length}
+                  margin={perp.margin}
+                  pnl={perp.pnl}
+                />
+              ) : (
+                <View style={{ gap: 3 }}>
+                  <Text style={s.posTitle}>
+                    {tab === "open" ? "Positions" : "Recurring"}{" "}
+                    <Text style={{ color: C.ink3 }}>
+                      (
+                      {tab === "open" ? positions.length : recurringBuys.length}
+                      )
+                    </Text>
+                  </Text>
+                  <Text style={s.posSub}>
+                    {tab === "open"
+                      ? `${money(tokensValue)} in positions`
+                      : `${money(due30)} due in 30 days`}
+                  </Text>
+                </View>
+              )}
             </View>
             <View style={s.oc} accessibilityRole="tablist">
-              {(["open", "rec"] as const).map((k) => (
+              {TABS.map(([k, label]) => (
                 <Pressable
                   key={k}
                   onPress={() => {
@@ -491,7 +554,7 @@ export function PortfolioScreen() {
                   accessibilityState={{ selected: tab === k }}
                 >
                   <Text style={[s.ocText, tab === k && { color: C.mint }]}>
-                    {k === "open" ? "One-time" : "Recurring"}
+                    {label}
                   </Text>
                   {tab === k ? <View style={s.ocDot} /> : null}
                 </Pressable>
@@ -505,18 +568,17 @@ export function PortfolioScreen() {
             style={s.fchipsWrap}
             contentContainerStyle={s.fchips}
           >
-            {CATS.map(([k, t]) => (
+            {chipList.map(([k, t]) => (
               <Pressable
                 key={k}
-                onPress={() => {
-                  if (k !== cat) hSelect();
-                  setCat(k);
-                }}
-                style={[s.fchip, cat === k && s.fchipOn]}
+                onPress={() => pickChip(k)}
+                style={[s.fchip, activeChip === k && s.fchipOn]}
                 accessibilityRole="button"
-                accessibilityState={{ selected: cat === k }}
+                accessibilityState={{ selected: activeChip === k }}
               >
-                <Text style={[s.fchipText, cat === k && { color: C.ink1 }]}>
+                <Text
+                  style={[s.fchipText, activeChip === k && { color: C.ink1 }]}
+                >
                   {t}
                 </Text>
               </Pressable>
@@ -525,11 +587,18 @@ export function PortfolioScreen() {
 
           {/* rows — keyed by tab + filter so they cascade in on every switch */}
           <Animated.View
-            key={`${tab}-${cat}`}
+            key={`${tab}-${activeChip}`}
             entering={FadeIn.duration(160)}
             style={{ marginTop: 8 }}
           >
-            {tab === "open" && cat === "index" ? (
+            {tab === "perp" ? (
+              <PerpPositionList
+                positions={perp.positions}
+                category={perpCat}
+                onOpen={(p) => openTrade(p.symbol)}
+                onOpenTrade={() => openTrade()}
+              />
+            ) : tab === "open" && cat === "index" ? (
               funds.length === 0 ? (
                 <Text style={s.empty}>
                   No index funds yet. Find one under Collections on Home.
@@ -549,7 +618,11 @@ export function PortfolioScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`${f.fundName} index fund, ${money(f.value)}`}
                       >
-                        <AssetAvatar symbol={f.fundName} size={48} radius={14} />
+                        <AssetAvatar
+                          symbol={f.fundName}
+                          size={48}
+                          radius={14}
+                        />
                         <View style={{ flex: 1, gap: 4 }}>
                           <Text
                             style={[TYPE.ttl, { fontSize: 16 }]}
@@ -944,12 +1017,16 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
 
+  // wraps so the three-way switch drops under the title on narrow phones
   posHead: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
     marginTop: 30,
-    gap: 12,
+    columnGap: 12,
+    rowGap: 12,
   },
+  posHeadText: { flexGrow: 1, flexShrink: 1, minWidth: 130 },
   posTitle: {
     fontFamily: FONT.sans800,
     fontSize: 20,

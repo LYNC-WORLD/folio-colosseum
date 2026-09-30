@@ -107,7 +107,6 @@ function Root() {
   } else if (!user) {
     content = <LoginScreen />;
   } else {
-    // One NavigationContainer wraps whichever navigator is active.
     content = (
       <NavigationContainer theme={NAV_THEME}>
         {hasOnboarded === null ? (

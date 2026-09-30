@@ -24,13 +24,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle, Path } from "react-native-svg";
-import { useNavigation, useScrollToTop } from "@react-navigation/native";
+import {
+  CompositeNavigationProp,
+  useNavigation,
+  useScrollToTop,
+} from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { useIndexFunds, useStocks, useWalletBalance } from "../hooks";
 import { useCountUp } from "../hooks/useCountUp";
 import { useAuth } from "../context";
-import type { HomeStackParamList } from "../navigation/HomeStack";
+import type { HomeStackParamList } from "../navigation/HomeStack"; // use the file where TabParamList actually lives
 import { useTabBarSpace } from "../navigation/TabBar";
 import { C, FONT, TYPE, em } from "../theme";
 import {
@@ -56,8 +60,15 @@ import { loadRecents, saveRecents, withRecent } from "../lib/recentSearches";
 import { money, pct } from "../lib/format";
 import { hTap } from "../lib/haptics";
 import { Dimensions } from "react-native";
+import { PerpMarket, usePerpMarkets } from "../data/perps";
+import { PerpStrip } from "../components/PerpStrip";
+import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import { TabParamList } from "../navigation/types";
 
-type Nav = NativeStackNavigationProp<HomeStackParamList>;
+type Nav = CompositeNavigationProp<
+  NativeStackNavigationProp<HomeStackParamList>,
+  BottomTabNavigationProp<TabParamList>
+>;
 type Mode = "home" | "recent" | "results";
 
 const GRID_GAP = 10;
@@ -71,8 +82,25 @@ export function HomeScreen() {
   const splashDone = useSplashDone();
   const bottom = useTabBarSpace();
 
+  const perps = usePerpMarkets(["NVDA", "XAUT", "SP500"]);
+
+  const openPerp = (m: PerpMarket) => {
+    nav.getParent<BottomTabNavigationProp<TabParamList>>()?.navigate("Trade", {
+      symbol: m.symbol,
+    });
+  };
+
+  console.log(
+    "route names:",
+    nav.getState().routeNames,
+    "parent:",
+    nav.getParent()?.getState().routeNames,
+    "grandparent:",
+    nav.getParent()?.getParent()?.getState().routeNames,
+  );
+
   const scrollRef = useRef<ScrollView>(null);
-  useScrollToTop(scrollRef); // re-tap Home tab → back to top
+  useScrollToTop(scrollRef);
 
   const us = useStocks("us-stock");
   const pre = useStocks("pre-ipo");
@@ -258,6 +286,27 @@ export function HomeScreen() {
                 {us.error ? (
                   <ErrorLine text={us.error} onRetry={us.reload} />
                 ) : null}
+              </Rise>
+
+              <Rise
+                when={splashDone}
+                delay={110}
+                duration={460}
+                style={s.section}
+              >
+                <View style={s.recentHead}>
+                  <Text style={[TYPE.lbl, { flex: 1 }]}>
+                    PERPS · LONG OR SHORT
+                  </Text>
+                  <Pressable
+                    onPress={() => nav.navigate("PerpMarkets")}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                  >
+                    <Text style={s.clearAll}>All markets ›</Text>
+                  </Pressable>
+                </View>
+                <PerpStrip markets={perps.markets} onPress={openPerp} />
               </Rise>
 
               <Rise
