@@ -9,6 +9,7 @@ datasource db {
 
 enum Chain {
     SOLANA
+    ETH
 }
 
 enum StockType {
@@ -39,19 +40,30 @@ enum TransactionStatus {
 model User {
     id                  String                @id @default(cuid())
     userId              String                @unique
-    walletId            String                @unique
     email               String                @unique
     name                String
-    walletAddress       String                @unique
     googleSubjectId     String                @unique
+    createdAt           DateTime              @default(now())
+    updatedAt           DateTime              @updatedAt
+    wallets             Wallet[]
     investments         Investment[]
     trades              Trades[]
     recurringBuyRequest RecurringBuyRequest[]
-    createdAt           DateTime              @default(now())
-    updatedAt           DateTime              @updatedAt
+    indexFundsHoldings  IndexFundsHolding[]
 
     @@index([userId])
-    @@index([walletId])
+}
+
+model Wallet {
+    id            String @id @default(cuid())
+    userId        String
+    walletId      String @unique
+    walletAddress String @unique
+    user          User   @relation(fields: [userId], references: [id])
+    chain         Chain
+
+    @@unique([userId, chain])
+    @@index([userId])
 }
 
 model Stocks {
@@ -73,7 +85,8 @@ model Investment {
     stockSymbol       String
     stockAmount       Float
     stockAddress      String
-    investmentAmount Float  @default(0)
+    averageStockPrice String @default("0")
+    investmentAmount  Float  @default(0)
     user              User   @relation(fields: [userId], references: [userId])
 }
 
@@ -96,7 +109,7 @@ model LoginDetails {
     id               String   @id @default(cuid())
     email            String   @unique
     interestedStocks String[]
-    amountToPutIn    Float
+    amountToPutIn    String   @default("100")
     positionHold     String
     expectToHold     String
 }
@@ -118,4 +131,18 @@ model IndexFunds {
     name   String
     stocks Stocks[]
     price  String
+
+    IndexHolding IndexFundsHolding[]
+
+    @@index([id])
+}
+
+model IndexFundsHolding {
+    id            String     @id @default(cuid())
+    userId        String
+    indexId       String
+    indexQuantity String
+    indexPrice    String
+    indexDatils   IndexFunds @relation(fields: [indexId], references: [id])
+    user          User       @relation(fields: [userId], references: [id])
 }

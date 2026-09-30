@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: user-management-service
     ports:
-      - "5000:5000"
+      - "5010:5000"
     env_file:
       - ./user-management-service/.env
     restart: unless-stopped
