@@ -296,6 +296,8 @@ export class TradeService {
     indexAmount: number | undefined,
     usdcAmount: number | undefined,
     walletId: string,
+    userId: string,
+    solanaAddress: string
   ) {
     // Index details
     const indexDetails = await prisma.indexFunds.findUnique({
@@ -304,11 +306,15 @@ export class TradeService {
     });
     // User details
     const user = await prisma.user.findUnique({
-      where: { walletId: walletId },
+      where: { userId: userId, wallets: { some: { walletId: walletId } } },
+      include: {
+        wallets: true,
+      },
     });
+    // {walletId: walletId}
     if (!user) return;
     // Get USDC balance
-    if (Number(usdcAmount) > (await getUSDCBalance(user?.walletAddress ?? "")))
+    if (Number(usdcAmount) > (await getUSDCBalance(solanaAddress ?? "")))
       return;
     // Get Index Price
     var combinedPrice: number = 0;
@@ -406,6 +412,7 @@ export class TradeService {
     indexAmount: number | undefined,
     usdcAmount: number | undefined,
     walletId: string,
+    userId: string,
   ) {
     // Get index fund details
     const indexDetails = await prisma.indexFunds.findUnique({
@@ -414,7 +421,7 @@ export class TradeService {
     });
     // Get user details
     const user = await prisma.user.findUnique({
-      where: { walletId: walletId },
+      where: { userId: userId },
     });
     if (!user) return;
     // Get stock price

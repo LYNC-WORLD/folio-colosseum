@@ -362,7 +362,7 @@ export class TradeController {
   };
   public buyIndexFunds = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user || !req.user.solanaWalletId) {
+      if (!req.user || !req.user.solanaWalletId || !req.user.solanaWalletAddress) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -387,6 +387,8 @@ export class TradeController {
         body.indexFundAmount,
         body.usdcAmount,
         req.user.solanaWalletId,
+        req.user.userId,
+        req.user.solanaWalletAddress
       );
       if (!responce) {
         res.status(500).json({
@@ -439,6 +441,7 @@ export class TradeController {
         body.indexFundAmount,
         body.usdcAmount,
         req.user.solanaWalletId,
+        req.user.userId
       );
       if (!responce) {
         res.status(500).json({
