@@ -11,7 +11,7 @@ export class TradeController {
 
   public getQuoteBuy = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.user.solanaWalletId) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -46,7 +46,7 @@ export class TradeController {
         body.stockSymbol,
         body.stockAmount,
         body.usdcAmount,
-        req.user.walletId,
+        req.user.solanaWalletId,
         stockDetails?.stockType ?? "USStock",
       );
       if (!quote) {
@@ -79,7 +79,7 @@ export class TradeController {
   };
   public getQuoteSell = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.user.solanaWalletId) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -115,7 +115,7 @@ export class TradeController {
         body.stockSymbol,
         body.stockAmount,
         body.usdcAmount,
-        req.user.walletId,
+        req.user.solanaWalletId,
         req.user.userId,
         stockDetails?.decimals ?? 8,
         stockDetails?.stockType ?? "USStock",
@@ -149,7 +149,7 @@ export class TradeController {
   };
   public buyStocks = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.user.solanaWalletId) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -184,7 +184,7 @@ export class TradeController {
         body.stockSymbol,
         body.stockAmount,
         body.usdcAmount,
-        req.user.walletId,
+        req.user.solanaWalletId,
         req.user.userId,
         stockDetails?.stockType ?? "USStock",
       );
@@ -219,7 +219,7 @@ export class TradeController {
   };
   public sellStocks = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.user.solanaWalletId) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -265,7 +265,7 @@ export class TradeController {
         body.stockSymbol,
         body.stockAmount,
         body.usdcAmount,
-        req.user.walletId,
+        req.user.solanaWalletId,
         req.user.userId,
         stockDetails?.decimals ?? 8,
         stockDetails?.stockType ?? "USStock",
@@ -362,7 +362,7 @@ export class TradeController {
   };
   public buyIndexFunds = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.user.solanaWalletId) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -386,7 +386,7 @@ export class TradeController {
         body.indexFundId,
         body.indexFundAmount,
         body.usdcAmount,
-        req.user.walletId,
+        req.user.solanaWalletId,
       );
       if (!responce) {
         res.status(500).json({
@@ -414,7 +414,7 @@ export class TradeController {
     res: Response,
   ): Promise<void> => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.user.solanaWalletId) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -438,7 +438,7 @@ export class TradeController {
         body.indexFundId,
         body.indexFundAmount,
         body.usdcAmount,
-        req.user.walletId,
+        req.user.solanaWalletId,
       );
       if (!responce) {
         res.status(500).json({

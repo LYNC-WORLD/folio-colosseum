@@ -11,7 +11,7 @@
 // const walletId = "REDACTED_PRIVY_WALLET_ID";
 
 // const userJwt =
-//   "REDACTED_JWT";
+//   "";
 
 // const serverPublicKey = "REDACTED_PRIVY_KEY_ID";
 

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../lib/prisma";
 import { verifyGoogleIdToken } from "../lib/google";
+import { Chain } from "../generated/enums";
 
 export async function authMiddleware(
   req: Request,
@@ -36,6 +37,9 @@ export async function authMiddleware(
       where: {
         googleSubjectId: googleUser.subjectId,
       },
+      include: {
+        wallets: true,
+      }
     });
 
     if (!user) {
@@ -45,9 +49,27 @@ export async function authMiddleware(
       });
       return;
     }
+    const solanaWallet = user.wallets.find(
+      (wallet) => wallet.chain === Chain.SOLANA,
+    );
 
+    const ethWallet = user.wallets.find((wallet) => wallet.chain === Chain.ETH);
+
+    const userData = {
+      id: user.id,
+      userId: user.userId,
+      email: user.email,
+      name: user.name,
+      googleSubjectId: user.googleSubjectId,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      solanaWalletId: solanaWallet?.walletId,
+      solanaWalletAddress: solanaWallet?.walletAddress,
+      ethereumWalletId: ethWallet?.walletId,
+      ethereumWalletAddress: ethWallet?.walletAddress,
+    };
     // 3. Attach database user to request
-    req.user = user;
+    req.user = userData;
 
     // 4. Continue to controller
     next();

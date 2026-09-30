@@ -7,12 +7,6 @@ export const privy = new PrivyClient({
   appSecret: env.PRIVY_APP_SECRET!,
 });
 
-interface createUserResponce {
-  userId: string;
-  walletId: string;
-  address: string;
-}
-
 export async function createUser(
   googleSubjectId: string,
   mail: string,
@@ -29,33 +23,65 @@ export async function createUser(
         },
       ],
     });
-    const wallet = await privy.wallets().create({
-      chain_type: "solana",
-      owner_id: env.PRIVY_AUTH_ADDRESS!,
-      // owner: { public_key: env.PRIVY_AUTH_ADDRESS! },
-    });
-    return { userId: user.id, walletId: wallet.id, address: wallet.address };
+    return {
+      userId: user.id,
+    };
   } catch (error) {
     console.log(error);
     throw error;
   }
 }
-
+export async function createSolanaWallet(): Promise<createWallet> {
+  try {
+    const solanaWallet = await privy.wallets().create({
+      chain_type: "solana",
+      owner_id: env.PRIVY_AUTH_ADDRESS!,
+    });
+    return {
+      walletId: solanaWallet.id,
+      address: solanaWallet.address,
+    };
+  } catch (error) {
+    console.log(error);
+    throw error;
+  }
+}
+export async function createEVMWallet(): Promise<createWallet> {
+  try {
+    const solanaWallet = await privy.wallets().create({
+      chain_type: "ethereum",
+      owner_id: env.PRIVY_AUTH_ADDRESS!,
+    });
+    return {
+      walletId: solanaWallet.id,
+      address: solanaWallet.address,
+    };
+  } catch (error) {
+    console.log(error);
+    throw error;
+  }
+}
 export async function getTransectionResults(
   walletId: string,
   transectionId: string,
 ) {
   while (true) {
-    const data = await privy
-      .wallets()
-      .actions.get(transectionId, {
-        wallet_id: walletId,
-      });
-      if(data.status == "pending"){
-        await sleep(1000);
-      }
-      else return data.status;
+    const data = await privy.wallets().actions.get(transectionId, {
+      wallet_id: walletId,
+    });
+    if (data.status == "pending") {
+      await sleep(1000);
+    } else return data.status;
   }
 }
 
-const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+interface createUserResponce {
+  userId: string;
+}
+interface createWallet {
+  walletId: string;
+  address: string;
+}

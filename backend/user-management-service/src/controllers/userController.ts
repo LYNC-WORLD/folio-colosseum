@@ -10,22 +10,22 @@ export class UserController {
 
   public getBalance = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.user?.solanaWalletAddress) {
         res.status(404).json({
           success: false,
           message: "can not find wallet",
         });
         return;
       }
-      const walletAddress = req.user?.walletAddress;
-      if (!walletAddress) {
+      const solanaWalletAddress = req.user?.solanaWalletAddress;
+      if (!solanaWalletAddress) {
         res.status(404).json({
           success: false,
           message: "can not find wallet",
         });
         return;
       }
-      const userBalance = await this.userService.getBalance(walletAddress);
+      const userBalance = await this.userService.getBalance(solanaWalletAddress);
       if (!userBalance) {
         res.status(404).json({ success: false, message: "No stocks found" });
         return;
