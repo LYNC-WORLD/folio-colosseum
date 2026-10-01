@@ -11,7 +11,11 @@
 
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from "@react-navigation/native";
 
 import type { LeadersStackParamList } from "../navigation/LeadersStack";
 import { C, FONT, TYPE, em, h1Size } from "../theme";
@@ -33,9 +37,16 @@ export function InvestorScreen() {
 
   if (!v) {
     return (
-      <View style={[s.safe, { paddingTop: insets.top + 12, paddingHorizontal: 20, gap: 20 }]}>
+      <View
+        style={[
+          s.safe,
+          { paddingTop: insets.top + 12, paddingHorizontal: 20, gap: 20 },
+        ]}
+      >
         <BackLink onPress={() => nav.goBack()} />
-        <Text style={TYPE.sub}>This investor is no longer on the leaderboard.</Text>
+        <Text style={TYPE.sub}>
+          This investor is no longer on the leaderboard.
+        </Text>
       </View>
     );
   }
@@ -50,7 +61,10 @@ export function InvestorScreen() {
   return (
     <View style={s.safe}>
       <ScrollView
-        contentContainerStyle={[s.page, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[
+          s.page,
+          { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 32 },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <BackLink onPress={() => nav.goBack()} />
@@ -73,7 +87,12 @@ export function InvestorScreen() {
 
         <View style={s.stats}>
           {stats.map(([val, lbl, color], i) => (
-            <Rise key={lbl} delay={120 + i * 55} duration={420} style={{ flex: 1 }}>
+            <Rise
+              key={lbl}
+              delay={120 + i * 55}
+              duration={420}
+              style={{ flex: 1 }}
+            >
               <View style={s.stat}>
                 <Text style={[s.statVal, { color }]}>{val}</Text>
                 <Text style={s.statLbl}>{lbl}</Text>
@@ -89,7 +108,8 @@ export function InvestorScreen() {
             title={on ? "✓ Following" : `Follow ${v.name}`}
             onPress={() => {
               const now = toggleFollow(v.id);
-              if (now) toast(`Following ${v.name}`, "YOU WILL SEE THEIR NEXT MOVE");
+              if (now)
+                toast(`Following ${v.name}`, "YOU WILL SEE THEIR NEXT MOVE");
             }}
           />
         </Rise>
@@ -98,7 +118,10 @@ export function InvestorScreen() {
           <Text style={TYPE.lbl}>WATCHING NEXT</Text>
           <View>
             {WATCHING.map(([code, name, when, kind], i) => (
-              <View key={code} style={[s.watchRow, i < WATCHING.length - 1 && s.hair]}>
+              <View
+                key={code}
+                style={[s.watchRow, i < WATCHING.length - 1 && s.hair]}
+              >
                 <Text style={s.code}>{code}</Text>
                 <View style={{ flex: 1, gap: 3 }}>
                   <Text style={TYPE.ttl}>{name}</Text>
@@ -135,24 +158,77 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.ground },
   page: { paddingHorizontal: 20, gap: 18 },
   head: { flexDirection: "row", alignItems: "center", gap: 12 },
-  av: { width: 56, height: 56, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  av: {
+    width: 56,
+    height: 56,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   avText: { fontFamily: FONT.sans800, fontSize: 23, color: C.onMint },
-  meta: { fontFamily: FONT.mono400, fontSize: 9.5, letterSpacing: em(9.5, 0.16), color: C.ink3 },
+  meta: {
+    fontFamily: FONT.mono400,
+    fontSize: 9.5,
+    letterSpacing: em(9.5, 0.16),
+    color: C.ink3,
+  },
 
   stats: { flexDirection: "row", gap: 10 },
-  stat: { backgroundColor: C.surface, borderRadius: 16, paddingVertical: 16, paddingHorizontal: 8, alignItems: "center", gap: 6 },
-  statVal: { fontFamily: FONT.sans800, fontSize: 21, letterSpacing: em(21, -0.035), fontVariant: ["tabular-nums"] },
-  statLbl: { fontFamily: FONT.mono400, fontSize: 8.5, letterSpacing: em(8.5, 0.14), color: C.ink4 },
+  stat: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    gap: 6,
+  },
+  statVal: {
+    fontFamily: FONT.sans800,
+    fontSize: 21,
+    letterSpacing: em(21, -0.035),
+    fontVariant: ["tabular-nums"],
+  },
+  statLbl: {
+    fontFamily: FONT.mono400,
+    fontSize: 8.5,
+    letterSpacing: em(8.5, 0.14),
+    color: C.ink4,
+  },
 
-  watchRow: { minHeight: 62, flexDirection: "row", alignItems: "center", gap: 12 },
+  watchRow: {
+    minHeight: 62,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   hair: { borderBottomWidth: 1, borderBottomColor: C.hair },
   code: { width: 36, fontFamily: FONT.mono400, fontSize: 10, color: C.ink4 },
-  when: { fontFamily: FONT.mono400, fontSize: 8.5, letterSpacing: em(8.5, 0.14), color: C.ink4 },
+  when: {
+    fontFamily: FONT.mono400,
+    fontSize: 8.5,
+    letterSpacing: em(8.5, 0.14),
+    color: C.ink4,
+  },
 
   holds: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  hold: { height: 34, paddingHorizontal: 14, borderRadius: 999, backgroundColor: C.surface, flexDirection: "row", alignItems: "center", gap: 7 },
+  hold: {
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: C.surface,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
   holdName: { fontFamily: FONT.sans600, fontSize: 12.5, color: C.ink2 },
   holdRet: { fontFamily: FONT.mono400, fontSize: 11 },
 
-  foot: { marginTop: 4, textAlign: "center", fontFamily: FONT.mono400, fontSize: 9.5, letterSpacing: em(9.5, 0.16), color: C.ink4 },
+  foot: {
+    marginTop: 4,
+    textAlign: "center",
+    fontFamily: FONT.mono400,
+    fontSize: 9.5,
+    letterSpacing: em(9.5, 0.16),
+    color: C.ink4,
+  },
 });
