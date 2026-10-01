@@ -1,0 +1,526 @@
+// src/components/TransferSheet.tsx — "Move money": spot wallet <-> perp account.
+//
+// form  -> from/to cards (tap the swap button to switch direction), amount, confirm
+// busy  -> full "Moving money" screen inside the sheet while the transfer runs
+// done  -> check + new balances, then the sheet closes and a toast confirms it
+//
+// The toast is fired AFTER the sheet closes: a Modal covers the screen, so a toast
+// fired while it is open would sit hidden behind it.
+import { memo, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Keyboard,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+import Svg, { Path, Rect } from "react-native-svg";
+import { C, FONT } from "../theme";
+import { fmtPx, toast } from "../data/perpsStore";
+import { moveMoney, useBalances } from "../hooks/useBalances";
+import { hTap } from "../lib/haptics";
+import { Btn, CARD, Check, H2, Body, Kv, KvCard, Lbl, Sheet } from "./PerpUi";
+
+const clean = (t: string) => {
+  const x = t.replace(/[^0-9.]/g, "");
+  const i = x.indexOf(".");
+  return i < 0 ? x : x.slice(0, i + 1) + x.slice(i + 1).replace(/\./g, "");
+};
+const floor2 = (n: number) => Math.floor(n * 100) / 100;
+const fmtIn = (n: number) => (n ? String(n) : "");
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const WalletIcon = memo(function WalletIcon() {
+  return (
+    <Svg
+      width={18}
+      height={18}
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke={C.mint}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Rect x={2.5} y={5} width={15} height={11} rx={2.4} />
+      <Path d="M13.5 10.5h1.5" />
+      <Path d="M2.5 8h15" />
+    </Svg>
+  );
+});
+const PerpIcon = memo(function PerpIcon() {
+  return (
+    <Svg
+      width={18}
+      height={18}
+      viewBox="0 0 22 22"
+      fill="none"
+      stroke={C.mint}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M6.5 3v3M6.5 15v4M15.5 3.5v2.5M15.5 13v3.5" />
+      <Rect x={4.2} y={6} width={4.6} height={9} rx={1.2} />
+      <Rect x={13.2} y={6} width={4.6} height={7} rx={1.2} />
+    </Svg>
+  );
+});
+
+const Card = memo(function Card({
+  which,
+  role,
+  bal,
+  after,
+}: {
+  which: "spot" | "perp";
+  role: "FROM" | "TO";
+  bal: number;
+  after: number;
+}) {
+  const col = after === bal ? C.ink3 : after > bal ? C.mint : "#E4E8EE";
+  return (
+    <View style={s.card}>
+      <View style={s.ic}>
+        {which === "spot" ? <WalletIcon /> : <PerpIcon />}
+      </View>
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text style={s.k}>
+          {role} · {which === "spot" ? "SPOT WALLET" : "PERP ACCOUNT"}
+        </Text>
+        <Text style={s.bal}>{fmtPx(bal)}</Text>
+      </View>
+      <View style={{ alignItems: "flex-end", gap: 4 }}>
+        <Text style={s.k}>AFTER</Text>
+        <Text style={[s.after, { color: col }]}>
+          {fmtPx(Math.max(0, after))}
+        </Text>
+      </View>
+    </View>
+  );
+});
+
+type Snap = { dir: "in" | "out"; amt: number; spot: number; perp: number };
+
+export function TransferSheet({
+  dir: dir0 = "in",
+  amt: amt0,
+  onClose,
+  onMoved,
+}: {
+  dir?: "in" | "out";
+  amt?: number;
+  onClose: () => void;
+  onMoved?: () => void;
+}) {
+  const { spot, perp } = useBalances();
+  const [dir, setDir] = useState<"in" | "out">(dir0);
+  const src0 = dir0 === "in" ? spot : perp;
+  const [amt, setAmt] = useState<number>(
+    amt0 ??
+      Math.floor(
+        Math.min(src0, dir0 === "in" ? Math.max(50, src0 * 0.2) : src0),
+      ),
+  );
+  const [txt, setTxt] = useState(fmtIn(amt));
+  const [phase, setPhase] = useState<"form" | "busy" | "done">("form");
+  const [snap, setSnap] = useState<Snap | null>(null);
+  const [err, setErr] = useState("");
+
+  const inb = dir === "in",
+    src = inb ? spot : perp,
+    dst = inb ? perp : spot;
+  const ok = amt > 0 && amt <= src + 1e-9,
+    mv = ok ? amt : 0,
+    over = amt > src + 1e-9;
+
+  // ---- direction switch (spot <-> perp)
+  const rot = useSharedValue(dir0 === "out" ? 1 : 0); // counts half-turns
+  const swapStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rot.value * 180}deg` }],
+  }));
+  const [boxH, setBoxH] = useState(150);
+
+  const set = (n: number) => {
+    setAmt(n);
+    setTxt(fmtIn(n));
+  };
+  const flip = () => {
+    // 1) animate right away, on the UI thread (not after React re-renders)
+    rot.value = withTiming(rot.value + 1, {
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+    });
+    // 2) swap the data
+    const next = inb ? "out" : "in",
+      nsrc = next === "in" ? spot : perp;
+    setDir(next);
+    setErr("");
+    if (amt > nsrc) set(floor2(nsrc)); // keep the amount valid for the new source
+    // 3) haptic last so it never delays the first frame
+    hTap();
+  };
+
+  // ---- finish: close the sheet, THEN toast (the toast lives behind a Modal otherwise)
+  const alive = useRef(true);
+  const finished = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      alive.current = false;
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  const finish = (sn: Snap) => {
+    if (finished.current) return;
+    finished.current = true;
+    if (timer.current) clearTimeout(timer.current);
+    toast(
+      `Moved ${fmtPx(sn.amt)} ${sn.dir === "in" ? "to perp" : "to spot"}`,
+      `SPOT ${fmtPx(sn.spot)} · PERP ${fmtPx(sn.perp)}`,
+    );
+    if (onMoved) onMoved();
+    else onClose();
+  };
+
+  const submit = async () => {
+    if (!ok || phase !== "form") return;
+    hTap();
+    Keyboard.dismiss();
+    setErr("");
+    setPhase("busy");
+    // balances after the move, captured now (the live balances change once it lands)
+    const sn: Snap = {
+      dir,
+      amt,
+      spot: inb ? spot - amt : spot + amt,
+      perp: inb ? perp + amt : perp - amt,
+    };
+    try {
+      await wait(900); // mock latency: delete this line when moveMoney is a real network call
+      const res = await Promise.resolve(moveMoney(dir, amt));
+      if (res === false) throw new Error("The transfer didn't go through.");
+      if (!alive.current) return;
+      setSnap(sn);
+      setPhase("done");
+      timer.current = setTimeout(() => finish(sn), 1300);
+    } catch (e) {
+      if (!alive.current) return;
+      setErr(
+        e instanceof Error ? e.message : "Something went wrong. Try again.",
+      );
+      setPhase("form");
+    }
+  };
+
+  // dismissing: blocked while moving, and a finished transfer still toasts
+  const dismiss = () => {
+    if (phase === "busy") return;
+    if (phase === "done" && snap) return finish(snap);
+    onClose();
+  };
+
+  return (
+    <Sheet onClose={dismiss}>
+      {phase === "busy" ? (
+        // ---------------------------------------------------------- processing
+        <View style={s.center}>
+          <H2 style={{ fontSize: 19 }}>Moving money</H2>
+          <ActivityIndicator color={C.mint} size="large" />
+          <Text style={s.mono}>
+            {fmtPx(amt)} · {inb ? "SPOT → PERP" : "PERP → SPOT"}
+          </Text>
+          <Text style={[s.mono, { fontSize: 9, marginTop: -8 }]}>
+            DON'T CLOSE THE APP
+          </Text>
+        </View>
+      ) : phase === "done" && snap ? (
+        // ---------------------------------------------------------- success
+        <>
+          <View style={[s.center, { gap: 14, paddingTop: 6 }]}>
+            <Check />
+            <H2 style={{ textAlign: "center" }}>
+              Moved {fmtPx(snap.amt)}{" "}
+              {snap.dir === "in" ? "to perp" : "to spot"}
+            </H2>
+            <Body style={{ textAlign: "center", fontSize: 13 }}>
+              {snap.dir === "in"
+                ? "It's in your perp account, ready to use as margin."
+                : "It's back in your spot wallet."}
+            </Body>
+          </View>
+          <KvCard>
+            <Kv k="SPOT WALLET" v={fmtPx(snap.spot)} />
+            <Kv k="PERP ACCOUNT" v={fmtPx(snap.perp)} last />
+          </KvCard>
+          <Btn label="Done" onPress={() => finish(snap)} />
+        </>
+      ) : (
+        // ---------------------------------------------------------- form
+        <>
+          <View style={{ gap: 6 }}>
+            <Lbl>TRANSFER</Lbl>
+            <H2>Move money</H2>
+          </View>
+
+          {/* from / to + swap button, centered on the seam between the cards */}
+          <View
+            style={{ gap: 6 }}
+            onLayout={(e) => setBoxH(e.nativeEvent.layout.height)}
+          >
+            {(inb
+              ? (["spot", "perp"] as const)
+              : (["perp", "spot"] as const)
+            ).map((w, i) => (
+              <Card
+                key={w}
+                which={w}
+                role={i === 0 ? "FROM" : "TO"}
+                bal={i === 0 ? src : dst}
+                after={i === 0 ? src - mv : dst + mv}
+              />
+            ))}
+            <View
+              pointerEvents="box-none"
+              style={[s.swapWrap, { top: boxH / 2 - 20 }]}
+            >
+              <Pressable
+                onPress={flip}
+                hitSlop={8}
+                style={s.swap}
+                accessibilityRole="button"
+                accessibilityLabel={`Switch direction. Now moving ${inb ? "spot to perp" : "perp to spot"}`}
+              >
+                <Animated.View style={swapStyle}>
+                  <Svg
+                    width={18}
+                    height={18}
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke={C.mint}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <Path d="M10 3.5v13M5.5 12l4.5 4.5 4.5-4.5" />
+                  </Svg>
+                </Animated.View>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={{ gap: 10 }}>
+            <View style={s.row}>
+              <View style={{ flex: 1, gap: 8 }}>
+                <Lbl>AMOUNT</Lbl>
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  {[25, 50, 75, 100].map((v) => (
+                    <Pressable
+                      key={v}
+                      hitSlop={{ top: 8, bottom: 8 }}
+                      onPress={() => {
+                        hTap();
+                        set(floor2((src * v) / 100));
+                      }}
+                      style={s.pct}
+                    >
+                      <Text style={s.pctT}>{v === 100 ? "Max" : v + "%"}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 3 }}>
+                <Text style={s.avail}>{fmtPx(src)}</Text>
+                <Text style={s.availK}>
+                  {inb ? "IN SPOT WALLET" : "FREE IN PERP ACCOUNT"}
+                </Text>
+              </View>
+            </View>
+            <View style={[s.field, over && { borderColor: C.loss }]}>
+              <Text style={s.cur}>$</Text>
+              <TextInput
+                value={txt}
+                onChangeText={(t) => {
+                  const c = clean(t);
+                  setTxt(c);
+                  setAmt(parseFloat(c) || 0);
+                  setErr("");
+                }}
+                keyboardType="decimal-pad"
+                placeholder="0"
+                placeholderTextColor={C.ink4}
+                style={s.input}
+              />
+              <Text style={s.k}>USDC</Text>
+            </View>
+          </View>
+
+          {err ? (
+            <View style={s.coach}>
+              <Text style={s.coachH}>TRANSFER FAILED</Text>
+              <Text style={s.coachT}>{err}</Text>
+            </View>
+          ) : (
+            <Text style={s.note}>
+              {inb
+                ? "Instant and free. Money in the perp account is margin for your trades. Spot buys cannot use it until you move it back."
+                : "Instant and free. Margin inside open positions stays put until you close them."}
+            </Text>
+          )}
+
+          <Btn
+            disabled={!ok}
+            label={
+              over
+                ? `More than you have in your ${inb ? "spot wallet" : "perp account"}`
+                : `Move ${fmtPx(amt)} ${inb ? "to perp" : "to spot"}`
+            }
+            onPress={submit}
+          />
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+const s = StyleSheet.create({
+  center: { alignItems: "center", gap: 20, paddingVertical: 14 },
+  mono: {
+    fontFamily: FONT.mono400,
+    fontSize: 10,
+    letterSpacing: 1.6,
+    color: C.ink4,
+  },
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 72,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: CARD,
+  },
+  ic: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#2A303A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  k: {
+    fontFamily: FONT.mono400,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    color: C.ink4,
+  },
+  bal: {
+    fontFamily: FONT.sans800,
+    fontSize: 18,
+    letterSpacing: -0.5,
+    color: C.ink1,
+    fontVariant: ["tabular-nums"],
+  },
+  after: {
+    fontFamily: FONT.mono400,
+    fontSize: 12.5,
+    fontVariant: ["tabular-nums"],
+  },
+  swapWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 5,
+    elevation: 5,
+  },
+  swap: {
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    backgroundColor: C.raised,
+    borderWidth: 4,
+    borderColor: C.raised,
+    // ring so it reads as a button sitting between the two cards
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  row: { flexDirection: "row", alignItems: "center", gap: 10 },
+  pct: {
+    height: 30,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "#262C36",
+    justifyContent: "center",
+  },
+  pctT: { fontFamily: FONT.sans800, fontSize: 12.5, color: C.ink2 },
+  avail: { fontFamily: FONT.mono400, fontSize: 13.5, color: "#E4E8EE" },
+  availK: {
+    fontFamily: FONT.mono400,
+    fontSize: 8.5,
+    letterSpacing: 1.5,
+    color: C.ink4,
+  },
+  field: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    height: 62,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: CARD,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+  cur: { fontFamily: FONT.sans800, fontSize: 26, color: C.ink3 },
+  input: {
+    flex: 1,
+    height: "100%",
+    color: C.ink1,
+    fontFamily: FONT.sans800,
+    fontSize: 28,
+    letterSpacing: -0.8,
+  },
+  note: {
+    marginTop: -4,
+    fontFamily: FONT.sans600,
+    fontSize: 12.5,
+    lineHeight: 19,
+    color: C.ink3,
+  },
+  coach: {
+    gap: 4,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(240,96,77,.10)",
+    borderWidth: 1,
+    borderColor: "rgba(240,96,77,.4)",
+  },
+  coachH: {
+    fontFamily: FONT.mono400,
+    fontSize: 9.5,
+    letterSpacing: 1.6,
+    color: C.loss,
+  },
+  coachT: {
+    fontFamily: FONT.sans600,
+    fontSize: 13,
+    lineHeight: 19,
+    color: C.ink1,
+  },
+});

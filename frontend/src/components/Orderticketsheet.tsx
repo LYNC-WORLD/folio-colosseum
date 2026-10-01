@@ -1,6 +1,7 @@
 // src/components/Orderticketsheet.tsx — Long / Short ticket: side, order type, margin,
 // leverage, liquidation preview, analyst check, TP/SL, fees, hold-to-confirm (25x+), success card.
 // Sends real orders through useTradeActions -> backend -> Hyperliquid.
+// Margin comes from the PERP account (perpBal); spot money is moved in with onTransfer.
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -58,6 +59,7 @@ const clean = (t: string) => {
   return i < 0 ? x : x.slice(0, i + 1) + x.slice(i + 1).replace(/\./g, "");
 };
 const num = (t: string) => parseFloat(t) || 0;
+const ceil2 = (n: number) => Math.ceil(n * 100) / 100;
 
 function metaOf(sym: string) {
   try {
@@ -81,11 +83,20 @@ function safeCheck(sym: string, dist: number): [string, string] {
 export function OrderTicketSheet({
   sym,
   initialSide,
+  perpBal,
+  spotBal,
+  onTransfer,
   onClose,
   onChart,
 }: {
   sym: string;
   initialSide: 1 | -1;
+  /** free money in the perp account: this is the margin you can use */
+  perpBal: number;
+  /** money in the spot wallet: can be moved into the perp account */
+  spotBal: number;
+  /** open the transfer sheet (spot -> perp), optionally pre-filled with an amount */
+  onTransfer: (amt?: number) => void;
   onClose: () => void;
   onChart: () => void;
 }) {
@@ -99,14 +110,15 @@ export function OrderTicketSheet({
   const unit: string = meta?.category === "stocks" ? (meta?.symbol ?? nm) : nm;
   const mk = live.mark;
   const maxLev = Math.max(1, live.maxLeverage);
-  const usdc = acct.available;
+  const usdc = perpBal;
 
   const [side, setSide] = useState<1 | -1>(initialSide);
   const [otype, setOtype] = useState<"Market" | "Limit" | "Stop">("Market");
   const [opx, setOpx] = useState("");
   const [marginT, setMarginT] = useState("");
   const [lev, setLevRaw] = useState(Math.min(10, maxLev));
-  const setLev = (v: number) => setLevRaw(Math.max(1, Math.min(maxLev, Math.round(v))));
+  const setLev = (v: number) =>
+    setLevRaw(Math.max(1, Math.min(maxLev, Math.round(v))));
   const [tpOn, setTpOn] = useState(false);
   const [tpT, setTpT] = useState("");
   const [slT, setSlT] = useState("");
@@ -117,9 +129,10 @@ export function OrderTicketSheet({
     const i = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(i);
   }, []);
-  // default margin once the balance arrives
+  // default margin once the perp balance arrives
   useEffect(() => {
-    if (!marginT && usdc > 0) setMarginT(String(Math.min(50, Math.floor(usdc))));
+    if (!marginT && usdc > 0)
+      setMarginT(String(Math.min(50, Math.floor(usdc))));
   }, [usdc]); // eslint-disable-line
   // this market may allow less leverage than the default
   useEffect(() => {
@@ -138,12 +151,19 @@ export function OrderTicketSheet({
       : en + (mg - MMR * qty * en) / qty
     : en;
   const dist = en ? (Math.abs(liq - en) / en) * 100 : 0;
-  const [tone, toneTxt] = useMemo(() => safeCheck(sym, dist || 0.01), [sym, dist]);
+  const [tone, toneTxt] = useMemo(
+    () => safeCheck(sym, dist || 0.01),
+    [sym, dist],
+  );
   const toneCol = tone === "ok" ? C.mint : tone === "warn" ? AMBER : C.loss;
   const fpay = notional * (live.fundingPct / 100) * side;
   const tp = num(tpT) || null,
     sl = num(slT) || null;
+
+  // funding: margin + fee must fit in the PERP account; if not, can spot cover it?
   const need = mg + fee - usdc;
+  const canMove = spotBal >= need;
+  const needUp = ceil2(need);
 
   let bad = "";
   if (!mk) bad = "Waiting for the live price…";
@@ -151,7 +171,8 @@ export function OrderTicketSheet({
     bad = `Enter a ${otype.toLowerCase()} price.`;
   if (mg > 0 && mg < MIN_MARGIN)
     bad = `The smallest trade is $${MIN_MARGIN} of margin.`;
-  if (mg > 0 && notional < 10) bad = "Trade size must be at least $10 (margin × leverage).";
+  if (mg > 0 && notional < 10)
+    bad = "Trade size must be at least $10 (margin × leverage).";
   if (tpOn && tp && (side > 0 ? tp <= en : tp >= en))
     bad = `Take profit has to be ${side > 0 ? "above" : "below"} your entry.`;
   if (tpOn && sl && (side > 0 ? sl >= en || sl <= liq : sl <= en || sl >= liq))
@@ -199,13 +220,15 @@ export function OrderTicketSheet({
     }
   };
 
-  const holdNeeded = lev >= 25 && !(mg > 0 && need > 0);
-  const btnLabel =
-    mg > 0 && need > 0
-      ? "Add funds to trade"
-      : lev >= 25
-        ? `Hold to ${otype === "Market" ? "open" : "place"} ${lev}x ${side > 0 ? "long" : "short"}`
-        : `${otype === "Market" ? "" : otype + " "}${side > 0 ? "Long " : "Short "}${nm} · ${lev}x`;
+  const short = mg > 0 && need > 0; // not enough in the perp account
+  const holdNeeded = lev >= 25 && !short;
+  const btnLabel = short
+    ? canMove
+      ? `Move ${fmtPx(needUp)} from spot`
+      : "Add funds to trade"
+    : lev >= 25
+      ? `Hold to ${otype === "Market" ? "open" : "place"} ${lev}x ${side > 0 ? "long" : "short"}`
+      : `${otype === "Market" ? "" : otype + " "}${side > 0 ? "Long " : "Short "}${nm} · ${lev}x`;
   const disabled = mg <= 0 || (!!bad && !(need > 0));
 
   // ---------------------------------------------------------------- processing
@@ -214,7 +237,9 @@ export function OrderTicketSheet({
       <Sheet onClose={() => {}}>
         <View style={{ alignItems: "center", gap: 20, paddingVertical: 14 }}>
           <H2 style={{ fontSize: 19 }}>
-            {otype === "Market" ? "Opening on Hyperliquid" : "Placing your order"}
+            {otype === "Market"
+              ? "Opening on Hyperliquid"
+              : "Placing your order"}
           </H2>
           <ActivityIndicator color={C.mint} />
           <Text style={s.mono}>
@@ -367,7 +392,7 @@ export function OrderTicketSheet({
               {acct.loading ? "…" : fmtPx(usdc)}
             </Text>
             <Text style={[s.mono, { fontSize: 8.5, color: C.ink4 }]}>
-              USDC AVAILABLE
+              IN PERP ACCOUNT
             </Text>
           </View>
         </View>
@@ -383,6 +408,19 @@ export function OrderTicketSheet({
           />
           <Text style={s.k}>USDC</Text>
         </View>
+        <Pressable
+          onPress={() => {
+            hTap();
+            onTransfer();
+          }}
+          hitSlop={{ top: 8, bottom: 8 }}
+          style={s.xfer}
+          accessibilityRole="button"
+        >
+          <Text style={s.xferT}>
+            Move money from spot · {fmtPx(spotBal)} there ›
+          </Text>
+        </Pressable>
       </View>
 
       <View style={{ gap: 2 }}>
@@ -392,7 +430,9 @@ export function OrderTicketSheet({
         </View>
         <LeverageSlider value={lev} onChange={setLev} />
         {maxLev < 50 ? (
-          <Text style={[s.mono, { letterSpacing: 0.4 }]}>{nm.toUpperCase()} ALLOWS UP TO {maxLev}X</Text>
+          <Text style={[s.mono, { letterSpacing: 0.4 }]}>
+            {nm.toUpperCase()} ALLOWS UP TO {maxLev}X
+          </Text>
         ) : null}
       </View>
 
@@ -537,12 +577,15 @@ export function OrderTicketSheet({
         />
       </View>
 
-      {mg > 0 && need > 0 ? (
+      {short ? (
         <View style={s.coach}>
-          <Text style={s.coachH}>INSUFFICIENT FUNDS</Text>
+          <Text style={s.coachH}>
+            {canMove ? "PERP ACCOUNT LOW" : "INSUFFICIENT FUNDS"}
+          </Text>
           <Text style={s.coachT}>
-            You have {fmtPx(usdc)} available for stock trades. Add {fmtPx(need)} to open
-            this trade.
+            {canMove
+              ? `Your perp account has ${fmtPx(usdc)}. Move ${fmtPx(needUp)} from your spot wallet to open this trade.`
+              : `Your perp account has ${fmtPx(usdc)} and your spot wallet ${fmtPx(spotBal)}. Add ${fmtPx(needUp)} straight to your perp account to open this trade.`}
           </Text>
         </View>
       ) : bad ? (
@@ -561,9 +604,14 @@ export function OrderTicketSheet({
           toast("Keep holding to confirm", `A SAFETY CHECK FOR ${lev}X`)
         }
         onConfirm={() => {
-          if (mg > 0 && need > 0)
-            toast("Add funds first", "DEPOSIT USDC, THEN MOVE IT TO STOCK TRADING");
-          else go();
+          if (short) {
+            if (canMove) onTransfer(needUp);
+            else
+              toast(
+                "Add funds first",
+                "DEPOSIT USDC, THEN MOVE IT TO YOUR PERP ACCOUNT",
+              );
+          } else go();
         }}
       />
       <Text
@@ -656,6 +704,8 @@ const s = StyleSheet.create({
     fontSize: 28,
     letterSpacing: -0.8,
   },
+  xfer: { alignSelf: "flex-start", minHeight: 24, justifyContent: "center" },
+  xferT: { fontFamily: FONT.sans800, fontSize: 13.5, color: C.ink2 },
   levNum: { fontFamily: FONT.sans800, fontSize: 30, letterSpacing: -1.2 },
   liqBox: {
     gap: 10,
