@@ -25,7 +25,6 @@ export async function request<T>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-console.log("API ->", method, `${ENV.API_URL}${path}`, JSON.stringify(body));
   try {
     const res = await fetch(`${ENV.API_URL}${path}`, {
       method,

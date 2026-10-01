@@ -51,9 +51,9 @@ export function ProfileSummaryScreen({ navigation, route }: Props) {
       // console.log(payload);
       // console.log("====================================");
       const data = await submitLoginForm(payload, idToken!);
-      console.log("====================================");
-      console.log("hellos", data);
-      console.log("====================================");
+      // console.log("====================================");
+      // console.log("hellos", data);
+      // console.log("====================================");
       saveOnboardingProfile(profile);
       hSuccess();
       onComplete?.();

@@ -4,7 +4,12 @@
 import { useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export type FundLeg = { mint: string; symbol: string; units: number; usdc: number };
+export type FundLeg = {
+  mint: string;
+  symbol: string;
+  units: number;
+  usdc: number;
+};
 export type FundLot = {
   fundId: string;
   fundName: string;
@@ -60,10 +65,16 @@ type WalletToken = { mint: string; balance: number; price: string | number };
  * fund that holds it shrinks in proportion, so nothing counts more than the
  * wallet actually has.
  */
-export function fundPositions(all: FundLot[], wallet: string | null | undefined, tokens: WalletToken[]): FundPosition[] {
+export function fundPositions(
+  all: FundLot[],
+  wallet: string | null | undefined,
+  tokens: WalletToken[],
+): FundPosition[] {
   const mine = all.filter((l) => l.wallet === wallet);
   const recorded = new Map<string, number>();
-  for (const l of mine) for (const g of l.legs) recorded.set(g.mint, (recorded.get(g.mint) ?? 0) + g.units);
+  for (const l of mine)
+    for (const g of l.legs)
+      recorded.set(g.mint, (recorded.get(g.mint) ?? 0) + g.units);
   const tok = new Map(tokens.map((t) => [t.mint, t]));
   const scale = (mint: string) => {
     const r = recorded.get(mint) ?? 0;
@@ -75,7 +86,14 @@ export function fundPositions(all: FundLot[], wallet: string | null | undefined,
   for (const l of mine) {
     const p =
       byFund.get(l.fundId) ??
-      ({ fundId: l.fundId, fundName: l.fundName, value: 0, invested: 0, ret: null, legs: [] } as FundPosition);
+      ({
+        fundId: l.fundId,
+        fundName: l.fundName,
+        value: 0,
+        invested: 0,
+        ret: null,
+        legs: [],
+      } as FundPosition);
     for (const g of l.legs) {
       const k = scale(g.mint);
       const units = g.units * k;
@@ -93,6 +111,9 @@ export function fundPositions(all: FundLot[], wallet: string | null | undefined,
   }
   return [...byFund.values()]
     .filter((p) => p.legs.length > 0)
-    .map((p) => ({ ...p, ret: p.invested > 0 ? ((p.value - p.invested) / p.invested) * 100 : null }))
+    .map((p) => ({
+      ...p,
+      ret: p.invested > 0 ? ((p.value - p.invested) / p.invested) * 100 : null,
+    }))
     .sort((a, b) => b.value - a.value);
 }

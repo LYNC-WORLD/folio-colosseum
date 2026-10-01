@@ -90,14 +90,14 @@ export function HomeScreen() {
     });
   };
 
-  console.log(
-    "route names:",
-    nav.getState().routeNames,
-    "parent:",
-    nav.getParent()?.getState().routeNames,
-    "grandparent:",
-    nav.getParent()?.getParent()?.getState().routeNames,
-  );
+  // console.log(
+  //   "route names:",
+  //   nav.getState().routeNames,
+  //   "parent:",
+  //   nav.getParent()?.getState().routeNames,
+  //   "grandparent:",
+  //   nav.getParent()?.getParent()?.getState().routeNames,
+  // );
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);

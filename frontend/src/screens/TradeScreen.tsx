@@ -1,21 +1,16 @@
-// src/screens/TradeScreen.tsx — prototype #s-trade (the perps terminal)
-//
-//   [logo] NVDA PERP ⌄            Spot ›
-//   $184.20  +2.10%  24H
-//   MARK · ORACLE · FUNDING/1H · NEXT FUNDING · 24H VOLUME · OPEN INTEREST   (scrolls)
-//   ● US MARKET OPEN · TRACKS THE LIVE PRICE
-//   chart stage (timeframes, type, indicators, full screen)
-//   Positions · Orders · Order book · Contract
-//   [ Long 10x ] [ Short 10x ]      ← docked above the tab bar
-
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { FadeInDown, FadeOutUp } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
 import {
   useNavigation,
@@ -24,40 +19,44 @@ import {
 } from "@react-navigation/native";
 
 import { TAB_BAR_HEIGHT, useTabBarSpace } from "../navigation/TabBar";
-import { C, FONT } from "../theme";
 import { hTap } from "../lib/haptics";
 import {
   MarketPickerSheet,
   MarketStatusSheet,
-  PositionSheet,
   UnlockSheet,
 } from "../components/PerpSheets";
 import { AMBER, Btn, Kv, ON_MINT, ON_SHORT, Tag } from "../components/PerpUi";
-import { PERP_MARKETS, perpLabel } from "../data/perps";
-import { sampleBook } from "../data/perpsChart";
+import { perpLabel } from "../data/perps";
+import { OrderBook } from "../components/perps/OrderBook";
+import { PerpToast } from "../components/perps/PerpToast";
+import { LivePositionSheet } from "../components/perps/LivePositionSheet";
+import { StyleSheet } from "react-native";
+import { C, FONT } from "../theme";
 import {
-  MAXLEV,
-  MMR,
   TAKER,
-  cancelOrder,
-  changeOf,
-  fmtNum,
   fmtPx,
   fundLeft,
-  liqOf,
   marketOf,
   mktOpen,
-  pnlOf,
-  qtyFmt,
-  roeOf,
   sMoney,
   sPct,
   sideTxt,
   toast,
-  usePerps,
 } from "../data/perpsStore";
 import { ChartStage } from "../components/Perpchart";
 import { OrderTicketSheet } from "../components/Orderticketsheet";
+import {
+  livePnl,
+  liveRoe,
+  useAccount,
+  useLiveMarket,
+  useMarkets,
+  usePerpsOnboarding,
+  usePerpsSession,
+  useSocketStatus,
+  useTradeActions,
+} from "../hooks/perps";
+import { errMsg } from "../services/hyperliquid/format";
 
 type PTab = "pos" | "ord" | "book" | "info";
 type SheetState =
@@ -66,15 +65,32 @@ type SheetState =
   | { t: "status" }
   | { t: "unlock"; side: 1 | -1 }
   | { t: "ticket"; side: 1 | -1 }
-  | { t: "position"; id: number };
+  | { t: "position"; id: string };
 
 const DEFAULT_LEV = 10;
 const tone = (n: number) => (n >= 0 ? C.mint : C.loss);
 
+/** Mock metadata (name, category, logo) if this symbol exists in data/perps; never throws. */
+function metaOf(sym: string) {
+  try {
+    return marketOf(sym) ?? null;
+  } catch {
+    return null;
+  }
+}
+const labelOf = (sym: string) => {
+  const m = metaOf(sym);
+  try {
+    return m ? perpLabel(m) : sym;
+  } catch {
+    return sym;
+  }
+};
+const logoTxt = (sym: string) => sym.replace(/[^A-Z0-9]/g, "").slice(0, 3);
+
 export function TradeScreen() {
   const nav = useNavigation();
   const route = useRoute();
-  const st = usePerps();
   const insets = useSafeAreaInsets();
   const bottom = useTabBarSpace();
   const scrollRef = useRef<ScrollView>(null);
@@ -86,43 +102,65 @@ export function TradeScreen() {
     if (paramSym) setSym(paramSym);
   }, [paramSym]);
 
+  // ---- live data
+  const session = usePerpsSession();
+  const markets = useMarkets();
+  const live = useLiveMarket(sym);
+  const acct = useAccount(session.address);
+  const actions = useTradeActions(session.idToken);
+  const onboarding = usePerpsOnboarding(session);
+  const socket = useSocketStatus();
+
   const [tab, setTab] = useState<PTab>("pos");
   const [sheet, setSheet] = useState<SheetState>(null);
   const [locked, setLocked] = useState(false); // freezes scroll while the chart crosshair is held
   const [chartY, setChartY] = useState(0);
   const [, tick] = useState(0);
   useEffect(() => {
-    const i = setInterval(() => tick((n) => n + 1), 1000);
+    const i = setInterval(() => tick((n) => n + 1), 1000); // funding countdown
     return () => clearInterval(i);
   }, []);
 
-  const m = marketOf(sym),
-    mk = st.marks[sym],
-    ch = changeOf(sym),
-    open = mktOpen(m);
-  const label = perpLabel(m);
+  const meta = metaOf(sym);
+  const label = labelOf(sym);
+  const category: string = meta?.category ?? "stocks";
+  const name: string = meta?.name ?? sym;
+  const open = meta ? mktOpen(meta) : true;
+  const listed = !!live.market;
+  const notListed = !markets.loading && !markets.error && !listed;
 
   // price flash on each tick
   const [flash, setFlash] = useState<null | "up" | "dn">(null);
   useEffect(() => {
-    if (mk.mark === mk.prev) return;
-    setFlash(mk.mark > mk.prev ? "up" : "dn");
+    if (!live.mark || live.mark === live.prevMark) return;
+    setFlash(live.mark > live.prevMark ? "up" : "dn");
     const t = setTimeout(() => setFlash(null), 600);
     return () => clearTimeout(t);
-  }, [mk.mark]); // eslint-disable-line
+  }, [live.mark]); // eslint-disable-line
 
-  const openTicket = (side: 1 | -1) =>
-    setSheet(st.perpOK ? { t: "ticket", side } : { t: "unlock", side });
+  const markOf = (coin: string, fallback: number) =>
+    coin === live.coin ? live.mark : (markets.byCoin[coin]?.mid ?? fallback);
+
+  const openTicket = (side: 1 | -1) => {
+    if (!listed)
+      return toast(
+        "Not tradable",
+        `${label.toUpperCase()} ISN'T LISTED ON HYPERLIQUID`,
+      );
+    if (!session.address || !session.idToken)
+      return toast("Sign in to trade", "CONNECT YOUR WALLET FIRST");
+    setSheet(onboarding.ready ? { t: "ticket", side } : { t: "unlock", side });
+  };
   const toChart = () =>
     scrollRef.current?.scrollTo({
       y: Math.max(0, chartY - 60),
       animated: true,
     });
   const goSpot = () => {
-    if (m.category === "stocks")
+    if (category === "stocks")
       (nav as any).navigate("Home", {
         screen: "StockDetail",
-        params: { symbol: m.symbol, category: "us-stock" },
+        params: { symbol: meta?.symbol ?? sym, category: "us-stock" },
       });
     else
       toast(
@@ -131,26 +169,41 @@ export function TradeScreen() {
       );
   };
 
-  const fr = m.funding;
+  const fr = live.fundingPct;
   const stats: [string, string, "up" | "down" | null][] = [
-    ["MARK", fmtPx(mk.mark), null],
-    ["ORACLE", fmtPx(mk.mark * (1 - 0.00012)), null],
+    ["MARK", fmtPx(live.mark), null],
+    ["ORACLE", fmtPx(live.oracle), null],
     [
       "FUNDING / 1H",
       `${fr >= 0 ? "+" : "−"}${Math.abs(fr).toFixed(4)}%`,
       fr >= 0 ? "up" : "down",
     ],
     ["NEXT FUNDING", fundLeft(), null],
-    ["24H VOLUME", `$${m.vol24.toFixed(1)}M`, null],
-    ["OPEN INTEREST", `$${m.oi.toFixed(1)}M`, null],
+    ["24H VOLUME", `$${(live.vol24Usd / 1e6).toFixed(1)}M`, null],
+    ["OPEN INTEREST", `$${(live.oiUsd / 1e6).toFixed(1)}M`, null],
   ];
 
-  const positions = st.perps
+  const positions = acct.positions
     .slice()
     .sort((a, b) => Number(b.sym === sym) - Number(a.sym === sym));
+  const sheetPos =
+    sheet?.t === "position"
+      ? acct.positions.find((p) => p.id === sheet.id)
+      : undefined;
+
+  const cancel = (o: (typeof acct.orders)[number]) =>
+    actions
+      .cancelOrder(o)
+      .then(() =>
+        toast(
+          "Order cancelled",
+          `${labelOf(o.sym).toUpperCase()} · ${fmtPx(o.px)}`,
+        ),
+      )
+      .catch((e) => toast("Couldn't cancel", errMsg(e).toUpperCase()));
 
   return (
-    <SafeAreaView style={s.safe} edges={["top"]}>
+    <SafeAreaView style={tradeStyles.safe} edges={["top"]}>
       <ScrollView
         ref={scrollRef}
         scrollEnabled={!locked}
@@ -158,9 +211,9 @@ export function TradeScreen() {
         contentContainerStyle={{ paddingTop: 18, paddingBottom: bottom + 84 }}
       >
         {/* header */}
-        <View style={s.head}>
+        <View style={tradeStyles.head}>
           <Pressable
-            style={s.mktBtn}
+            style={tradeStyles.mktBtn}
             onPress={() => {
               hTap();
               setSheet({ t: "market" });
@@ -168,14 +221,14 @@ export function TradeScreen() {
             accessibilityRole="button"
             accessibilityLabel="Change market"
           >
-            <View style={s.logo}>
-              <Text style={s.logoT}>
-                {m.symbol.replace(/[^A-Z0-9]/g, "").slice(0, 3)}
+            <View style={tradeStyles.logo}>
+              <Text style={tradeStyles.logoT}>
+                {logoTxt(meta?.symbol ?? sym)}
               </Text>
             </View>
             <View style={{ gap: 3, flexShrink: 1 }}>
-              <View style={s.rowC}>
-                <Text style={s.sym}>{label}</Text>
+              <View style={tradeStyles.rowC}>
+                <Text style={tradeStyles.sym}>{label}</Text>
                 <Tag label="PERP" />
                 <Svg
                   width={14}
@@ -190,13 +243,14 @@ export function TradeScreen() {
                   <Path d="m4 6 4 4 4-4" />
                 </Svg>
               </View>
-              <Text style={s.sub} numberOfLines={1}>
-                {m.name} · up to {MAXLEV}x
+              <Text style={tradeStyles.sub} numberOfLines={1}>
+                {name}
+                {listed ? ` · up to ${live.maxLeverage}x` : ""}
               </Text>
             </View>
           </Pressable>
           <Pressable
-            style={s.spot}
+            style={tradeStyles.spot}
             hitSlop={{ top: 6, bottom: 6 }}
             onPress={() => {
               hTap();
@@ -204,90 +258,132 @@ export function TradeScreen() {
             }}
             accessibilityRole="button"
           >
-            <Text style={s.spotT}>Spot ›</Text>
+            <Text style={tradeStyles.spotT}>Spot ›</Text>
           </Pressable>
         </View>
 
         {/* price */}
-        <View style={s.px}>
-          <Text
-            style={[
-              s.big,
-              flash && { color: flash === "up" ? C.mint : C.loss },
-            ]}
-          >
-            {fmtPx(mk.mark)}
-          </Text>
-          <Text style={[s.chg, { color: tone(ch) }]}>{sPct(ch)}</Text>
-          <Text style={s.h24}>24H</Text>
-        </View>
+        {markets.error && !listed ? (
+          <View style={[tradeStyles.empty, { paddingHorizontal: 20 }]}>
+            <Text style={tradeStyles.ttl}>Prices aren't loading</Text>
+            <Text style={tradeStyles.emptyT}>{markets.error}</Text>
+            <Btn
+              kind="ghost"
+              small
+              label="Try again"
+              onPress={() => markets.refresh()}
+            />
+          </View>
+        ) : notListed ? (
+          <View style={[tradeStyles.empty, { paddingHorizontal: 20 }]}>
+            <Text style={tradeStyles.ttl}>
+              {label} isn't on Hyperliquid yet
+            </Text>
+            <Text style={tradeStyles.emptyT}>
+              Pick another market from the list above.
+            </Text>
+          </View>
+        ) : !live.ready ? (
+          <View style={[tradeStyles.px, { height: 38 }]}>
+            <ActivityIndicator color={C.ink3} />
+          </View>
+        ) : (
+          <View style={tradeStyles.px}>
+            <Text
+              style={[
+                tradeStyles.big,
+                flash && { color: flash === "up" ? C.mint : C.loss },
+                socket !== "open" && { opacity: 0.5 },
+              ]}
+            >
+              {fmtPx(live.mark)}
+            </Text>
+            <Text style={[tradeStyles.chg, { color: tone(live.change24) }]}>
+              {sPct(live.change24)}
+            </Text>
+            <Text style={tradeStyles.h24}>
+              {socket === "open" ? "24H" : "RECONNECTING"}
+            </Text>
+          </View>
+        )}
 
         {/* stats strip */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.stats}
-          style={{ marginTop: 14 }}
-        >
-          {stats.map(([k, v, t]) => (
-            <View key={k} style={{ gap: 5 }}>
-              <Text style={s.statK}>{k}</Text>
-              <Text
-                style={[
-                  s.statV,
-                  t === "up" && { color: C.mint },
-                  t === "down" && { color: C.loss },
-                ]}
-              >
-                {v}
-              </Text>
-            </View>
-          ))}
-        </ScrollView>
+        {listed ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={tradeStyles.stats}
+            style={{ marginTop: 14 }}
+          >
+            {stats.map(([k, v, t]) => (
+              <View key={k} style={{ gap: 5 }}>
+                <Text style={tradeStyles.statK}>{k}</Text>
+                <Text
+                  style={[
+                    tradeStyles.statV,
+                    t === "up" && { color: C.mint },
+                    t === "down" && { color: C.loss },
+                  ]}
+                >
+                  {v}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        ) : null}
 
         {/* market status */}
-        <Pressable
-          style={s.status}
-          hitSlop={{ top: 8, bottom: 8 }}
-          onPress={() => {
-            hTap();
-            setSheet({ t: "status" });
-          }}
-          accessibilityRole="button"
-        >
-          <View
-            style={[
-              s.dot,
-              {
-                backgroundColor: open ? C.mint : AMBER,
-                shadowColor: open ? C.mint : AMBER,
-              },
-            ]}
-          />
-          <Text style={s.statusT}>
-            {m.category === "commodities"
-              ? m.short.toUpperCase() + " MARKET"
-              : "US MARKET"}{" "}
-            {open
-              ? "OPEN · TRACKS THE LIVE PRICE"
-              : "CLOSED · PERP TRADES 24/7"}
-          </Text>
-        </Pressable>
+        {meta ? (
+          <Pressable
+            style={tradeStyles.status}
+            hitSlop={{ top: 8, bottom: 8 }}
+            onPress={() => {
+              hTap();
+              setSheet({ t: "status" });
+            }}
+            accessibilityRole="button"
+          >
+            <View
+              style={[
+                tradeStyles.dot,
+                {
+                  backgroundColor: open ? C.mint : AMBER,
+                  shadowColor: open ? C.mint : AMBER,
+                },
+              ]}
+            />
+            <Text style={tradeStyles.statusT}>
+              {category === "commodities"
+                ? String(meta.short ?? sym).toUpperCase() + " MARKET"
+                : "US MARKET"}{" "}
+              {open
+                ? "OPEN · TRACKS THE LIVE PRICE"
+                : "CLOSED · PERP TRADES 24/7"}
+            </Text>
+          </Pressable>
+        ) : null}
 
         {/* chart */}
-        <View
-          onLayout={(e) => setChartY(e.nativeEvent.layout.y)}
-          style={{ marginTop: 16 }}
-        >
-          <ChartStage sym={sym} onScrollLock={setLocked} />
-        </View>
+        {listed ? (
+          <View
+            onLayout={(e) => setChartY(e.nativeEvent.layout.y)}
+            style={{ marginTop: 16 }}
+          >
+            <ChartStage
+              sym={sym}
+              onScrollLock={setLocked}
+              positions={acct.positions}
+              orders={acct.orders}
+            />
+          </View>
+        ) : null}
 
         {/* panel tabs */}
-        <View style={s.tabs}>
+        <View style={tradeStyles.tabs}>
           {(
             [
-              ["pos", "Positions", st.perps.length],
-              ["ord", "Orders", st.orders.length],
+              ["pos", "Positions", acct.positions.length],
+              ["ord", "Orders", acct.orders.length],
               ["book", "Order book"],
               ["info", "Contract"],
             ] as [PTab, string, number?][]
@@ -298,59 +394,67 @@ export function TradeScreen() {
                 hTap();
                 setTab(k);
               }}
-              style={s.tabB}
+              style={tradeStyles.tabB}
               accessibilityRole="tab"
               accessibilityState={{ selected: tab === k }}
             >
-              <Text style={[s.tabT, tab === k && { color: C.ink1 }]}>
+              <Text style={[tradeStyles.tabT, tab === k && { color: C.ink1 }]}>
                 {t}
-                {n != null ? <Text style={s.tabN}> {n}</Text> : null}
+                {n ? <Text style={tradeStyles.tabN}> {n}</Text> : null}
               </Text>
-              {tab === k ? <View style={s.tabLine} /> : null}
+              {tab === k ? <View style={tradeStyles.tabLine} /> : null}
             </Pressable>
           ))}
         </View>
 
-        <View style={s.panel}>
+        <View style={tradeStyles.panel}>
           {tab === "pos" ? (
-            positions.length ? (
+            !session.address ? (
+              <View style={tradeStyles.empty}>
+                <Text style={tradeStyles.ttl}>Connect your wallet</Text>
+                <Text style={tradeStyles.emptyT}>
+                  Your positions show here once you're signed in.
+                </Text>
+              </View>
+            ) : acct.loading ? (
+              <View style={tradeStyles.empty}>
+                <ActivityIndicator color={C.ink3} />
+              </View>
+            ) : positions.length ? (
               positions.map((p) => {
-                const pm = marketOf(p.sym),
-                  mark = st.marks[p.sym].mark,
-                  pnl = pnlOf(p, mark),
-                  roe = roeOf(p, mark);
+                const mark = markOf(p.coin, p.entry),
+                  pnl = livePnl(p, mark),
+                  roe = liveRoe(p, mark);
                 return (
                   <Pressable
                     key={p.id}
-                    style={s.pRow}
+                    style={tradeStyles.pRow}
                     onPress={() => {
                       hTap();
                       setSheet({ t: "position", id: p.id });
                     }}
                     accessibilityRole="button"
                   >
-                    <View style={s.logo}>
-                      <Text style={s.logoT}>
-                        {pm.symbol.replace(/[^A-Z0-9]/g, "").slice(0, 3)}
-                      </Text>
+                    <View style={tradeStyles.logo}>
+                      <Text style={tradeStyles.logoT}>{logoTxt(p.sym)}</Text>
                     </View>
                     <View style={{ flex: 1, gap: 5, minWidth: 0 }}>
-                      <View style={[s.rowC, { gap: 8 }]}>
-                        <Text style={s.ttl}>{perpLabel(pm)}</Text>
+                      <View style={[tradeStyles.rowC, { gap: 8 }]}>
+                        <Text style={tradeStyles.ttl}>{labelOf(p.sym)}</Text>
                         <Tag
                           label={`${sideTxt(p.side)} ${p.lev}x`}
                           tone={p.side > 0 ? "long" : "short"}
                         />
                       </View>
-                      <Text style={s.entry} numberOfLines={1}>
+                      <Text style={tradeStyles.entry} numberOfLines={1}>
                         {fmtPx(p.entry)} → {fmtPx(mark)}
                       </Text>
                     </View>
                     <View style={{ alignItems: "flex-end", gap: 4 }}>
-                      <Text style={[s.pnl, { color: tone(pnl) }]}>
+                      <Text style={[tradeStyles.pnl, { color: tone(pnl) }]}>
                         {sMoney(pnl)}
                       </Text>
-                      <Text style={[s.roe, { color: tone(roe) }]}>
+                      <Text style={[tradeStyles.roe, { color: tone(roe) }]}>
                         {sPct(roe)}
                       </Text>
                     </View>
@@ -358,9 +462,9 @@ export function TradeScreen() {
                 );
               })
             ) : (
-              <View style={s.empty}>
-                <Text style={s.ttl}>No open positions</Text>
-                <Text style={s.emptyT}>
+              <View style={tradeStyles.empty}>
+                <Text style={tradeStyles.ttl}>No open positions</Text>
+                <Text style={tradeStyles.emptyT}>
                   Tap Long if you think {label} goes up, Short if you think it
                   goes down. You can start from $10.
                 </Text>
@@ -369,45 +473,44 @@ export function TradeScreen() {
           ) : null}
 
           {tab === "ord" ? (
-            st.orders.length ? (
-              st.orders.map((o) => {
-                const om = marketOf(o.sym);
-                return (
-                  <View key={o.id} style={s.pRow}>
-                    <View style={s.logo}>
-                      <Text style={s.logoT}>
-                        {om.symbol.replace(/[^A-Z0-9]/g, "").slice(0, 3)}
-                      </Text>
-                    </View>
-                    <View style={{ flex: 1, gap: 5, minWidth: 0 }}>
-                      <View style={[s.rowC, { gap: 8 }]}>
-                        <Text style={s.ttl}>{perpLabel(om)}</Text>
-                        <Tag
-                          label={`${o.kind.toUpperCase()} ${sideTxt(o.side)} ${o.lev}x`}
-                          tone={o.side > 0 ? "long" : "short"}
-                        />
-                      </View>
-                      <Text style={s.entry} numberOfLines={1}>
-                        at {fmtPx(o.px)} · {fmtPx(o.margin)} margin
-                      </Text>
-                    </View>
-                    <Pressable
-                      onPress={() => {
-                        hTap();
-                        cancelOrder(o.id);
-                      }}
-                      style={s.cancel}
-                      accessibilityRole="button"
-                    >
-                      <Text style={s.cancelT}>Cancel</Text>
-                    </Pressable>
+            acct.orders.length ? (
+              acct.orders.map((o) => (
+                <View key={o.id} style={tradeStyles.pRow}>
+                  <View style={tradeStyles.logo}>
+                    <Text style={tradeStyles.logoT}>{logoTxt(o.sym)}</Text>
                   </View>
-                );
-              })
+                  <View style={{ flex: 1, gap: 5, minWidth: 0 }}>
+                    <View style={[tradeStyles.rowC, { gap: 8 }]}>
+                      <Text style={tradeStyles.ttl}>{labelOf(o.sym)}</Text>
+                      <Tag
+                        label={`${o.kind.toUpperCase()} ${sideTxt(o.side)}`}
+                        tone={o.side > 0 ? "long" : "short"}
+                      />
+                    </View>
+                    <Text style={tradeStyles.entry} numberOfLines={1}>
+                      at {fmtPx(o.px)} · {fmtPx(o.px * o.size)} size
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      hTap();
+                      cancel(o);
+                    }}
+                    disabled={actions.busy}
+                    style={[
+                      tradeStyles.cancel,
+                      actions.busy && { opacity: 0.5 },
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    <Text style={tradeStyles.cancelT}>Cancel</Text>
+                  </Pressable>
+                </View>
+              ))
             ) : (
-              <View style={s.empty}>
-                <Text style={s.ttl}>No open orders</Text>
-                <Text style={s.emptyT}>
+              <View style={tradeStyles.empty}>
+                <Text style={tradeStyles.ttl}>No open orders</Text>
+                <Text style={tradeStyles.emptyT}>
                   Choose Limit or Stop in the ticket to trade at a price you
                   set. Orders show on the chart.
                 </Text>
@@ -416,48 +519,35 @@ export function TradeScreen() {
           ) : null}
 
           {tab === "book" ? (
-            <Book sym={sym} mark={mk.mark} label={label} />
+            listed ? (
+              <OrderBook sym={sym} label={label} />
+            ) : null
           ) : null}
 
-          {tab === "info" ? (
+          {tab === "info" && listed ? (
             <View>
               {(
                 [
-                  [
-                    "UNDERLYING",
-                    m.category === "index" ? m.name + " index" : m.name,
-                  ],
-                  ["VENUE", "QFX"],
-                  ["MAX LEVERAGE", MAXLEV + "x"],
+                  ["UNDERLYING", category === "index" ? name + " index" : name],
+                  ["VENUE", "Hyperliquid · " + live.coin],
+                  ["MAX LEVERAGE", live.maxLeverage + "x"],
                   [
                     "FUNDING",
                     `Every hour · ${fr >= 0 ? "+" : "−"}${Math.abs(fr).toFixed(4)}%`,
                   ],
-                  ["MAINTENANCE MARGIN", (MMR * 100).toFixed(2) + "%"],
-                  ["FEES", (TAKER * 100).toFixed(2) + "% taker · 0.02% maker"],
+                  // Hyperliquid maintenance margin = half the initial margin at max leverage
+                  [
+                    "MAINTENANCE MARGIN",
+                    (100 / (2 * live.maxLeverage)).toFixed(2) + "%",
+                  ],
+                  ["FEES", "~" + (TAKER * 100).toFixed(3) + "% taker"],
                   ["MARGIN", "USDC · isolated per position"],
                   ["HOURS", "24/7"],
                 ] as [string, string][]
               ).map(([k, v]) => (
                 <Kv key={k} k={k} v={v} />
               ))}
-              <View style={{ paddingVertical: 12, gap: 8 }}>
-                <View style={s.rowC}>
-                  <Text style={[s.statK, { flex: 1 }]}>LONG / SHORT</Text>
-                  <Text style={[s.statV, { color: C.mint }]}>{m.longPct}%</Text>
-                  <Text style={[s.statV, { color: C.ink4 }]}>/</Text>
-                  <Text style={[s.statV, { color: C.loss }]}>
-                    {100 - m.longPct}%
-                  </Text>
-                </View>
-                <View style={s.ratio}>
-                  <View
-                    style={{ width: `${m.longPct}%`, backgroundColor: C.mint }}
-                  />
-                  <View style={{ flex: 1, backgroundColor: C.loss }} />
-                </View>
-              </View>
-              <Text style={s.foot}>SAMPLE PARAMETERS UNTIL QFX CONFIRMS</Text>
+              <Text style={tradeStyles.foot}>LIVE FROM HYPERLIQUID</Text>
             </View>
           ) : null}
         </View>
@@ -468,29 +558,43 @@ export function TradeScreen() {
         pointerEvents="box-none"
         colors={["rgba(10,11,14,0)", C.ground]}
         locations={[0, 0.3]}
-        style={[s.dock, { bottom: TAB_BAR_HEIGHT + insets.bottom }]}
+        style={[tradeStyles.dock, { bottom: TAB_BAR_HEIGHT + insets.bottom }]}
       >
-        <Btn kind="long" style={{ flex: 1 }} onPress={() => openTicket(1)}>
-          <Text style={[s.dockT, { color: ON_MINT }]}>
-            Long <Text style={s.lv}>{DEFAULT_LEV}x</Text>
+        <Btn
+          kind="long"
+          style={{ flex: 1, opacity: listed ? 1 : 0.4 }}
+          onPress={() => openTicket(1)}
+        >
+          <Text style={[tradeStyles.dockT, { color: ON_MINT }]}>
+            Long{" "}
+            <Text style={tradeStyles.lv}>
+              {listed ? Math.min(DEFAULT_LEV, live.maxLeverage) : DEFAULT_LEV}x
+            </Text>
           </Text>
         </Btn>
-        <Btn kind="short" style={{ flex: 1 }} onPress={() => openTicket(-1)}>
-          <Text style={[s.dockT, { color: ON_SHORT }]}>
-            Short <Text style={s.lv}>{DEFAULT_LEV}x</Text>
+        <Btn
+          kind="short"
+          style={{ flex: 1, opacity: listed ? 1 : 0.4 }}
+          onPress={() => openTicket(-1)}
+        >
+          <Text style={[tradeStyles.dockT, { color: ON_SHORT }]}>
+            Short{" "}
+            <Text style={tradeStyles.lv}>
+              {listed ? Math.min(DEFAULT_LEV, live.maxLeverage) : DEFAULT_LEV}x
+            </Text>
           </Text>
         </Btn>
       </LinearGradient>
 
       {/* toast */}
-      <ToastView />
+      <PerpToast />
 
       {/* sheets */}
       {sheet?.t === "market" ? (
         <MarketPickerSheet
           current={sym}
           onClose={() => setSheet(null)}
-          onPick={(x) => {
+          onPick={(x: string) => {
             setSym(x);
             setSheet(null);
           }}
@@ -502,7 +606,16 @@ export function TradeScreen() {
       {sheet?.t === "unlock" ? (
         <UnlockSheet
           onClose={() => setSheet(null)}
-          onDone={() => setSheet({ t: "ticket", side: sheet.side })}
+          onDone={async () => {
+            const side = sheet.side;
+            try {
+              await onboarding.unlock(); // asks the wallet for 1–2 signatures
+              setSheet({ t: "ticket", side });
+            } catch (e) {
+              toast("Wallet approval needed", errMsg(e).toUpperCase());
+              setSheet(null);
+            }
+          }}
         />
       ) : null}
       {sheet?.t === "ticket" ? (
@@ -513,92 +626,26 @@ export function TradeScreen() {
           onChart={toChart}
         />
       ) : null}
-      {sheet?.t === "position" ? (
-        <PositionSheet id={sheet.id} onClose={() => setSheet(null)} />
+      {sheetPos ? (
+        <LivePositionSheet
+          position={sheetPos}
+          mark={markOf(sheetPos.coin, sheetPos.entry)}
+          label={labelOf(sheetPos.sym)}
+          onClose={() => setSheet(null)}
+          onClosePosition={(f) =>
+            actions.closePosition(
+              sheetPos,
+              markOf(sheetPos.coin, sheetPos.entry),
+              f,
+            )
+          }
+        />
       ) : null}
     </SafeAreaView>
   );
 }
 
-// ---------------------------------------------------------------- order book
-function Book({
-  sym,
-  mark,
-  label,
-}: {
-  sym: string;
-  mark: number;
-  label: string;
-}) {
-  const { asks, bids, spread } = sampleBook(mark);
-  const mx = Math.max(...asks.map((x) => x.q), ...bids.map((x) => x.q));
-  const Row = ({ x, bid }: { x: { p: number; q: number }; bid: boolean }) => (
-    <View style={s.bRow}>
-      <View
-        style={[
-          s.bBar,
-          bid
-            ? { right: 0, backgroundColor: "rgba(55,224,153,.12)" }
-            : { left: 0, backgroundColor: "rgba(240,96,77,.12)" },
-          { width: `${(x.q / mx) * 100}%` },
-        ]}
-      />
-      <Text style={[s.bTxt, { color: bid ? C.mint : C.loss }]}>
-        {fmtNum(x.p)}
-      </Text>
-      <Text style={[s.bTxt, { color: C.ink3 }]}>{qtyFmt(x.q)}</Text>
-    </View>
-  );
-  return (
-    <View>
-      <View style={{ flexDirection: "row", gap: 14 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.bHd}>BIDS · {label.toUpperCase()}</Text>
-          {bids.map((x, i) => (
-            <Row key={"b" + i} x={x} bid />
-          ))}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.bHd, { textAlign: "right" }]}>ASKS</Text>
-          {asks.map((x, i) => (
-            <Row key={"a" + i} x={x} bid={false} />
-          ))}
-        </View>
-      </View>
-      <Text style={s.foot}>
-        SPREAD {fmtPx(spread)} · {((spread / mark) * 100).toFixed(3)}% · SAMPLE
-        BOOK
-      </Text>
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------- toast
-function ToastView() {
-  const { toast: t } = usePerps();
-  const insets = useSafeAreaInsets();
-  const [shown, setShown] = useState<typeof t>(null);
-  useEffect(() => {
-    if (!t) return;
-    setShown(t);
-    const id = setTimeout(() => setShown(null), 2900);
-    return () => clearTimeout(id);
-  }, [t?.id]); // eslint-disable-line
-  if (!shown) return null;
-  return (
-    <Animated.View
-      entering={FadeInDown.duration(220)}
-      exiting={FadeOutUp.duration(180)}
-      pointerEvents="none"
-      style={[s.toast, { top: insets.top + 10 }]}
-    >
-      <Text style={s.toastT}>{shown.title}</Text>
-      {shown.sub ? <Text style={s.toastS}>{shown.sub}</Text> : null}
-    </Animated.View>
-  );
-}
-
-const s = StyleSheet.create({
+export const tradeStyles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.ground },
   rowC: { flexDirection: "row", alignItems: "center", gap: 8 },
   head: {

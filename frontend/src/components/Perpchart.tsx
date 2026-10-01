@@ -1,13 +1,14 @@
-// src/components/perps/PerpChart.tsx
-// Chart stage from the prototype: timeframes, chart type, indicators, full screen,
-// price axis, last-price tag, your entry / liquidation / TP / SL / order lines,
-// and a press-and-hold crosshair. Drawn with react-native-svg from mock candles.
+// src/components/Perpchart.tsx
+// Chart stage: timeframes, chart type, indicators, full screen, price axis, last-price tag,
+// your entry / liquidation / TP / SL / order lines, and a press-and-hold crosshair.
+// Candles come from Hyperliquid (REST history + live candle WebSocket).
 //
 // Not ported (needs gesture-handler work): pan/pinch zoom and dragging TP/SL lines.
 // TP/SL are edited from the position sheet instead.
 
 import { useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -27,21 +28,13 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from "react-native-svg";
-import {
-  usePerps,
-  liqOf,
-  pnlOf,
-  sideTxt,
-  sMoney,
-  fmtNum,
-} from "../data/perpsStore";
+import { sideTxt, sMoney, fmtNum } from "../data/perpsStore";
 import {
   CIND,
   CTYPES,
   TF_SEC,
   bands,
   ema,
-  genBars,
   haOf,
   niceStep,
   rsiOf,
@@ -53,6 +46,13 @@ import {
 } from "../data/perpsChart";
 import { C, FONT } from "../theme";
 import { hTap } from "../lib/haptics";
+import {
+  livePnl,
+  useCandles,
+  useLiveMarket,
+  type UiOrder,
+  type UiPosition,
+} from "../hooks/perps";
 
 const UP = "#37E099",
   DN = "#F0604D",
@@ -61,6 +61,8 @@ const UP = "#37E099",
   AMBER = "#E8A33D";
 const MONO = FONT.mono400;
 type Ind = Record<IndKey, boolean>;
+const NONE_P: UiPosition[] = [];
+const NONE_O: UiOrder[] = [];
 
 const ICON: Record<ChartType, { d: string; fill?: boolean; soft?: boolean }[]> =
   {
@@ -133,6 +135,8 @@ function ChartBody({
   ind,
   height,
   onScrollLock,
+  positions,
+  orders,
 }: {
   sym: string;
   tf: string;
@@ -140,9 +144,12 @@ function ChartBody({
   ind: Ind;
   height: number;
   onScrollLock?: (l: boolean) => void;
+  positions: UiPosition[];
+  orders: UiOrder[];
 }) {
-  const st = usePerps();
-  const m = st.marks[sym];
+  const live = useLiveMarket(sym);
+  const mark = live.mark;
+  const { bars: base, loading, error } = useCandles(sym, tf);
   const [W, setW] = useState(0);
   const [cross, setCross] = useState<{ x: number; y: number } | null>(null);
   const hold = useRef<{
@@ -152,19 +159,55 @@ function ChartBody({
     y: number;
   }>({ t: null, on: false, x: 0, y: 0 });
 
-  const base = useMemo(() => genBars(sym, tf, m.anchor, m.o24), [sym, tf]); // eslint-disable-line
+  // keep the last candle glued to the live mark price
   const bars = useMemo(() => {
-    const b = base.slice();
+    const b = base.slice() as unknown as Bar[];
+    if (!b.length || !mark) return b;
     const l = { ...b[b.length - 1] };
-    l.c = m.mark;
-    l.h = Math.max(l.h, m.mark);
-    l.l = Math.min(l.l, m.mark);
+    l.c = mark;
+    l.h = Math.max(l.h, mark);
+    l.l = Math.min(l.l, mark);
     b[b.length - 1] = l;
     return b;
-  }, [base, m.mark]);
+  }, [base, mark]);
 
-  const myPos = st.perps.filter((p) => p.sym === sym);
-  const myOrd = st.orders.filter((o) => o.sym === sym);
+  const myPos = positions.filter((p) => p.sym === sym);
+  const myOrd = orders.filter((o) => o.sym === sym);
+
+  const closes = useMemo(() => bars.map((b) => b.c), [bars]);
+  const I = useMemo(
+    () => ({
+      ma: ind.ma ? sma(closes, 20) : null,
+      ema: ind.ema ? ema(closes, 50) : null,
+      bb: ind.bb ? bands(closes, 20, 2) : null,
+      vwap: ind.vwap && bars.length ? vwapOf(bars) : null,
+      rsi: ind.rsi ? rsiOf(closes, 14) : null,
+    }),
+    [closes, bars, ind.ma, ind.ema, ind.bb, ind.vwap, ind.rsi],
+  );
+
+  // ---- nothing to draw yet (all hooks are above this line)
+  if (bars.length < 2) {
+    return (
+      <View
+        style={{
+          height,
+          borderTopWidth: 1,
+          borderBottomWidth: 1,
+          borderColor: C.hair,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+        }}
+      >
+        {loading ? (
+          <ActivityIndicator color={C.ink3} />
+        ) : (
+          <Text style={s.ohlcT}>{error ? "Chart couldn't load. " + error : "No trades in this timeframe yet."}</Text>
+        )}
+      </View>
+    );
+  }
 
   const AX = 58,
     TH = 20,
@@ -178,18 +221,6 @@ function ChartBody({
   const i1 = n - 1,
     i0 = Math.max(0, i1 - Math.floor((PW - rp) / bw));
   const xi = (i: number) => PW - rp - (n - 1 - i) * bw;
-
-  const closes = useMemo(() => bars.map((b) => b.c), [bars]);
-  const I = useMemo(
-    () => ({
-      ma: ind.ma ? sma(closes, 20) : null,
-      ema: ind.ema ? ema(closes, 50) : null,
-      bb: ind.bb ? bands(closes, 20, 2) : null,
-      vwap: ind.vwap ? vwapOf(bars) : null,
-      rsi: ind.rsi ? rsiOf(closes, 14) : null,
-    }),
-    [closes, bars, ind.ma, ind.ema, ind.bb, ind.vwap, ind.rsi],
-  );
 
   const lineOnly = type === "line" || type === "area";
   let hi = -Infinity,
@@ -259,7 +290,7 @@ function ChartBody({
   const step = niceStep((hi - lo) / 5);
   const busy = [
     y(last.c),
-    ...myPos.flatMap((q) => [y(q.entry), y(liqOf(q))]),
+    ...myPos.flatMap((q) => (q.liq != null ? [y(q.entry), y(q.liq)] : [y(q.entry)])),
     ...myOrd.map((o) => y(o.px)),
   ];
   const grid: number[] = [];
@@ -608,7 +639,7 @@ function ChartBody({
 
           {/* your positions and orders */}
           {myPos.map((q) => {
-            const pnl = pnlOf(q, m.mark);
+            const pnl = livePnl(q, mark || q.entry);
             return (
               <G key={"p" + q.id}>
                 {lineChip(
@@ -618,7 +649,9 @@ function ChartBody({
                   INK,
                   "#0A0B0E",
                 )}
-                {lineChip("l" + q.id, liqOf(q), "LIQ", DN, "#1C0805", "2 4")}
+                {q.liq != null
+                  ? lineChip("l" + q.id, q.liq, "LIQ", DN, "#1C0805", "2 4")
+                  : null}
                 {q.tp != null
                   ? lineChip("t" + q.id, q.tp, "TP", UP, "#06120D")
                   : null}
@@ -632,7 +665,7 @@ function ChartBody({
             lineChip(
               "o" + o.id,
               o.px,
-              `${o.kind.toUpperCase()} ${sideTxt(o.side)} ${o.lev}x`,
+              `${o.kind.toUpperCase()} ${sideTxt(o.side)}`,
               AMBER,
               "#1B1204",
               "6 3",
@@ -812,6 +845,8 @@ function Stage({
   fs,
   onFs,
   onScrollLock,
+  positions,
+  orders,
 }: {
   sym: string;
   tf: string;
@@ -824,6 +859,8 @@ function Stage({
   fs: boolean;
   onFs: () => void;
   onScrollLock?: (l: boolean) => void;
+  positions: UiPosition[];
+  orders: UiOrder[];
 }) {
   const [menu, setMenu] = useState<null | "type" | "ind">(null);
   const anyInd = (Object.keys(ind) as IndKey[]).some(
@@ -916,6 +953,8 @@ function Stage({
         ind={ind}
         height={height}
         onScrollLock={onScrollLock}
+        positions={positions}
+        orders={orders}
       />
 
       {menu ? (
@@ -924,7 +963,7 @@ function Stage({
             style={StyleSheet.absoluteFill}
             onPress={() => setMenu(null)}
           />
-          <View style={[s.menu, { right: menu === "type" ? 14 : 14 }]}>
+          <View style={[s.menu, { right: 14 }]}>
             <Text style={s.menuLbl}>
               {menu === "type" ? "CHART TYPE" : "INDICATORS"}
             </Text>
@@ -978,9 +1017,13 @@ function Stage({
 export function ChartStage({
   sym,
   onScrollLock,
+  positions = NONE_P,
+  orders = NONE_O,
 }: {
   sym: string;
   onScrollLock?: (l: boolean) => void;
+  positions?: UiPosition[];
+  orders?: UiOrder[];
 }) {
   const [tf, setTf] = useState("15m");
   const [type, setType] = useState<ChartType>("candles");
@@ -1009,6 +1052,8 @@ export function ChartStage({
         fs={false}
         onFs={() => setFs(true)}
         onScrollLock={onScrollLock}
+        positions={positions}
+        orders={orders}
       />
       <Modal
         visible={fs}
@@ -1029,18 +1074,22 @@ export function ChartStage({
               transform: [{ rotate: SH > SW * 1.1 ? "90deg" : "0deg" }],
             }}
           >
-            <Stage
-              sym={sym}
-              tf={tf}
-              setTf={setTf}
-              type={type}
-              setType={setType}
-              ind={ind}
-              setInd={setInd}
-              height={SW - 46}
-              fs
-              onFs={() => setFs(false)}
-            />
+            {fs ? (
+              <Stage
+                sym={sym}
+                tf={tf}
+                setTf={setTf}
+                type={type}
+                setType={setType}
+                ind={ind}
+                setInd={setInd}
+                height={SW - 46}
+                fs
+                onFs={() => setFs(false)}
+                positions={positions}
+                orders={orders}
+              />
+            ) : null}
           </View>
         </View>
       </Modal>

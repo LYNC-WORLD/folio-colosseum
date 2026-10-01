@@ -1,5 +1,6 @@
-// src/components/perps/OrderTicketSheet.tsx — Long / Short ticket: side, order type, margin,
+// src/components/Orderticketsheet.tsx — Long / Short ticket: side, order type, margin,
 // leverage, liquidation preview, analyst check, TP/SL, fees, hold-to-confirm (25x+), success card.
+// Sends real orders through useTradeActions -> backend -> Hyperliquid.
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,11 +13,8 @@ import {
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import {
-  MAXLEV,
   MIN_MARGIN,
-  MMR,
   TAKER,
-  deposit,
   fmtPx,
   fundLeft,
   marketOf,
@@ -24,11 +22,7 @@ import {
   qtyFmt,
   sMoney,
   sideTxt,
-  submitTicket,
   toast,
-  usePerps,
-  type Order,
-  type Position,
 } from "../data/perpsStore";
 import {
   AMBER,
@@ -49,6 +43,14 @@ import {
 } from "./PerpUi";
 import { C, FONT } from "../theme";
 import { hTap } from "../lib/haptics";
+import {
+  useAccount,
+  useLiveMarket,
+  usePerpsSession,
+  useTradeActions,
+  type TicketResult,
+} from "../hooks/perps";
+import { errMsg, toSym } from "../services/hyperliquid/format";
 
 const clean = (t: string) => {
   const x = t.replace(/[^0-9.]/g, "");
@@ -56,6 +58,25 @@ const clean = (t: string) => {
   return i < 0 ? x : x.slice(0, i + 1) + x.slice(i + 1).replace(/\./g, "");
 };
 const num = (t: string) => parseFloat(t) || 0;
+
+function metaOf(sym: string) {
+  try {
+    return marketOf(sym) ?? null;
+  } catch {
+    return null;
+  }
+}
+function safeCheck(sym: string, dist: number): [string, string] {
+  try {
+    return preCheck(sym, dist) as [string, string];
+  } catch {
+    return dist < 5
+      ? ["bad", "Liquidation is very close. A small move closes this trade."]
+      : dist < 12
+        ? ["warn", "A normal day's move could reach your liquidation price."]
+        : ["ok", "Liquidation is a fair distance away."];
+  }
+}
 
 export function OrderTicketSheet({
   sym,
@@ -68,53 +89,69 @@ export function OrderTicketSheet({
   onClose: () => void;
   onChart: () => void;
 }) {
-  const st = usePerps();
-  const m = marketOf(sym),
-    mk = st.marks[sym].mark;
+  const session = usePerpsSession();
+  const live = useLiveMarket(sym);
+  const acct = useAccount(session.address);
+  const { openPosition } = useTradeActions(session.idToken);
+
+  const meta = metaOf(sym);
+  const nm: string = meta?.short ?? toSym(sym);
+  const unit: string = meta?.category === "stocks" ? (meta?.symbol ?? nm) : nm;
+  const mk = live.mark;
+  const maxLev = Math.max(1, live.maxLeverage);
+  const usdc = acct.available;
+
   const [side, setSide] = useState<1 | -1>(initialSide);
   const [otype, setOtype] = useState<"Market" | "Limit" | "Stop">("Market");
   const [opx, setOpx] = useState("");
-  const [marginT, setMarginT] = useState(
-    String(Math.min(50, Math.max(0, Math.floor(st.usdc)))),
-  );
-  const [lev, setLev] = useState(10);
+  const [marginT, setMarginT] = useState("");
+  const [lev, setLevRaw] = useState(Math.min(10, maxLev));
+  const setLev = (v: number) => setLevRaw(Math.max(1, Math.min(maxLev, Math.round(v))));
   const [tpOn, setTpOn] = useState(false);
   const [tpT, setTpT] = useState("");
   const [slT, setSlT] = useState("");
   const [phase, setPhase] = useState<"form" | "busy" | "done">("form");
-  const [result, setResult] = useState<Position | Order | null>(null);
+  const [result, setResult] = useState<TicketResult | null>(null);
   const [, tick] = useState(0);
   useEffect(() => {
     const i = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(i);
   }, []);
+  // default margin once the balance arrives
+  useEffect(() => {
+    if (!marginT && usdc > 0) setMarginT(String(Math.min(50, Math.floor(usdc))));
+  }, [usdc]); // eslint-disable-line
+  // this market may allow less leverage than the default
+  useEffect(() => {
+    if (lev > maxLev) setLevRaw(maxLev);
+  }, [maxLev]); // eslint-disable-line
 
   const mg = num(marginT);
   const en = otype === "Market" ? mk * (1 + side * 0.0003) : num(opx) || mk;
   const notional = mg * lev,
     qty = en ? notional / en : 0,
     fee = notional * TAKER;
+  const MMR = 1 / (2 * maxLev); // Hyperliquid: half the initial margin at max leverage
   const liq = qty
     ? side > 0
       ? en - (mg - MMR * qty * en) / qty
       : en + (mg - MMR * qty * en) / qty
     : en;
-  const dist = (Math.abs(liq - en) / en) * 100;
-  const [tone, toneTxt] = useMemo(
-    () => preCheck(sym, dist || 0.01),
-    [sym, dist],
-  );
+  const dist = en ? (Math.abs(liq - en) / en) * 100 : 0;
+  const [tone, toneTxt] = useMemo(() => safeCheck(sym, dist || 0.01), [sym, dist]);
   const toneCol = tone === "ok" ? C.mint : tone === "warn" ? AMBER : C.loss;
-  const fpay = notional * (m.funding / 100) * side;
+  const fpay = notional * (live.fundingPct / 100) * side;
   const tp = num(tpT) || null,
     sl = num(slT) || null;
-  const need = mg + fee - st.usdc;
+  const need = mg + fee - usdc;
 
   let bad = "";
+  if (!mk) bad = "Waiting for the live price…";
   if (otype !== "Market" && !num(opx))
     bad = `Enter a ${otype.toLowerCase()} price.`;
   if (mg > 0 && mg < MIN_MARGIN)
     bad = `The smallest trade is $${MIN_MARGIN} of margin.`;
+  if (mg > 0 && notional < 10) bad = "Trade size must be at least $10 (margin × leverage).";
   if (tpOn && tp && (side > 0 ? tp <= en : tp >= en))
     bad = `Take profit has to be ${side > 0 ? "above" : "below"} your entry.`;
   if (tpOn && sl && (side > 0 ? sl >= en || sl <= liq : sl <= en || sl >= liq))
@@ -136,14 +173,14 @@ export function OrderTicketSheet({
     setSlT("");
   };
   const pctMargin = (p: number) => {
-    const max = Math.floor((st.usdc / (1 + lev * TAKER)) * 100) / 100;
+    const max = Math.floor((usdc / (1 + lev * TAKER)) * 100) / 100;
     setMarginT(String(Math.floor(max * p) / 100));
   };
 
-  const go = () => {
+  const go = async () => {
     setPhase("busy");
-    setTimeout(() => {
-      const r = submitTicket({
+    try {
+      const r = await openPosition({
         sym,
         side,
         lev,
@@ -152,13 +189,16 @@ export function OrderTicketSheet({
         px: num(opx) || null,
         tp: tpOn ? tp : null,
         sl: tpOn ? sl : null,
+        markPx: mk,
       });
       setResult(r);
       setPhase("done");
-    }, 1000);
+    } catch (e) {
+      toast("Order not placed", errMsg(e).toUpperCase());
+      setPhase("form");
+    }
   };
 
-  const nm = m.short;
   const holdNeeded = lev >= 25 && !(mg > 0 && need > 0);
   const btnLabel =
     mg > 0 && need > 0
@@ -174,11 +214,11 @@ export function OrderTicketSheet({
       <Sheet onClose={() => {}}>
         <View style={{ alignItems: "center", gap: 20, paddingVertical: 14 }}>
           <H2 style={{ fontSize: 19 }}>
-            {otype === "Market" ? "Opening on QFX" : "Placing your order"}
+            {otype === "Market" ? "Opening on Hyperliquid" : "Placing your order"}
           </H2>
           <ActivityIndicator color={C.mint} />
           <Text style={s.mono}>
-            {sideTxt(side)} {nm.toUpperCase()} · {lev}X · SIGNED IN YOUR WALLET
+            {sideTxt(side)} {nm.toUpperCase()} · {lev}X
           </Text>
         </View>
       </Sheet>
@@ -186,15 +226,16 @@ export function OrderTicketSheet({
 
   // ---------------------------------------------------------------- success
   if (phase === "done" && result) {
-    const isPos = "entry" in result;
+    const isPos = result.filled;
+    const entry = result.entry ?? en;
     const col = side > 0 ? C.mint : C.loss;
     const rows: [string, string][] = isPos
       ? [
-          ["ENTRY", fmtPx(result.entry)],
-          ["SIZE", fmtPx(mg * lev) + " · " + lev + "x"],
+          ["ENTRY", fmtPx(entry)],
+          ["SIZE", fmtPx(result.size * entry) + " · " + lev + "x"],
           ["MARGIN", fmtPx(mg)],
-          ["LIQUIDATION", fmtPx(liq)],
-          ["FEE PAID", fmtPx(fee)],
+          ["LIQUIDATION (EST.)", fmtPx(liq)],
+          ["FEE (EST.)", fmtPx(fee)],
         ]
       : [
           ["PRICE", fmtPx(num(opx))],
@@ -241,16 +282,16 @@ export function OrderTicketSheet({
       <View style={s.row}>
         <View style={s.logo}>
           <Text style={s.logoT}>
-            {m.symbol.replace(/[^A-Z0-9]/g, "").slice(0, 3)}
+            {unit.replace(/[^A-Z0-9]/g, "").slice(0, 3)}
           </Text>
         </View>
         <View style={{ flex: 1, gap: 3 }}>
-          <Text style={s.ttl}>{m.short} perp</Text>
+          <Text style={s.ttl}>{nm} perp</Text>
           <Text style={[s.mono, { color: C.ink3, letterSpacing: 0 }]}>
-            {fmtPx(mk)} mark
+            {mk ? fmtPx(mk) + " mark" : "Loading price…"}
           </Text>
         </View>
-        <Tag label={`UP TO ${MAXLEV}X`} />
+        <Tag label={`UP TO ${maxLev}X`} />
       </View>
 
       <LongShortSeg side={side} onChange={pickSide} />
@@ -323,7 +364,7 @@ export function OrderTicketSheet({
                 { fontSize: 13.5, color: "#E4E8EE", letterSpacing: 0 },
               ]}
             >
-              {fmtPx(st.usdc)}
+              {acct.loading ? "…" : fmtPx(usdc)}
             </Text>
             <Text style={[s.mono, { fontSize: 8.5, color: C.ink4 }]}>
               USDC AVAILABLE
@@ -350,6 +391,9 @@ export function OrderTicketSheet({
           <Text style={[s.levNum, { color: levTone(lev) }]}>{lev}x</Text>
         </View>
         <LeverageSlider value={lev} onChange={setLev} />
+        {maxLev < 50 ? (
+          <Text style={[s.mono, { letterSpacing: 0.4 }]}>{nm.toUpperCase()} ALLOWS UP TO {maxLev}X</Text>
+        ) : null}
       </View>
 
       <View style={s.liqBox}>
@@ -361,9 +405,7 @@ export function OrderTicketSheet({
               { fontSize: 12.5, color: C.ink1, letterSpacing: 0 },
             ]}
           >
-            {mg > 0
-              ? `${fmtPx(notional)} · ${qtyFmt(qty)} ${m.category === "stocks" ? m.symbol : m.short}`
-              : "—"}
+            {mg > 0 ? `${fmtPx(notional)} · ${qtyFmt(qty)} ${unit}` : "—"}
           </Text>
         </View>
         <Text style={s.say}>
@@ -482,7 +524,7 @@ export function OrderTicketSheet({
       </View>
 
       <View>
-        <Kv k="FEE" v={`${fmtPx(fee)} · ${(TAKER * 100).toFixed(2)}%`} />
+        <Kv k="FEE (EST.)" v={`${fmtPx(fee)} · ${(TAKER * 100).toFixed(3)}%`} />
         <Kv
           k={`FUNDING · NEXT IN ${fundLeft()}`}
           v={
@@ -499,7 +541,7 @@ export function OrderTicketSheet({
         <View style={s.coach}>
           <Text style={s.coachH}>INSUFFICIENT FUNDS</Text>
           <Text style={s.coachT}>
-            You have {fmtPx(st.usdc)} in your wallet. Add {fmtPx(need)} to open
+            You have {fmtPx(usdc)} available for stock trades. Add {fmtPx(need)} to open
             this trade.
           </Text>
         </View>
@@ -519,7 +561,8 @@ export function OrderTicketSheet({
           toast("Keep holding to confirm", `A SAFETY CHECK FOR ${lev}X`)
         }
         onConfirm={() => {
-          if (mg > 0 && need > 0) deposit(Math.ceil(need));
+          if (mg > 0 && need > 0)
+            toast("Add funds first", "DEPOSIT USDC, THEN MOVE IT TO STOCK TRADING");
           else go();
         }}
       />
