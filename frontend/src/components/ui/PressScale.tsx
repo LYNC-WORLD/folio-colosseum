@@ -1,7 +1,17 @@
 // Anything tappable that should squash slightly on press (the prototype's :active scale).
 import { type ReactNode } from "react";
-import { Pressable, StyleSheet, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import {
+  Pressable,
+  StyleSheet,
+  type PressableProps,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { DUR, timing } from "../../theme/motion";
 
 type Props = Omit<PressableProps, "style" | "children"> & {
@@ -13,9 +23,19 @@ type Props = Omit<PressableProps, "style" | "children"> & {
   dim?: boolean;
 };
 
-export function PressScale({ style, children, scaleTo = 0.972, dim = false, onPressIn, onPressOut, ...rest }: Props) {
+export function PressScale({
+  style,
+  children,
+  scaleTo = 0.972,
+  dim = false,
+  onPressIn,
+  onPressOut,
+  ...rest
+}: Props) {
   const p = useSharedValue(0);
-  const a = useAnimatedStyle(() => ({ transform: [{ scale: 1 - (1 - scaleTo) * p.value }] }));
+  const a = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - (1 - scaleTo) * p.value }],
+  }));
   const shade = useAnimatedStyle(() => ({ opacity: p.value * 0.06 }));
 
   return (
@@ -35,7 +55,11 @@ export function PressScale({ style, children, scaleTo = 0.972, dim = false, onPr
         {dim && (
           <Animated.View
             pointerEvents="none"
-            style={[StyleSheet.absoluteFill, { backgroundColor: "#000", borderRadius: 999 }, shade]}
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: "#000", borderRadius: 999 },
+              shade,
+            ]}
           />
         )}
       </Animated.View>

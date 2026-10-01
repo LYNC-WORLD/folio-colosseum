@@ -56,8 +56,12 @@ const ICON_PATHS: Record<string, string[]> = {
     "M5.4 6h2.2a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H5.4a1.2 1.2 0 0 1-1.2-1.2V7.2A1.2 1.2 0 0 1 5.4 6z",
     "M14.4 6h2.2a1.2 1.2 0 0 1 1.2 1.2v4.6a1.2 1.2 0 0 1-1.2 1.2h-2.2a1.2 1.2 0 0 1-1.2-1.2V7.2A1.2 1.2 0 0 1 14.4 6z",
   ],
+  // Folio AI: the mochi blob outline. The two eyes are tiny stroked segments —
+  // with round caps at stroke 1.7 they draw as dots (prototype: circles r .9).
   analyst: [
-    "M11 3.2c.6 4 3.8 7.2 7.8 7.8-4 .6-7.2 3.8-7.8 7.8-.6-4-3.8-7.2-7.8-7.8 4-.6 7.2-3.8 7.8-7.8z",
+    "M3 15.5C3 10.3 6.4 6.5 11 6.5s8 3.8 8 9c0 2.2-2.6 3.2-8 3.2s-8-1-8-3.2z",
+    "M8.85 13.4h.1",
+    "M13.05 13.4h.1",
   ],
 };
 
@@ -71,7 +75,7 @@ export const TABS: {
   { route: "Trade", icon: "trade", label: "Trade" },
   { route: "Portfolio", icon: "folio", label: "Folio" },
   { route: "Leaders", icon: "groups", label: "Social" },
-  { route: "Signals", icon: "analyst", label: "AI Analyst" },
+  { route: "Signals", icon: "analyst", label: "Folio AI" },
 ];
 /** routes without a button highlight another tab (Account lives under Folio) */
 const HIGHLIGHT_AS: Record<string, string> = {
