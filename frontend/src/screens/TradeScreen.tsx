@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -30,7 +31,10 @@ import { perpLabel } from "../data/perps";
 import { OrderBook } from "../components/perps/OrderBook";
 import { PerpToast } from "../components/perps/PerpToast";
 import { LivePositionSheet } from "../components/perps/LivePositionSheet";
-import { StyleSheet } from "react-native";
+import { DockBalance } from "../components/perps/Dockbalance";
+import { TransferSheet } from "../components/TransferSheet";
+import { ChartStage } from "../components/Perpchart";
+import { OrderTicketSheet } from "../components/Orderticketsheet";
 import { C, FONT } from "../theme";
 import {
   TAKER,
@@ -43,8 +47,6 @@ import {
   sideTxt,
   toast,
 } from "../data/perpsStore";
-import { ChartStage } from "../components/Perpchart";
-import { OrderTicketSheet } from "../components/Orderticketsheet";
 import {
   livePnl,
   liveRoe,
@@ -56,16 +58,19 @@ import {
   useSocketStatus,
   useTradeActions,
 } from "../hooks/perps";
+import { useBalances } from "../hooks/useBalances";
 import { errMsg } from "../services/hyperliquid/format";
 
 type PTab = "pos" | "ord" | "book" | "info";
+type TransferOpts = { dir?: "in" | "out"; amt?: number; then?: () => void };
 type SheetState =
   | null
   | { t: "market" }
   | { t: "status" }
   | { t: "unlock"; side: 1 | -1 }
   | { t: "ticket"; side: 1 | -1 }
-  | { t: "position"; id: string };
+  | { t: "position"; id: string }
+  | { t: "transfer"; dir: "in" | "out"; amt?: number; then?: () => void };
 
 const DEFAULT_LEV = 10;
 const tone = (n: number) => (n >= 0 ? C.mint : C.loss);
@@ -110,6 +115,7 @@ export function TradeScreen() {
   const actions = useTradeActions(session.idToken);
   const onboarding = usePerpsOnboarding(session);
   const socket = useSocketStatus();
+  const bal = useBalances(); // { spot, perp }
 
   const [tab, setTab] = useState<PTab>("pos");
   const [sheet, setSheet] = useState<SheetState>(null);
@@ -120,6 +126,14 @@ export function TradeScreen() {
     const i = setInterval(() => tick((n) => n + 1), 1000); // funding countdown
     return () => clearInterval(i);
   }, []);
+
+  const openTransfer = (o?: TransferOpts) =>
+    setSheet({
+      t: "transfer",
+      dir: o?.dir ?? "in",
+      amt: o?.amt,
+      then: o?.then,
+    });
 
   const meta = metaOf(sym);
   const label = labelOf(sym);
@@ -202,13 +216,18 @@ export function TradeScreen() {
       )
       .catch((e) => toast("Couldn't cancel", errMsg(e).toUpperCase()));
 
+  const levLabel = listed
+    ? Math.min(DEFAULT_LEV, live.maxLeverage)
+    : DEFAULT_LEV;
+
   return (
     <SafeAreaView style={tradeStyles.safe} edges={["top"]}>
       <ScrollView
         ref={scrollRef}
         scrollEnabled={!locked}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: 18, paddingBottom: bottom + 84 }}
+        // extra room: the dock is now two rows (balance + Long/Short)
+        contentContainerStyle={{ paddingTop: 18, paddingBottom: bottom + 120 }}
       >
         {/* header */}
         <View style={tradeStyles.head}>
@@ -553,37 +572,37 @@ export function TradeScreen() {
         </View>
       </ScrollView>
 
-      {/* long / short dock */}
+      {/* dock: perp balance + transfer, then Long / Short */}
       <LinearGradient
         pointerEvents="box-none"
         colors={["rgba(10,11,14,0)", C.ground]}
-        locations={[0, 0.3]}
+        locations={[0, 0.2]}
         style={[tradeStyles.dock, { bottom: TAB_BAR_HEIGHT + insets.bottom }]}
       >
-        <Btn
-          kind="long"
-          style={{ flex: 1, opacity: listed ? 1 : 0.4 }}
-          onPress={() => openTicket(1)}
-        >
-          <Text style={[tradeStyles.dockT, { color: ON_MINT }]}>
-            Long{" "}
-            <Text style={tradeStyles.lv}>
-              {listed ? Math.min(DEFAULT_LEV, live.maxLeverage) : DEFAULT_LEV}x
-            </Text>
-          </Text>
-        </Btn>
-        <Btn
-          kind="short"
-          style={{ flex: 1, opacity: listed ? 1 : 0.4 }}
-          onPress={() => openTicket(-1)}
-        >
-          <Text style={[tradeStyles.dockT, { color: ON_SHORT }]}>
-            Short{" "}
-            <Text style={tradeStyles.lv}>
-              {listed ? Math.min(DEFAULT_LEV, live.maxLeverage) : DEFAULT_LEV}x
-            </Text>
-          </Text>
-        </Btn>
+        {/* one column wrapper: balance row on top, Long / Short side by side below */}
+        <View style={tradeStyles.dockInner}>
+          <DockBalance perp={bal.perp} onTransfer={() => openTransfer()} />
+          <View style={tradeStyles.dockRow}>
+            <Btn
+              kind="long"
+              style={{ flex: 1, opacity: listed ? 1 : 0.4 }}
+              onPress={() => openTicket(1)}
+            >
+              <Text style={[tradeStyles.dockT, { color: ON_MINT }]}>
+                Long <Text style={tradeStyles.lv}>{levLabel}x</Text>
+              </Text>
+            </Btn>
+            <Btn
+              kind="short"
+              style={{ flex: 1, opacity: listed ? 1 : 0.4 }}
+              onPress={() => openTicket(-1)}
+            >
+              <Text style={[tradeStyles.dockT, { color: ON_SHORT }]}>
+                Short <Text style={tradeStyles.lv}>{levLabel}x</Text>
+              </Text>
+            </Btn>
+          </View>
+        </View>
       </LinearGradient>
 
       {/* toast */}
@@ -622,8 +641,32 @@ export function TradeScreen() {
         <OrderTicketSheet
           sym={sym}
           initialSide={sheet.side}
+          perpBal={bal.perp}
+          spotBal={bal.spot}
+          // "Move money from spot" link, and the low-balance button.
+          // Reopens the ticket on the same side once the money has moved.
+          onTransfer={(amt?: number) => {
+            const side = sheet.side;
+            openTransfer({
+              dir: "in",
+              amt,
+              then: () => setSheet({ t: "ticket", side }),
+            });
+          }}
           onClose={() => setSheet(null)}
           onChart={toChart}
+        />
+      ) : null}
+      {sheet?.t === "transfer" ? (
+        <TransferSheet
+          dir={sheet.dir}
+          amt={sheet.amt}
+          onClose={() => setSheet(null)}
+          onMoved={() => {
+            const then = sheet.then;
+            setSheet(null);
+            if (then) setTimeout(then, 380);
+          }}
         />
       ) : null}
       {sheetPos ? (
@@ -638,6 +681,13 @@ export function TradeScreen() {
               markOf(sheetPos.coin, sheetPos.entry),
               f,
             )
+          }
+          // after a close, "Move to spot" sends the freed margin back
+          onMoveToSpot={() =>
+            openTransfer({
+              dir: "out",
+              amt: Math.floor(bal.perp * 100) / 100,
+            })
           }
         />
       ) : null}
@@ -850,16 +900,17 @@ export const tradeStyles = StyleSheet.create({
     fontSize: 11.5,
     fontVariant: ["tabular-nums"],
   },
+  // dock = gradient shell; dockInner stacks the balance row above the Long/Short row
   dock: {
     position: "absolute",
     left: 0,
     right: 0,
-    flexDirection: "row",
-    gap: 10,
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 22,
     paddingBottom: 14,
   },
+  dockInner: { flexDirection: "column", gap: 8, alignSelf: "stretch" },
+  dockRow: { flexDirection: "row", gap: 10, alignSelf: "stretch" },
   dockT: { fontFamily: FONT.sans800, fontSize: 15.5, letterSpacing: -0.2 },
   lv: { fontFamily: FONT.mono400, fontSize: 11, opacity: 0.7 },
   toast: {

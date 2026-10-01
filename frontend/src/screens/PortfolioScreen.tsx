@@ -12,6 +12,7 @@
 //   ····· chart, full width, draws itself ·····
 //   ($) Cash in wallet  $440          [+] [⋯]
 //       + $182 in perps · +$12            ← only when you hold perps
+//       Perp account $0.00  Transfer ›    ← opens TransferSheet (drawer)
 //   Positions (3)       ( One-time • | Recurring | Perps )
 //   $800 in positions
 //   [All] [Stocks] [Pre-IPOs] [Index funds]   (Perps tab: All · Stocks · Index funds · Commodities)
@@ -42,6 +43,7 @@ import { useRecurringBuys } from "../hooks/useTrade";
 import { useUserTransactions } from "../hooks/useUserRecords";
 import { usePortfolioSeries } from "../hooks/usePortfolioSeries";
 import { useCountUp } from "../hooks/useCountUp";
+import { useBalances } from "../hooks/useBalances";
 import { getOnboardingProfile } from "../lib";
 import type { TabParamList } from "../navigation/RootTabs";
 import { useTabBarSpace } from "../navigation/TabBar";
@@ -52,6 +54,8 @@ import { GearIcon, HistoryIcon, ShareIcon } from "../components/Icons";
 import { AssetAvatar } from "../components/AssetAvatar";
 import { useSheet } from "../components/Sheet";
 import { useSplashDone } from "../components/SplashIntro";
+import { TransferSheet } from "../components/TransferSheet";
+import { PerpToast } from "../components/perps/PerpToast";
 import { PortfolioChart } from "../components/folio/PortfolioChart";
 import {
   ActivitySheet,
@@ -114,6 +118,8 @@ export function PortfolioScreen() {
   const splashDone = useSplashDone();
   const sheet = useSheet();
   const perp = usePerpPositions();
+  const bal = useBalances(); // { spot, perp }
+  const [xfer, setXfer] = useState(false); // Transfer drawer (spot <-> perp)
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
@@ -272,12 +278,12 @@ export function PortfolioScreen() {
       initial: false,
     });
   // Trade lives in HomeStack
-  const openTrade = (symbol?: string) =>
-    nav.navigate("Home", {
-      screen: "Trade",
-      params: symbol ? { symbol } : undefined,
-      initial: false,
-    });
+  // const openTrade = (symbol?: string) =>
+  //   nav.navigate("Home", {
+  //     screen: "Trade",
+  //     params: symbol ? { symbol } : undefined,
+  //     initial: false,
+  //   });
   const toAccount = () => nav.navigate("Profile");
   const toOrders = () =>
     (nav as any).navigate("Profile", {
@@ -287,6 +293,10 @@ export function PortfolioScreen() {
 
   const openActivity = () =>
     sheet.open(<ActivitySheet />, { label: "Activity" });
+  const openTransfer = () => {
+    hTap();
+    setXfer(true);
+  };
   const openMore = () =>
     sheet.open(
       <MoreSheet
@@ -476,42 +486,97 @@ export function PortfolioScreen() {
             <View style={s.cashIco}>
               <Text style={s.cashIcoText}>$</Text>
             </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={s.cashLbl}>Cash in wallet</Text>
-              <Text style={s.cash}>{loading ? "…" : money(cash)}</Text>
+            <View style={{ flex: 1, gap: 6, minWidth: 0 }}>
+              {/* label + Deposit + more */}
+              <View style={s.cashTop}>
+                <Text style={s.cashLbl} numberOfLines={1}>
+                  Cash in wallet
+                </Text>
+                <PressScale
+                  scaleTo={0.95}
+                  onPress={() => {
+                    hTap();
+                    sheet.open(<DepositFlow address={walletAddress} />, {
+                      label: "Deposit",
+                    });
+                  }}
+                  style={s.dep}
+                  accessibilityRole="button"
+                  accessibilityLabel="Deposit"
+                >
+                  <Svg
+                    width={15}
+                    height={15}
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke={C.onMint}
+                    strokeWidth={2.4}
+                    strokeLinecap="round"
+                  >
+                    <Path d="M10 4v12M4 10h12" />
+                  </Svg>
+                  <Text style={s.depText}>Deposit</Text>
+                </PressScale>
+                <SqButton label="More" onPress={openMore}>
+                  <Svg width={18} height={18} viewBox="0 0 20 20" fill={C.ink1}>
+                    <Circle cx="4.5" cy="10" r="1.6" />
+                    <Circle cx="10" cy="10" r="1.6" />
+                    <Circle cx="15.5" cy="10" r="1.6" />
+                  </Svg>
+                </SqButton>
+              </View>
+
+              {/* balance + refresh */}
+              <View style={s.cashBal}>
+                <Text style={s.cash} numberOfLines={1}>
+                  {loading ? "…" : money(cash)}
+                </Text>
+                <PressScale
+                  scaleTo={0.9}
+                  onPress={() => {
+                    hTap();
+                    refresh();
+                  }}
+                  disabled={refreshing}
+                  style={[s.rf, refreshing && { opacity: 0.4 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Refresh balances"
+                >
+                  <Svg
+                    width={16}
+                    height={16}
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke={C.ink3}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <Path d="M16.2 8.2A6.5 6.5 0 0 0 4.4 6.5" />
+                    <Path d="M4 3.5v3.3h3.3" />
+                    <Path d="M3.8 11.8a6.5 6.5 0 0 0 11.8 1.7" />
+                    <Path d="M16 16.5v-3.3h-3.3" />
+                  </Svg>
+                </PressScale>
+              </View>
+
               <PerpSummaryLine
                 equity={perp.equity}
                 pnl={perp.pnl}
                 count={perp.positions.length}
               />
-            </View>
-            <SqButton
-              label="Add USDC"
-              onPress={() =>
-                sheet.open(<DepositFlow address={walletAddress} />, {
-                  label: "Deposit",
-                })
-              }
-            >
-              <Svg
-                width={20}
-                height={20}
-                viewBox="0 0 20 20"
-                fill="none"
-                stroke={C.ink1}
-                strokeWidth={2}
-                strokeLinecap="round"
+              {/* perp account balance + Transfer (opens the drawer) */}
+              <PressScale
+                scaleTo={0.97}
+                onPress={openTransfer}
+                style={s.perpLine}
+                accessibilityRole="button"
+                accessibilityLabel={`Perp account ${money(bal.perp)}. Transfer`}
               >
-                <Path d="M10 4v12M4 10h12" />
-              </Svg>
-            </SqButton>
-            <SqButton label="More" onPress={openMore}>
-              <Svg width={20} height={20} viewBox="0 0 20 20" fill={C.ink1}>
-                <Circle cx="4.5" cy="10" r="1.6" />
-                <Circle cx="10" cy="10" r="1.6" />
-                <Circle cx="15.5" cy="10" r="1.6" />
-              </Svg>
-            </SqButton>
+                <Text style={s.perpTxt}>Perp account {money(bal.perp)}</Text>
+                <Text style={s.perpGo}>Transfer ›</Text>
+              </PressScale>
+            </View>
           </Rise>
 
           {/* positions header */}
@@ -595,8 +660,8 @@ export function PortfolioScreen() {
               <PerpPositionList
                 positions={perp.positions}
                 category={perpCat}
-                onOpen={(p) => openTrade(p.symbol)}
-                onOpenTrade={() => openTrade()}
+                onOpen={(p) => {}}
+                onOpenTrade={() => {}}
               />
             ) : tab === "open" && cat === "index" ? (
               funds.length === 0 ? (
@@ -806,6 +871,19 @@ export function PortfolioScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* TransferSheet fires its success toast through perpsStore, so PerpToast must be mounted here */}
+      <PerpToast />
+
+      {xfer ? (
+        <TransferSheet
+          onClose={() => setXfer(false)}
+          onMoved={() => {
+            setXfer(false);
+            refresh(); // re-pull wallet balances after money moves
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -998,17 +1076,46 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   cashIcoText: { fontFamily: FONT.sans700, fontSize: 22, color: C.ink1 },
-  cashLbl: { fontFamily: FONT.sans400, fontSize: 14, color: C.ink3 },
+  cashTop: { flexDirection: "row", alignItems: "center", gap: 8 },
+  cashBal: { flexDirection: "row", alignItems: "center", gap: 6 },
+  cashLbl: { flex: 1, fontFamily: FONT.sans400, fontSize: 14, color: C.ink3 },
+  dep: {
+    height: 40,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: C.mint,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  depText: { fontFamily: FONT.sans700, fontSize: 15, color: C.onMint },
+  rf: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   cash: {
+    flex: 1,
     fontFamily: FONT.sans800,
-    fontSize: 22,
+    fontSize: 26,
     letterSpacing: em(22, -0.03),
     color: C.ink1,
     fontVariant: ["tabular-nums"],
   },
+  perpLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    alignSelf: "flex-start",
+    minHeight: 30,
+  },
+  perpTxt: { fontFamily: FONT.mono400, fontSize: 11.5, color: C.ink3 },
+  perpGo: { fontFamily: FONT.sans700, fontSize: 12.5, color: C.mint },
   sq: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     borderRadius: 14,
     backgroundColor: C.surface,
     borderWidth: 1,
