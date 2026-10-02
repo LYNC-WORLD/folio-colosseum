@@ -34,7 +34,6 @@ import * as Clipboard from "expo-clipboard";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { useNavigation, useScrollToTop } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-
 import { useAuth, type OnboardingProfile } from "../context";
 import { useWallet } from "../context/WalletContext";
 import { useIndexFunds, useStocks } from "../hooks";
@@ -47,7 +46,6 @@ import { getOnboardingProfile } from "../lib";
 import type { TabParamList } from "../navigation/RootTabs";
 import { useTabBarSpace } from "../navigation/TabBar";
 import { C, FONT, TYPE, em } from "../theme";
-import { timing } from "../theme/motion";
 import { Chip, IconButton, PressScale, Rise } from "../components/ui";
 import { GearIcon, HistoryIcon, ShareIcon } from "../components/Icons";
 import { AssetAvatar } from "../components/AssetAvatar";
