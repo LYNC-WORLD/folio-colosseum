@@ -74,7 +74,107 @@ export async function getTransectionResults(
     } else return data.status;
   }
 }
+export async function buyStockOnChain(
+  stockAddress: string,
+  usdcAmount: number,
+  walletId: string,
+) {
+  const responce = await privy
+    .wallets()
+    .swaps()
+    .execute(walletId, {
+      destination: {
+        asset_address: stockAddress,
+      },
+      source: {
+        asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      },
+      base_amount: String(usdcAmount * 1000000).split(".")[0],
+      amount_type: "exact_input",
+      authorization_context: {
+        authorization_private_keys: [env.PRIVY_AUTH_KEY!],
+      },
+    });
+  return responce;
+}
+export async function sellStockOnChain(
+  stockAddress: string,
+  stockAmount: number,
+  walletId: string,
+  tokenDecimal: number,
+) {
+  console.log("Sell request: ", {
+    destination: {
+      asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    },
+    source: {
+      asset_address: stockAddress,
+      caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    },
+    base_amount: String(stockAmount * 10 ** tokenDecimal).split(".")[0],
+    amount_type: "exact_input",
+    authorization_context: {
+      authorization_private_keys: [env.PRIVY_AUTH_KEY!],
+    },
+  });
 
+  const responce = await privy
+    .wallets()
+    .swaps()
+    .execute(walletId, {
+      destination: {
+        asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      },
+      source: {
+        asset_address: stockAddress,
+        caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      },
+      base_amount: String(stockAmount * 10 ** tokenDecimal).split(".")[0],
+      amount_type: "exact_input",
+      authorization_context: {
+        authorization_private_keys: [env.PRIVY_AUTH_KEY!],
+      },
+    });
+  return responce;
+}
+export async function getBuyQuote(
+  stockAddress: string,
+  usdcAmount: number,
+  walletId: string,
+) {
+  const responce = await privy
+    .wallets()
+    .swaps()
+    .quote(walletId, {
+      destination: {
+        asset_address: stockAddress,
+      },
+      source: {
+        asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      },
+      base_amount: String(usdcAmount * 1000000).split(".")[0],
+      amount_type: "exact_input",
+    });
+  return responce;
+}
+export async function sendSOl(walletId: string, solAmount: string, depositAddress: string){
+      const response = await privy.wallets().transfer(walletId, {
+      source: {
+        chain: "solana",
+        asset: "sol",
+        amount: solAmount,
+      },
+      destination: {
+        address: depositAddress,
+      },
+      authorization_context: {
+        authorization_private_keys: [env.PRIVY_AUTH_KEY!],
+      },
+    });
+    return response;
+}
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 

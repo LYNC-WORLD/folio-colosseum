@@ -1,6 +1,7 @@
 node_modules/
 generated/
 dist/
+hyperliquid-integration/
 .env
 *.log
 package-lock.json

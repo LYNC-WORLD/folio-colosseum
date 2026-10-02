@@ -2,24 +2,20 @@ import { dailyStartStockPriceCron } from "../cron/DailyStockPrice";
 import { prisma } from "../server";
 
 const XSTOCKS_API = "https://api.xstocks.fi/api/v2";
-
-interface XStocksPriceResponse {
-  quote?: string | number;
-  [key: string]: any;
-}
+const HYPERLIQUID_INFO_URL = "https://api.hyperliquid.xyz/info";
 
 export async function updateStockPrices(): Promise<void> {
   try {
     await Promise.all([
       updateUSStocksPrice(false),
       updatePreStocksPrice(false),
+      updatePerpStockPrice(),
     ]);
     console.log("Stock price update completed");
   } catch (error) {
     console.error("Stock price cron failed:", error);
   }
 }
-
 
 export async function updateDailyOpenPrices(): Promise<void> {
   try {
@@ -153,6 +149,106 @@ async function updatePreStocksPrice(updateDailyPrice: boolean) {
   }
   return;
 }
+
+async function updatePerpStockPrice() {
+  try {
+    const response = await fetch(HYPERLIQUID_INFO_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "metaAndAssetCtxs",
+        dex: "xyz",
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Hyperliquid API error: ${response.status} ${response.statusText}`,
+      );
+    }
+    const data = (await response.json()) as HyperliquidResponse;
+    const [meta, assetContexts] = data;
+    const stocks = await prisma.perpStocks.findMany();
+
+    if (stocks.length === 0) {
+      console.log("No perp stocks found in database");
+      return;
+    }
+
+    const marketMap = new Map<
+      string,
+      {
+        asset: HyperliquidAsset;
+        context: AssetContext;
+      }
+    >();
+    meta.universe.forEach((asset, index) => {
+      const context = assetContexts[index];
+
+      if (!context) {
+        return;
+      }
+
+      marketMap.set(asset.name, {
+        asset,
+        context,
+      });
+    });
+    const updates = [];
+    for (const stock of stocks) {
+      const hyperliquidMarket = `xyz:${stock.marketSymbol}`;
+
+      const market = marketMap.get(hyperliquidMarket);
+
+      if (!market) {
+        console.warn(`Hyperliquid market not found: ${hyperliquidMarket}`);
+        continue;
+      }
+
+      const { context } = market;
+
+      const markPx = Number(context.markPx);
+      const prevDayPx = Number(context.prevDayPx);
+
+      if (
+        !Number.isFinite(markPx) ||
+        !Number.isFinite(prevDayPx) ||
+        prevDayPx === 0
+      ) {
+        console.warn(`Invalid price data for ${stock.marketSymbol}`, {
+          markPx: context.markPx,
+          prevDayPx: context.prevDayPx,
+        });
+
+        continue;
+      }
+      const changeInPrice = ((markPx - prevDayPx) / prevDayPx) * 100;
+
+      updates.push(
+        prisma.perpStocks.update({
+          where: {
+            id: stock.id,
+          },
+          data: {
+            price: markPx.toString(),
+            changeInPrice: changeInPrice.toFixed(4),
+          },
+        }),
+      );
+    }
+    if (updates.length === 0) {
+      console.log("No stocks needed updating");
+      return;
+    }
+
+    await prisma.$transaction(updates);
+
+    console.log(`Successfully updated ${updates.length} perp stocks`);
+  } catch (error) {
+    console.log("error: ", error);
+  }
+}
 interface PreStock {
   name: string;
   symbol: string;
@@ -164,3 +260,35 @@ interface PreStock {
   impliedValuation: number;
   supply: number;
 }
+interface XStocksPriceResponse {
+  quote?: string | number;
+  [key: string]: any;
+}
+
+interface AssetContext {
+  funding: string;
+  openInterest: string;
+  prevDayPx: string;
+  dayNtlVlm: string;
+  premium: string | null;
+  oraclePx: string;
+  markPx: string;
+  midPx: string | null;
+  impactPxs: string[] | null;
+  dayBaseVlm: string;
+}
+
+interface HyperliquidAsset {
+  szDecimals: number;
+  name: string;
+  maxLeverage: number;
+}
+
+type HyperliquidResponse = [
+  {
+    universe: HyperliquidAsset[];
+    marginTables: unknown[];
+    collateralToken: number;
+  },
+  AssetContext[],
+];

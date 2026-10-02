@@ -170,4 +170,14 @@ export class StockService {
       return;
     }
   }
+
+  public async getPerpStocks() {
+    try {
+      const perpStocks = await prisma.perpStocks.findMany();
+      return perpStocks;
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
 }

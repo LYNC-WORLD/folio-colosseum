@@ -1,6 +1,6 @@
 import { env } from "../config/env";
 import { prisma } from "../lib/prisma";
-import { getTransectionResults, privy } from "../lib/privy";
+import { getTransectionResults, privy, buyStockOnChain, sellStockOnChain } from "../lib/privy";
 import { getUSDCBalance } from "../lib/solana";
 
 const XSTOCKS_API = "https://api.xstocks.fi/api/v2";
@@ -496,72 +496,6 @@ export class TradeService {
       data: { indexFundAmount: indexAmount },
     };
   }
-}
-
-async function buyStockOnChain(
-  stockAddress: string,
-  usdcAmount: number,
-  walletId: string,
-) {
-  const responce = await privy
-    .wallets()
-    .swaps()
-    .execute(walletId, {
-      destination: {
-        asset_address: stockAddress,
-      },
-      source: {
-        asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-        caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-      },
-      base_amount: String(usdcAmount * 1000000).split(".")[0],
-      amount_type: "exact_input",
-      authorization_context: {
-        authorization_private_keys: [env.PRIVY_AUTH_KEY!],
-      },
-    });
-  return responce;
-}
-
-async function sellStockOnChain(
-  stockAddress: string,
-  stockAmount: number,
-  walletId: string,
-  tokenDecimal: number,
-) {
-  console.log("Sell request: ", {
-    destination: {
-      asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    },
-    source: {
-      asset_address: stockAddress,
-      caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-    },
-    base_amount: String(stockAmount * 10 ** tokenDecimal).split(".")[0],
-    amount_type: "exact_input",
-    authorization_context: {
-      authorization_private_keys: [env.PRIVY_AUTH_KEY!],
-    },
-  });
-
-  const responce = await privy
-    .wallets()
-    .swaps()
-    .execute(walletId, {
-      destination: {
-        asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-      },
-      source: {
-        asset_address: stockAddress,
-        caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-      },
-      base_amount: String(stockAmount * 10 ** tokenDecimal).split(".")[0],
-      amount_type: "exact_input",
-      authorization_context: {
-        authorization_private_keys: [env.PRIVY_AUTH_KEY!],
-      },
-    });
-  return responce;
 }
 
 // Price functions

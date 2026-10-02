@@ -22,11 +22,13 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@nktkas/hyperliquid": "^0.33.3",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@privy-io/node": "^0.34.0",
     "@privy-io/server-auth": "^1.32.5",
     "dotenv": "^18.0.0",
+    "ethers": "^6.17.0",
     "express": "^5.2.1",
     "google-auth-library": "^11.1.0",
     "jsonwebtoken": "^9.0.3",

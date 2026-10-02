@@ -55,12 +55,13 @@ model User {
 }
 
 model Wallet {
-    id            String @id @default(cuid())
-    userId        String
-    walletId      String @unique
-    walletAddress String @unique
-    user          User   @relation(fields: [userId], references: [id])
-    chain         Chain
+    id                 String              @id @default(cuid())
+    userId             String
+    walletId           String              @unique
+    walletAddress      String              @unique
+    user               User                @relation(fields: [userId], references: [id])
+    chain              Chain
+    hyperLiquidDetails HyperLiquidDetails?
 
     @@unique([userId, chain])
     @@index([userId])
@@ -145,4 +146,26 @@ model IndexFundsHolding {
     indexPrice    String
     indexDatils   IndexFunds @relation(fields: [indexId], references: [id])
     user          User       @relation(fields: [userId], references: [id])
+}
+
+model HyperLiquidDetails {
+    id       String @id @default(cuid())
+    walletId String @unique
+    wallet   Wallet @relation(fields: [walletId], references: [walletId], onDelete: Cascade)
+
+    agentApiKey    String
+    agentApiSecret String
+    createdAt      DateTime @default(now())
+    updatedAt      DateTime @updatedAt
+}
+
+model PerpStocks {
+    id            String @id @default(cuid())
+    marketName    String @unique
+    marketSymbol  String
+    price         String
+    changeInPrice String
+    maxLeverage   Int    @default(10)
+    imageUrl      String
+    szDecimals    Int
 }

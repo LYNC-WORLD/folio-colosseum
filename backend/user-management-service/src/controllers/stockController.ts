@@ -211,4 +211,23 @@ export class StockController {
       });
     }
   };
+  
+  public getPerpStocks = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const perpStocks = await this.stockService.getPerpStocks();
+
+      res.status(200).json({
+        success: true,
+        message: "list of perp stocks",
+        data: perpStocks,
+      });
+    } catch (error) {
+      console.error("can not fetch perp stocks:", error);
+
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
 }

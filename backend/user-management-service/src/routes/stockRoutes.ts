@@ -18,4 +18,6 @@ router.get("/trades,", stockController.getLatestBuy);
 
 router.get("/index-funds", stockController.getIndexFunds);
 
+router.get("/perp-markets", stockController.getPerpStocks);
+
 export { router as stockRoutes };
