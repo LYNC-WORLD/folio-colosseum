@@ -114,7 +114,7 @@ export async function sellSolForUsdc(solAmount: string, privateKey: string) {
 }
 
 export async function createAgentWallet(walletId: string) {
-  const wallet = Wallet.createRandom();  
+  const wallet = Wallet.createRandom();
   const nonce = Date.now();
   const validUntil = nonce + 150 * 24 * 60 * 60 * 1000;
   const signature = await privy
@@ -193,9 +193,15 @@ export async function getBestPriceFromOrderBook(
   if (!book) return;
   const bids = book.levels[0];
   const asks = book.levels[1];
-  console.log("orderBook: ", isBuy ? (Number(asks[0].px) * 1.01) : (Number(bids[0].px) * 0.99));
-  
-  return isBuy ? (Number(asks[0].px) * 1.005) : (Number(bids[0].px) * 0.995);
+  console.log(
+    "orderBook: ",
+    isBuy ? Number(asks[0].px) * 1.1 : Number(bids[0].px) * 0.9,
+  );
+
+  return {
+    orderBookPrice: isBuy ? Number(asks[0].px) : Number(bids[0].px),
+    limitPrice: isBuy ? Number(asks[0].px) * 1.1 : Number(bids[0].px) * 0.9,
+  };
 }
 interface HyperliquidSpotBalance {
   coin: string;

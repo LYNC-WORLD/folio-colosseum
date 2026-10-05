@@ -31,6 +31,16 @@ export class PerpTradeController {
         });
         return;
       }
+      if (
+        (body.slPrice && body.slPercent) ||
+        (body.tpPercent && body.tpPrice)
+      ) {
+        res.status(400).json({
+          success: false,
+          message: "Provide one, either percent or price",
+        });
+        return;
+      }
       if (body.leverage > 10) {
         res.status(400).json({
           success: false,
@@ -62,6 +72,12 @@ export class PerpTradeController {
         body.leverage,
         result?.szDecimals,
         body.isBuy,
+        {
+          SlPercentage: body.slPercent,
+          SlPrice: body.slPrice,
+          TpPercentage: body.tpPercent,
+          TpPrice: body.tpPrice,
+        },
       );
       if (responce?.success) {
         res.status(200).json({
@@ -71,7 +87,7 @@ export class PerpTradeController {
         });
         return;
       } else {
-        res.status(200).json({
+        res.status(500).json({
           success: false,
           message: responce!.message ?? "",
         });
@@ -151,7 +167,7 @@ export class PerpTradeController {
         });
         return;
       } else {
-        res.status(200).json({
+        res.status(500).json({
           success: false,
           message: responce!.message ?? "",
         });
@@ -165,20 +181,146 @@ export class PerpTradeController {
       });
     }
   };
-  
+
+  public getOpenOrders = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!req.user || !req.user.solanaWalletId || !req.user.ethereumWalletId) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const orders = await this.perpTradeService.getOpenOrders(
+        req.user.ethereumWalletAddress!,
+      );
+      res.status(200).json({
+        success: true,
+        message: "Open orders",
+        data: orders,
+      });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
+
+  public getOrderBySymbol = async (
+    req: Request<{ stock: string }>,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      if (!req.user || !req.user.solanaWalletId || !req.user.ethereumWalletId) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const stock = req.params.stock;
+      const orders = await this.perpTradeService.getOrdersBySymbol(
+        req.user.ethereumWalletAddress!,
+        stock,
+      );
+      res.status(200).json({
+        success: true,
+        message: "Open orders",
+        data: orders,
+      });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
+
+  public getAllPositions = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      if (!req.user || !req.user.solanaWalletId || !req.user.ethereumWalletId) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const positions = await this.perpTradeService.getAllPositions(
+        req.user.ethereumWalletAddress!,
+      );
+      res.status(200).json({
+        success: true,
+        message: "Open positions",
+        data: positions,
+      });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
+
+  public getPositionBySymbol = async (
+    req: Request<{ stock: string }>,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      if (!req.user || !req.user.solanaWalletId || !req.user.ethereumWalletId) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const stock = req.params.stock;
+      const positions = await this.perpTradeService.getPositionBySymbol(
+        req.user.ethereumWalletAddress!,
+        stock,
+      );
+      res.status(200).json({
+        success: true,
+        message: "Position Details",
+        data: positions,
+      });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
 }
 
 interface placeMarketOrder {
   stockSymbol: string;
   dollarSize: number;
-  leverage: number | undefined;
+  leverage: number;
   isBuy: boolean;
+  margin: "ISOLATED" | "CROSS";
+  tpPrice: number | undefined;
+  slPrice: number | undefined;
+  tpPercent: number | undefined;
+  slPercent: number | undefined;
 }
 
 interface placeLimitOrder {
   stockSymbol: string;
   dollarSize: number;
-  leverage: number | undefined;
+  leverage: number;
   isBuy: boolean;
   limitPrice: number;
+  margin: "ISOLATED" | "CROSS";
+  tpPrice: number | undefined;
+  slPrice: number | undefined;
+  tpPercent: number | undefined;
+  slPercent: number | undefined;
 }
