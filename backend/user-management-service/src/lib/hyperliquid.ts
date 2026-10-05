@@ -8,6 +8,12 @@ import { Signature, Wallet } from "ethers";
 import { privateKeyToAccount } from "viem/accounts";
 import { privy } from "./privy";
 import { env } from "../config/env";
+import { prisma } from "./prisma";
+
+export const hyperliquidTransport = new HttpTransport();
+export const hyperliquidInfoClient = new InfoClient({
+  transport: hyperliquidTransport,
+});
 
 const HYPERLIQUID_INFO_URL = "https://api.hyperliquid.xyz/info";
 
@@ -69,15 +75,15 @@ export async function getHyperliquidSpotBalances(
 
 export async function sellSolForUsdc(solAmount: string, privateKey: string) {
   const wallet = privateKeyToAccount(privateKey as `0x${string}`);
-  const transport = new HttpTransport();
-  const converter = await SymbolConverter.create({ transport });
-  const info = new InfoClient({ transport });
+  const converter = await SymbolConverter.create({
+    transport: hyperliquidTransport,
+  });
   const exchange = new ExchangeClient({
-    transport,
+    transport: hyperliquidTransport,
     wallet,
   });
 
-  const mids = await info.allMids();
+  const mids = await hyperliquidInfoClient.allMids();
   const mid = parseFloat(mids["SOL"]);
 
   const price = mid * 0.99;
@@ -108,7 +114,7 @@ export async function sellSolForUsdc(solAmount: string, privateKey: string) {
 }
 
 export async function createAgentWallet(walletId: string) {
-  const wallet = Wallet.createRandom();
+  const wallet = Wallet.createRandom();  
   const nonce = Date.now();
   const validUntil = nonce + 150 * 24 * 60 * 60 * 1000;
   const signature = await privy
@@ -177,6 +183,20 @@ export async function createAgentWallet(walletId: string) {
   };
 }
 
+export async function getBestPriceFromOrderBook(
+  marketSymbol: string,
+  isBuy: boolean,
+) {
+  const book = await hyperliquidInfoClient.l2Book({
+    coin: `xyz:${marketSymbol}`,
+  });
+  if (!book) return;
+  const bids = book.levels[0];
+  const asks = book.levels[1];
+  console.log("orderBook: ", isBuy ? (Number(asks[0].px) * 1.01) : (Number(bids[0].px) * 0.99));
+  
+  return isBuy ? (Number(asks[0].px) * 1.005) : (Number(bids[0].px) * 0.995);
+}
 interface HyperliquidSpotBalance {
   coin: string;
   token: number;

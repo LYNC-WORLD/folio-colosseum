@@ -5,6 +5,7 @@ import {authRoute} from "./routes/authRoutes";
 import { stockRoutes } from "./routes/stockRoutes";
 import { tradeRoutes } from "./routes/tradeRoutes";
 import { userRoutes } from "./routes/userRoutes";
+import { perpTradeRoutes } from "./routes/perpTradeRoutes";
 
 const app = express();
 
@@ -31,4 +32,5 @@ app.listen(PORT, () => {
 app.use("/api/auth", authRoute);
 app.use("/api/stocks", stockRoutes);
 app.use("/api/trade", tradeRoutes);
+app.use("/api/perp-trade", perpTradeRoutes);
 app.use("/api/user", userRoutes);

@@ -163,7 +163,7 @@ model PerpStocks {
     id            String @id @default(cuid())
     marketName    String @unique
     assetId       String @default("0")
-    marketSymbol  String
+    marketSymbol  String 
     price         String
     changeInPrice String
     maxLeverage   Int    @default(10)
