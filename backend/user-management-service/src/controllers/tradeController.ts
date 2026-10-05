@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
-import { TradeService } from "../services/tradeServices";
+import { TradeService, TradeSwapResult } from "../services/tradeServices";
 import { prisma } from "../lib/prisma";
-
 export class TradeController {
   private tradeService: TradeService;
 
@@ -11,7 +10,7 @@ export class TradeController {
 
   public getQuoteBuy = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user || !req.user.solanaWalletId) {
+      if (!req.user) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -19,39 +18,31 @@ export class TradeController {
         return;
       }
       const body: getQuoteRequest = req.body;
-      if (
-        (body.stockAmount && body.usdcAmount) ||
-        (!body.stockAmount && !body.usdcAmount) ||
-        !body.stockSymbol ||
-        !body.stockAddress
-      ) {
+      if (invalidAmounts(body.stockAmount, body.usdcAmount) || !body.stockAddress) {
         res.status(400).json({
           success: false,
-          message:
-            "(stockAmount or usdcAmount), stockSymbol and stockAddress is required",
+          message: "(stockAmount or usdcAmount) and stockAddress is required",
         });
         return;
       }
-      const stockDetails = await prisma.stocks.findUnique({
-        select: {
-          decimals: true,
-          stockType: true,
-        },
-        where: {
-          tokenAddress: body.stockAddress,
-        },
-      });
+      const stockDetails = await findStock(body.stockAddress);
+      if (!stockDetails) {
+        res.status(404).json({
+          success: false,
+          message: "stock not found",
+        });
+        return;
+      }
       const quote = await this.tradeService.getQuoteBuy(
         body.stockAddress,
-        body.stockSymbol,
+        stockDetails.symbol,
         body.stockAmount,
         body.usdcAmount,
-        req.user.solanaWalletId,
-        stockDetails?.stockType ?? "USStock",
+        stockDetails.stockType,
       );
       if (!quote) {
         res.status(404).json({
-          success: true,
+          success: false,
           message: "can not fetch stocks",
         });
         return;
@@ -61,11 +52,10 @@ export class TradeController {
         message: "Quote details",
         data: {
           stockAddress: body.stockAddress,
-          stockSymbol: body.stockSymbol,
-          inputUSDC: Number(quote?.input_amount) / 1000000,
+          stockSymbol: stockDetails.symbol,
+          inputUSDC: Number(quote.inAmount) / 1000000,
           outputStocks:
-            Number(quote?.est_output_amount) /
-            10 ** (stockDetails?.decimals ?? 8),
+            Number(quote.outAmount) / 10 ** stockDetails.decimals,
         },
       });
       return;
@@ -79,7 +69,7 @@ export class TradeController {
   };
   public getQuoteSell = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user || !req.user.solanaWalletId) {
+      if (!req.user) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -87,38 +77,28 @@ export class TradeController {
         return;
       }
       const body: getQuoteRequest = req.body;
-      if (
-        (body.stockAmount && body.usdcAmount) ||
-        (!body.stockAmount && !body.usdcAmount) ||
-        !body.stockSymbol ||
-        !body.stockAddress
-      ) {
+      if (invalidAmounts(body.stockAmount, body.usdcAmount) || !body.stockAddress) {
         res.status(400).json({
           success: false,
-          message:
-            "stockAmount, usdcAmount, stockSymbol and stockAddress is required",
+          message: "(stockAmount or usdcAmount) and stockAddress is required",
         });
         return;
       }
-
-      const stockDetails = await prisma.stocks.findUnique({
-        select: {
-          decimals: true,
-          stockType: true,
-        },
-        where: {
-          tokenAddress: body.stockAddress,
-        },
-      });
+      const stockDetails = await findStock(body.stockAddress);
+      if (!stockDetails) {
+        res.status(404).json({
+          success: false,
+          message: "stock not found",
+        });
+        return;
+      }
       const quote = await this.tradeService.getQuoteSell(
         body.stockAddress,
-        body.stockSymbol,
+        stockDetails.symbol,
         body.stockAmount,
         body.usdcAmount,
-        req.user.solanaWalletId,
-        req.user.userId,
-        stockDetails?.decimals ?? 8,
-        stockDetails?.stockType ?? "USStock",
+        stockDetails.decimals,
+        stockDetails.stockType,
       );
       if (!quote) {
         res.status(404).json({
@@ -132,10 +112,10 @@ export class TradeController {
         message: "Quote details",
         data: {
           stockAddress: body.stockAddress,
-          stockSymbol: body.stockSymbol,
-          outputUSDC: Number(quote?.est_output_amount) / 1000000,
+          stockSymbol: stockDetails.symbol,
+          outputUSDC: Number(quote.outAmount) / 1000000,
           inputStocks:
-            Number(quote?.input_amount) / 10 ** (stockDetails?.decimals ?? 8),
+            Number(quote.inAmount) / 10 ** stockDetails.decimals,
         },
       });
       return;
@@ -149,7 +129,7 @@ export class TradeController {
   };
   public buyStocks = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user || !req.user.solanaWalletId) {
+      if (!req.user || !req.user.solanaWalletId || !req.user.solanaWalletAddress) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -157,36 +137,31 @@ export class TradeController {
         return;
       }
       const body: getQuoteRequest = req.body;
-      if (
-        (body.stockAmount && body.usdcAmount) ||
-        (!body.stockAmount && !body.usdcAmount) ||
-        !body.stockSymbol ||
-        !body.stockAddress
-      ) {
+      if (invalidAmounts(body.stockAmount, body.usdcAmount) || !body.stockAddress) {
         res.status(400).json({
           success: false,
-          message:
-            "(stockAmount or usdcAmount), stockSymbol and stockAddress is required",
+          message: "(stockAmount or usdcAmount) and stockAddress is required",
         });
         return;
       }
-      const stockDetails = await prisma.stocks.findUnique({
-        select: {
-          decimals: true,
-          stockType: true,
-        },
-        where: {
-          tokenAddress: body.stockAddress,
-        },
-      });
+      const stockDetails = await findStock(body.stockAddress);
+      if (!stockDetails) {
+        res.status(404).json({
+          success: false,
+          message: "stock not found",
+        });
+        return;
+      }
       const responce = await this.tradeService.buyStock(
         body.stockAddress,
-        body.stockSymbol,
+        stockDetails.symbol,
         body.stockAmount,
         body.usdcAmount,
         req.user.solanaWalletId,
+        req.user.solanaWalletAddress,
         req.user.userId,
-        stockDetails?.stockType ?? "USStock",
+        stockDetails.stockType,
+        stockDetails.decimals,
       );
       if (!responce) {
         res.status(404).json({
@@ -195,18 +170,15 @@ export class TradeController {
         });
         return;
       }
-      if (responce.status == "rejected" || responce.status == "failed") {
-        res.status(500).json({
-          success: false,
-          message: "transection failed",
-          status: responce.status,
-        });
+      if (responce.status === "failed") {
+        respondSwapFailure(res, responce);
+        return;
       }
       res.status(200).json({
         success: true,
         message: "Quote details",
         status: responce.status,
-        data: responce.responce,
+        data: responce.data,
       });
       return;
     } catch (error) {
@@ -219,7 +191,7 @@ export class TradeController {
   };
   public sellStocks = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user || !req.user.solanaWalletId) {
+      if (!req.user || !req.user.solanaWalletId || !req.user.solanaWalletAddress) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -227,48 +199,31 @@ export class TradeController {
         return;
       }
       const body: getQuoteRequest = req.body;
-
-      console.log("body: ", body);
-      if (
-        (body.stockAmount && body.usdcAmount) ||
-        (!body.stockAmount && !body.usdcAmount) ||
-        !body.stockSymbol ||
-        !body.stockAddress
-      ) {
+      if (invalidAmounts(body.stockAmount, body.usdcAmount) || !body.stockAddress) {
         res.status(400).json({
           success: false,
-          message:
-            "stockAmount, usdcAmount, stockSymbol and stockAddress is required",
+          message: "(stockAmount or usdcAmount) and stockAddress is required",
         });
         return;
       }
-      const stockDecimal = await prisma.stocks.findUnique({
-        select: {
-          decimals: true,
-        },
-        where: {
-          tokenAddress: body.stockAddress,
-        },
-      });
-      console.log("stockDecimal: ", stockDecimal);
-      const stockDetails = await prisma.stocks.findUnique({
-        select: {
-          decimals: true,
-          stockType: true,
-        },
-        where: {
-          tokenAddress: body.stockAddress,
-        },
-      });
+      const stockDetails = await findStock(body.stockAddress);
+      if (!stockDetails) {
+        res.status(404).json({
+          success: false,
+          message: "stock not found",
+        });
+        return;
+      }
       const responce = await this.tradeService.sellStock(
         body.stockAddress,
-        body.stockSymbol,
+        stockDetails.symbol,
         body.stockAmount,
         body.usdcAmount,
         req.user.solanaWalletId,
+        req.user.solanaWalletAddress,
         req.user.userId,
-        stockDetails?.decimals ?? 8,
-        stockDetails?.stockType ?? "USStock",
+        stockDetails.decimals,
+        stockDetails.stockType,
       );
       if (!responce) {
         res.status(404).json({
@@ -277,18 +232,15 @@ export class TradeController {
         });
         return;
       }
-      if (responce.status == "rejected" || responce.status == "failed") {
-        res.status(500).json({
-          success: false,
-          message: "transection failed",
-          status: responce.status,
-        });
+      if (responce.status === "failed") {
+        respondSwapFailure(res, responce);
+        return;
       }
       res.status(200).json({
         success: true,
         message: "sell responce",
         status: responce.status,
-        data: responce.responce,
+        data: responce.data,
       });
       return;
     } catch (error) {
@@ -312,7 +264,8 @@ export class TradeController {
         return;
       }
       const body: recurringBuyRequest = req.body;
-      if (Number(body.buyDate) > 31 || Number(body.buyDate) < 1) {
+      const buyDate = Number(body.buyDate);
+      if (!Number.isInteger(buyDate) || buyDate > 31 || buyDate < 1) {
         res.status(400).json({
           success: false,
           message: "invalid buy date",
@@ -320,10 +273,8 @@ export class TradeController {
         return;
       }
       if (
-        (body.stockAmount && body.usdcAmount) ||
-        (!body.stockAmount && !body.usdcAmount) ||
-        !body.stockAddress ||
-        !body.buyDate
+        invalidAmounts(body.stockAmount, body.usdcAmount) ||
+        !body.stockAddress
       ) {
         res.status(400).json({
           success: false,
@@ -336,13 +287,20 @@ export class TradeController {
         body.stockAddress,
         body.stockAmount,
         body.usdcAmount,
-        body.buyDate,
+        String(buyDate),
         req.user.userId,
       );
       if (!responce) {
         res.status(500).json({
           success: false,
           messgae: "request failed",
+        });
+        return;
+      }
+      if ("error" in responce) {
+        res.status(400).json({
+          success: false,
+          message: responce.error,
         });
         return;
       }
@@ -370,11 +328,7 @@ export class TradeController {
         return;
       }
       const body = req.body as buyOrSellIndexFunds;
-      if (
-        (body.indexFundAmount && body.usdcAmount) ||
-        (!body.indexFundAmount && !body.usdcAmount) ||
-        !body.indexFundId
-      ) {
+      if (invalidAmounts(body.indexFundAmount, body.usdcAmount) || !body.indexFundId) {
         res.status(400).json({
           success: false,
           message:
@@ -387,8 +341,8 @@ export class TradeController {
         body.indexFundAmount,
         body.usdcAmount,
         req.user.solanaWalletId,
-        req.user.userId,
-        req.user.solanaWalletAddress
+        req.user.id,
+        req.user.solanaWalletAddress,
       );
       if (!responce) {
         res.status(500).json({
@@ -416,7 +370,7 @@ export class TradeController {
     res: Response,
   ): Promise<void> => {
     try {
-      if (!req.user || !req.user.solanaWalletId) {
+      if (!req.user || !req.user.solanaWalletId || !req.user.solanaWalletAddress) {
         res.status(404).json({
           success: false,
           message: "User not found",
@@ -424,11 +378,7 @@ export class TradeController {
         return;
       }
       const body = req.body as buyOrSellIndexFunds;
-      if (
-        (body.indexFundAmount && body.usdcAmount) ||
-        (!body.indexFundAmount && !body.usdcAmount) ||
-        !body.indexFundId
-      ) {
+      if (invalidAmounts(body.indexFundAmount, body.usdcAmount) || !body.indexFundId) {
         res.status(400).json({
           success: false,
           message:
@@ -441,7 +391,8 @@ export class TradeController {
         body.indexFundAmount,
         body.usdcAmount,
         req.user.solanaWalletId,
-        req.user.userId
+        req.user.id,
+        req.user.solanaWalletAddress,
       );
       if (!responce) {
         res.status(500).json({
@@ -466,9 +417,78 @@ export class TradeController {
   };
 }
 
+function respondSwapFailure(res: Response, result: Extract<TradeSwapResult, { status: "failed" }>) {
+  const kind = result.kind;
+  if (kind === "unconfirmed") {
+    res.status(202).json({
+      success: false,
+      message: "Swap submitted but not confirmed yet, check your balance before retrying",
+      requestId: result.requestId,
+      signature: result.signature,
+    });
+    return;
+  }
+  if (kind === "rate_limited") {
+    res.status(429).json({
+      success: false,
+      message: "Jupiter rate limited, try again shortly",
+      code: result.code,
+    });
+    return;
+  }
+  if (kind === "insufficient_sol") {
+    res.status(400).json({
+      success: false,
+      message: "Insufficient SOL for network fees",
+      code: result.code,
+    });
+    return;
+  }
+  if (kind === "below_gasless_minimum") {
+    res.status(400).json({
+      success: false,
+      message: "Swap amount below Jupiter gasless minimum",
+      code: result.code,
+    });
+    return;
+  }
+  if (kind === "insufficient_funds") {
+    res.status(400).json({
+      success: false,
+      message: "Insufficient token balance for this swap",
+      code: result.code,
+    });
+    return;
+  }
+  res.status(500).json({
+    success: false,
+    message: result.error ?? "transection failed",
+    code: result.code,
+    kind,
+  });
+}
+
+function invalidAmounts(amount: unknown, usdcAmount: unknown) {
+  if (!amount === !usdcAmount) return true;
+  const value = Number(amount || usdcAmount);
+  return !Number.isFinite(value) || value <= 0;
+}
+
+function findStock(stockAddress: string) {
+  return prisma.stocks.findUnique({
+    select: {
+      decimals: true,
+      stockType: true,
+      symbol: true,
+    },
+    where: {
+      tokenAddress: stockAddress,
+    },
+  });
+}
+
 interface getQuoteRequest {
   stockAddress: string;
-  stockSymbol: string;
   usdcAmount: number | undefined;
   stockAmount: number | undefined;
 }

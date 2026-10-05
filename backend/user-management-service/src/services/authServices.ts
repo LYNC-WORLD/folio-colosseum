@@ -1,5 +1,12 @@
+import { Chain } from "../generated/enums";
+import { User, Wallet } from "../generated/client";
 import { verifyGoogleIdToken } from "../lib/google";
-import { createEVMWallet, createSolanaWallet, createUser } from "../lib/privy";
+import {
+  createEVMWallet,
+  createSolanaWallet,
+  createUser,
+  deleteUser,
+} from "../lib/privy";
 import { prisma } from "../lib/prisma";
 
 export class AuthService {
@@ -13,56 +20,93 @@ export class AuthService {
     const user = await prisma.user.findUnique({
       where: {
         email: email,
-        wallets: { some: { chain: "SOLANA" } },
       },
       include: {
         wallets: true,
       },
     });
-    console.log(user);
 
     if (!user) {
-      // Creating user
-      const privyUser = await createUser(subjectId, email, username);
-      const solanaWallet = await createSolanaWallet();
-      const evmWallet = await createEVMWallet();
+      const newUser = await this.createUserWithWallets(
+        subjectId,
+        email,
+        username,
+      );
+      return toLoginResponse(newUser, false);
+    }
+
+    const loginForm = await prisma.loginDetails.findUnique({
+      where: { email: email },
+    });
+    return toLoginResponse(user, !!loginForm);
+  }
+
+  private async createUserWithWallets(
+    subjectId: string,
+    email: string,
+    username: string,
+  ) {
+    // Creating user
+    const privyUser = await createUser(subjectId, email, username);
+    try {
+      const [solanaWallet, evmWallet] = await Promise.all([
+        createSolanaWallet(walletIdempotencyKey(subjectId, Chain.SOLANA)),
+        createEVMWallet(walletIdempotencyKey(subjectId, Chain.ETH)),
+      ]);
       // saving to db
-      const newUser = await prisma.user.create({
+      return await prisma.user.create({
         data: {
           email: email,
           userId: privyUser.userId,
           name: username,
           googleSubjectId: subjectId,
+          wallets: {
+            create: [
+              {
+                chain: Chain.SOLANA,
+                walletId: solanaWallet.walletId,
+                walletAddress: solanaWallet.address,
+              },
+              {
+                chain: Chain.ETH,
+                walletId: evmWallet.walletId,
+                walletAddress: evmWallet.address,
+              },
+            ],
+          },
+        },
+        include: {
+          wallets: true,
         },
       });
-      const solanaWalletDB = await prisma.wallet.create({
-        data: {
-          walletAddress: solanaWallet.address,
-          walletId: solanaWallet.walletId,
-          chain: "SOLANA",
-          userId: newUser.id,
-        },
-      });
-      const evmWalletDB = await prisma.wallet.create({
-        data: {
-          walletAddress: evmWallet.address,
-          walletId: evmWallet.walletId,
-          chain: "ETH",
-          userId: newUser.id,
-        },
-      });
-      return {
-        address: solanaWalletDB.walletAddress,
-        email: newUser.email,
-        name: newUser.name,
-        formFilled: false,
-      };
+    } catch (error) {
+      await deleteUser(privyUser.userId).catch(() => {});
+      throw error;
     }
-    return {
-      address: user.wallets[0].walletAddress,
-      email: user.email,
-      name: user.name,
-      formFilled: true,
-    };
   }
+
+}
+
+function walletIdempotencyKey(subjectId: string, chain: Chain) {
+  return `folio-wallet-${chain.toLowerCase()}-${subjectId}`;
+}
+
+function toLoginResponse(
+  user: User & { wallets: Wallet[] },
+  formFilled: boolean,
+) {
+  const solanaWallet = user.wallets.find(
+    (wallet) => wallet.chain === Chain.SOLANA,
+  );
+  const ethereumWallet = user.wallets.find(
+    (wallet) => wallet.chain === Chain.ETH,
+  );
+  return {
+    address: solanaWallet?.walletAddress,
+    solanaAddress: solanaWallet?.walletAddress,
+    ethereumAddress: ethereumWallet?.walletAddress,
+    email: user.email,
+    name: user.name,
+    formFilled: formFilled,
+  };
 }

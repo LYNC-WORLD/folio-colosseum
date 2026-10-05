@@ -33,7 +33,7 @@ export class StockController {
     }
   };
 
-  public getUSStockBySymbol = async (
+  public getStockBySymbol = async (
     req: Request,
     res: Response,
   ): Promise<void> => {
@@ -104,59 +104,6 @@ export class StockController {
       return;
     } catch (error) {
       console.log(error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  };
-
-  public getPreIPOsBySymbol = async (
-    req: Request,
-    res: Response,
-  ): Promise<void> => {
-    try {
-      const { stockSymbol } = req.params;
-
-      if (!stockSymbol || Array.isArray(stockSymbol)) {
-        res.status(400).json({
-          success: false,
-          message: "Invalid stock symbol",
-        });
-        return;
-      }
-
-      const userId = req.user?.userId;
-
-      if (!userId) {
-        res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-        return;
-      }
-
-      const stockDetails = await this.stockService.getStockDetails(
-        stockSymbol,
-        userId,
-      );
-
-      if (!stockDetails) {
-        res.status(404).json({
-          success: false,
-          message: "Stock not found",
-        });
-        return;
-      }
-
-      res.status(200).json({
-        success: true,
-        message: "Stock details fetched successfully",
-        data: stockDetails,
-      });
-    } catch (error) {
-      console.error("Get stock details error:", error);
-
       res.status(500).json({
         success: false,
         message: "Internal server error",

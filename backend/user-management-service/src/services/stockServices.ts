@@ -15,39 +15,11 @@ export class StockService {
     }
   }
 
-  public async getUSStockById(stockSymbol: string) {
-    try {
-      const stockDetails = await prisma.stocks.findFirst({
-        where: {
-          symbol: stockSymbol,
-        },
-      });
-      return stockDetails;
-    } catch (error) {
-      console.error(error);
-      return;
-    }
-  }
-
   public async getPreIPO() {
     try {
       const stockDetails = await prisma.stocks.findMany({
         where: {
           stockType: "PreIPO",
-        },
-      });
-      return stockDetails;
-    } catch (error) {
-      console.error(error);
-      return;
-    }
-  }
-
-  public async getPreIPOById(stockSymbol: string) {
-    try {
-      const stockDetails = await prisma.stocks.findFirst({
-        where: {
-          symbol: stockSymbol,
         },
       });
       return stockDetails;
@@ -88,25 +60,7 @@ export class StockService {
           },
         }),
 
-        prisma.trades.findMany({
-          where: {
-            stockAddress,
-            tradeType: "BUY",
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 3,
-          select: {
-            id: true,
-            userId: true,
-            stockAddress: true,
-            stockPrice: true,
-            investmentAmount: true,
-            tradeType: true,
-            createdAt: true,
-          },
-        }),
+        this.getLatestBuy(stockAddress),
       ]);
 
       return {
@@ -162,7 +116,9 @@ export class StockService {
         indexFund.stocks.forEach(stock => {
           totalPrice += Number(stock.price);
         });
-        indexFund.price = (totalPrice / indexFund.stocks.length).toString();
+        indexFund.price = (
+          totalPrice / (indexFund.stocks.length || 1)
+        ).toString();
       });
       return indexFunds;
     } catch (error) {

@@ -49,27 +49,18 @@ export async function authMiddleware(
       });
       return;
     }
-    const solanaWallet = user.wallets.find(
-      (wallet) => wallet.chain === Chain.SOLANA,
-    );
+    const { wallets, ...userData } = user;
+    const solanaWallet = wallets.find((wallet) => wallet.chain === Chain.SOLANA);
+    const ethWallet = wallets.find((wallet) => wallet.chain === Chain.ETH);
 
-    const ethWallet = user.wallets.find((wallet) => wallet.chain === Chain.ETH);
-
-    const userData = {
-      id: user.id,
-      userId: user.userId,
-      email: user.email,
-      name: user.name,
-      googleSubjectId: user.googleSubjectId,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+    // 3. Attach database user to request
+    req.user = {
+      ...userData,
       solanaWalletId: solanaWallet?.walletId,
       solanaWalletAddress: solanaWallet?.walletAddress,
       ethereumWalletId: ethWallet?.walletId,
       ethereumWalletAddress: ethWallet?.walletAddress,
     };
-    // 3. Attach database user to request
-    req.user = userData;
 
     // 4. Continue to controller
     next();

@@ -3,7 +3,8 @@ import { env } from "../config/env";
 
 export const solana = new Connection(env.RPC_URL!, "confirmed");
 
-const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+export const WSOL_MINT = "So11111111111111111111111111111111111111112";
 
 export async function getWalletTokens(walletAddress: string) {
   try {
@@ -75,7 +76,7 @@ export async function getWalletTokens(walletAddress: string) {
 export async function getUSDCBalance(walletAddress: string) {
   const owner = new PublicKey(walletAddress);
   const response = await solana.getParsedTokenAccountsByOwner(owner, {
-    mint: USDC_MINT,
+    mint: new PublicKey(USDC_MINT),
   });
   const balance = response.value.reduce((total, account) => {
     const amount = account.account.data.parsed.info.tokenAmount.uiAmount;

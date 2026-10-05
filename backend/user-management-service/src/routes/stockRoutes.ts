@@ -8,13 +8,13 @@ const stockController = new StockController();
 
 router.get("/us-stock", stockController.getUSStocks);
 
-router.get("/us-stock/:stockSymbol", authMiddleware, stockController.getUSStockBySymbol);
+router.get("/us-stock/:stockSymbol", authMiddleware, stockController.getStockBySymbol);
 
 router.get("/pre-ipo", authMiddleware, stockController.getPreIPOs);
 
-router.get("/pre-ipo/:stockSymbol",authMiddleware, stockController.getPreIPOsBySymbol);
+router.get("/pre-ipo/:stockSymbol",authMiddleware, stockController.getStockBySymbol);
 
-router.get("/trades,", stockController.getLatestBuy);
+router.get("/trades", stockController.getLatestBuy);
 
 router.get("/index-funds", stockController.getIndexFunds);
 

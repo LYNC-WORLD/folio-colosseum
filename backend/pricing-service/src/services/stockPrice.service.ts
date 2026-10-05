@@ -1,5 +1,4 @@
-import { dailyStartStockPriceCron } from "../cron/DailyStockPrice";
-import { prisma } from "../server";
+import { prisma } from "../lib/prisma";
 
 const XSTOCKS_API = "https://api.xstocks.fi/api/v2";
 const HYPERLIQUID_INFO_URL = "https://api.hyperliquid.xyz/info";
@@ -35,8 +34,6 @@ async function updateUSStocksPrice(updateDailyPrice: boolean) {
       name: true,
     },
   });
-  console.log(usStocks);
-
   console.log(`Updating ${usStocks.length} stocks...`);
 
   for (const stock of usStocks) {
@@ -60,22 +57,13 @@ async function updateUSStocksPrice(updateDailyPrice: boolean) {
         console.error(`No price returned for ${stock.symbol}`);
         continue;
       }
-      if (updateDailyPrice) {
-        await prisma.stocks.update({
-          where: {
-            tokenAddress: stock.tokenAddress,
-          },
-          data: {
-            marketOpenPrice: String(data.quote),
-          },
-        });
-      }
       await prisma.stocks.update({
         where: {
           tokenAddress: stock.tokenAddress,
         },
         data: {
           price: String(data.quote),
+          ...(updateDailyPrice && { marketOpenPrice: String(data.quote) }),
         },
       });
       console.log(`Updated usstock Prices`);
@@ -87,17 +75,6 @@ async function updateUSStocksPrice(updateDailyPrice: boolean) {
 }
 
 async function updatePreStocksPrice(updateDailyPrice: boolean) {
-  const preStocks = await prisma.stocks.findMany({
-    where: { stockType: "USStock" },
-    select: {
-      tokenAddress: true,
-      symbol: true,
-      name: true,
-    },
-  });
-
-  console.log(`Updating ${preStocks.length} stocks...`);
-
   try {
     const response = await fetch("https://prestocks.com/api/prestocks");
     if (!response.ok) {
@@ -121,22 +98,15 @@ async function updatePreStocksPrice(updateDailyPrice: boolean) {
         console.warn(`No PreStocks data found for ${dbStock.symbol}`);
         continue;
       }
-      if (updateDailyPrice) {
-        await prisma.stocks.update({
-          where: {
-            tokenAddress: dbStock.tokenAddress,
-          },
-          data: {
-            marketOpenPrice: String(apiStock.tokenPrice),
-          },
-        });
-      }
       await prisma.stocks.update({
         where: {
           tokenAddress: dbStock.tokenAddress,
         },
         data: {
           price: String(apiStock.tokenPrice),
+          ...(updateDailyPrice && {
+            marketOpenPrice: String(apiStock.tokenPrice),
+          }),
         },
       });
 

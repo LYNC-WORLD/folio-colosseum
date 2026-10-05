@@ -9,9 +9,7 @@ RUN npm install
 COPY . .
 
 # Dummy URL for Prisma Client generation during build
-ENV DATABASE_URL="postgresql://user:password@localhost:5432/dummy"
-
-RUN npx prisma generate
+RUN DATABASE_URL="postgresql://user:password@localhost:5432/dummy" npx prisma generate
 
 RUN npm run build
 

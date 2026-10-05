@@ -4,15 +4,15 @@ import {
   getHyperliquidSpotBalances,
   sellSolForUsdc,
 } from "../lib/hyperliquid";
+import { swap, fromRawAmount } from "../lib/jupiter";
 import { prisma } from "../lib/prisma";
-import {
-  buyStockOnChain,
-  getBuyQuote,
-  getTransectionResults,
-  sendSOl,
-} from "../lib/privy";
-import { getUSDCBalance } from "../lib/solana";
+import { getTransectionResults, sendSOl } from "../lib/privy";
+import { getUSDCBalance, USDC_MINT, WSOL_MINT } from "../lib/solana";
+import { toBaseUnits } from "../lib/tradeMath";
 import { decrypt, encrypt } from "../utils/encryption";
+
+const SOL_DECIMALS = 9;
+const SOL_TRANSFER_FEE_BUFFER = 0.002;
 
 export class HyperliquidService {
   public async depositToPerp(
@@ -28,30 +28,33 @@ export class HyperliquidService {
       if (usdcBalance < Number(depositAmount)) {
         return;
       }
-      const [depositAddress, quote] = await Promise.all([
-        getDepositAddress(ethereumAddress),
-        getBuyQuote("native", Number(depositAmount), solanaWalletId),
-      ]);
+      const depositAddress = await getDepositAddress(ethereumAddress);
       if (!depositAddress) {
         return;
       }
+
       // convert to sol
-      const stockSold = await buyStockOnChain(
-        "native",
-        Number(depositAmount),
+      const swapResult = await swap(
         solanaWalletId,
+        solanaAddress,
+        USDC_MINT,
+        WSOL_MINT,
+        toBaseUnits(Number(depositAmount), 6),
       );
-      const stockSoldConfirmation = await getTransectionResults(
-        solanaWalletId,
-        stockSold.id,
-      );
-      if (stockSoldConfirmation != "succeeded") {
+      if (!swapResult.succeeded || !swapResult.outputAmount) {
         return;
       }
+
+      const solOut = fromRawAmount(swapResult.outputAmount, SOL_DECIMALS);
+      const sendAmount = solOut - SOL_TRANSFER_FEE_BUFFER;
+      if (sendAmount <= 0) {
+        return;
+      }
+
       // send sol to hyperliquid
       const sentSOl = await sendSOl(
         solanaWalletId,
-        (Number(quote.minimum_output_amount) / 10 ** 9).toString(),
+        sendAmount.toString(),
         depositAddress,
       );
       const sentSOlConfirmation = await getTransectionResults(
@@ -104,7 +107,7 @@ export class HyperliquidService {
       }
       spotBalance = await getHyperliquidSpotBalances(ethereumAddress);
       const usdc = spotBalance.find((item) => item.coin === "USDC");
-      if (Number(solana?.total ?? 0) <= 0) {
+      if (Number(usdc?.total ?? 0) <= 0) {
         return;
       }
       return usdc?.total;

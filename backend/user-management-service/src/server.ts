@@ -1,5 +1,6 @@
 import express from "express";
 import { env } from "./config/env";
+import { startRecurringBuyCron } from "./cron/recurringBuy";
 
 import {authRoute} from "./routes/authRoutes";
 import { stockRoutes } from "./routes/stockRoutes";
@@ -24,6 +25,8 @@ app.get("/health", (_req, res) => {
 });
 
 const PORT = env.PORT;
+
+startRecurringBuyCron();
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

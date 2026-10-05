@@ -1,7 +1,5 @@
 import { prisma } from "../lib/prisma";
-import { getWalletTokens } from "../lib/solana";
-
-const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+import { getWalletTokens, USDC_MINT } from "../lib/solana";
 
 export class UserService {
   public async getBalance(walletAddress: string) {
@@ -111,7 +109,7 @@ export class UserService {
   public async cancelRecurringBuyRequest(userId: string, recurringId: string) {
     try {
       const data = await prisma.recurringBuyRequest.update({
-        where: { id: recurringId },
+        where: { id: recurringId, userId: userId },
         data: {
           isActive: false,
         },

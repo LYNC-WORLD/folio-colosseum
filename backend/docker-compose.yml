@@ -15,8 +15,6 @@ services:
       context: ./pricing-service
       dockerfile: Dockerfile
     container_name: pricing-service
-    ports:
-      - "3002:3002"
     env_file:
       - ./pricing-service/.env
     restart: unless-stopped

@@ -1,9 +1,40 @@
-import { env } from "../config/env";
+import { setTimeout as sleep } from "node:timers/promises";
+import { Prisma } from "../generated/client";
 import { prisma } from "../lib/prisma";
-import { getTransectionResults, privy, buyStockOnChain, sellStockOnChain } from "../lib/privy";
-import { getUSDCBalance } from "../lib/solana";
+import { getQuote, swap, isRetryable, fromRawAmount } from "../lib/jupiter";
+import type { SwapFailureKind, SwapResult } from "../lib/jupiter";
+import { getUSDCBalance, USDC_MINT } from "../lib/solana";
+import {
+  averagePrice,
+  costBasisAfterSell,
+  indexOrder,
+  toBaseUnits,
+} from "../lib/tradeMath";
 
 const XSTOCKS_API = "https://api.xstocks.fi/api/v2";
+const USDC_DECIMALS = 6;
+const SWAP_SPACING_MS = 1500;
+export const MIN_RECURRING_USDC = 5;
+
+export type TradeSwapResult =
+  | {
+      status: "succeeded";
+      data: {
+        signature?: string;
+        inputAmount?: string;
+        outputAmount?: string;
+        requestId?: string;
+        recorded: boolean;
+      };
+    }
+  | {
+      status: "failed";
+      kind?: SwapFailureKind;
+      code?: number;
+      error?: string;
+      requestId?: string;
+      signature?: string;
+    };
 
 export class TradeService {
   public async getQuoteBuy(
@@ -11,38 +42,19 @@ export class TradeService {
     stockSymbol: string,
     stockAmount: number | undefined,
     usdcAmount: number | undefined,
-    walletId: string,
     stockType: string,
   ) {
     try {
-      let price: number | undefined;
-      if (stockType == "USStock") {
-        price = await getUSStockPrice(stockSymbol);
-      } else {
-        price = Number(await getPreIPOStockPrice(stockAddress));
-      }
+      const price = await getStockPrice(stockType, stockAddress, stockSymbol);
       if (!price) {
         return;
       }
-      if (!usdcAmount) usdcAmount = 0;
-      if (stockAmount) {
-        usdcAmount = price * stockAmount;
-      }
-      const qoute = await privy
-        .wallets()
-        .swaps()
-        .quote(walletId, {
-          destination: {
-            asset_address: stockAddress,
-          },
-          source: {
-            asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-            caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-          },
-          base_amount: String(usdcAmount * 1000000).split(".")[0],
-          amount_type: "exact_input",
-        });
-      return qoute;
+      const usdc = stockAmount ? stockAmount * price : (usdcAmount ?? 0);
+      return await getQuote(
+        USDC_MINT,
+        stockAddress,
+        toBaseUnits(usdc, USDC_DECIMALS),
+      );
     } catch (error) {
       console.error(error);
       return;
@@ -54,44 +66,20 @@ export class TradeService {
     stockSymbol: string,
     stockAmount: number | undefined,
     usdcAmount: number | undefined,
-    walletId: string,
-    userId: string,
     tokenDecimal: number,
     stockType: string,
   ) {
     try {
-      let price: number | undefined;
-      if (stockType == "USStock") {
-        price = await getUSStockPrice(stockSymbol);
-      } else {
-        price = Number(await getPreIPOStockPrice(stockAddress));
-      }
-      console.log("Price: ", price);
-
+      const price = await getStockPrice(stockType, stockAddress, stockSymbol);
       if (!price) {
         return;
       }
-      if (!usdcAmount) usdcAmount = 0;
-      if (!stockAmount) {
-        stockAmount = usdcAmount / price;
-      }
-      const qoute = await privy
-        .wallets()
-        .swaps()
-        .quote(walletId, {
-          destination: {
-            asset_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-          },
-          source: {
-            asset_address: stockAddress,
-            caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-          },
-          base_amount: String(stockAmount * 10 ** tokenDecimal).split(".")[0],
-          amount_type: "exact_input",
-        });
-
-      // qoute.
-      return qoute;
+      const stocks = stockAmount || (usdcAmount ?? 0) / price;
+      return await getQuote(
+        stockAddress,
+        USDC_MINT,
+        toBaseUnits(stocks, tokenDecimal),
+      );
     } catch (error) {
       console.error(error);
       return;
@@ -104,84 +92,75 @@ export class TradeService {
     stockAmount: number | undefined,
     usdcAmount: number | undefined,
     walletId: string,
+    taker: string,
     userId: string,
     stockType: string,
-  ) {
-    try {
-      let price: number | undefined;
-      if (stockType == "USStock") {
-        price = await getUSStockPrice(stockSymbol);
-      } else {
-        price = Number(await getPreIPOStockPrice(stockAddress));
-      }
-      if (!price) {
-        return;
-      }
-      if (!usdcAmount) usdcAmount = 0;
-      if (stockAmount) {
-        usdcAmount = stockAmount * price;
-      } else {
-        stockAmount = usdcAmount / price;
-      }
-      const responce = await buyStockOnChain(
-        stockAddress,
-        usdcAmount,
-        walletId,
-      );
-      const result = await getTransectionResults(walletId, responce.id);
-      if (result != "succeeded") {
-        return { status: result };
-      }
-      const currentInvestedInStock = await prisma.investment.findFirst({
-        where: {
-          userId: userId,
-          stockAddress: stockAddress,
-        },
-      });
-      if (!currentInvestedInStock) {
-        await prisma.investment.create({
-          data: {
-            stockAddress: stockAddress,
-            stockAmount: stockAmount,
-            stockSymbol: stockSymbol,
-            userId: userId,
-            investmentAmount: usdcAmount,
-            averageStockPrice: price.toString(),
-          },
-        });
-      } else {
-        const investmentUSDCAmount =
-          currentInvestedInStock.investmentAmount + usdcAmount;
-        const investedStockAmount =
-          currentInvestedInStock.stockAmount + stockAmount;
-        const averageStockPrice =
-          (currentInvestedInStock.investmentAmount + usdcAmount) /
-          (currentInvestedInStock.stockAmount + stockAmount);
-        await prisma.investment.update({
-          where: {
-            id: currentInvestedInStock.id,
-          },
-          data: {
-            stockAmount: investedStockAmount,
-            investmentAmount: investmentUSDCAmount,
-            averageStockPrice: averageStockPrice.toString(),
-          },
-        });
-      }
-      await prisma.trades.create({
-        data: {
-          investmentAmount: usdcAmount,
-          stockAddress: stockAddress,
-          stockPrice: price,
-          tradeType: "BUY",
-          userId: userId,
-        },
-      });
-      return { responce: responce, status: result };
-    } catch (error) {
-      console.error(error);
+    tokenDecimal: number,
+  ): Promise<TradeSwapResult | undefined> {
+    const price = await getStockPrice(stockType, stockAddress, stockSymbol);
+    if (!price) {
       return;
     }
+    const usdc = stockAmount ? stockAmount * price : (usdcAmount ?? 0);
+    const result = await swap(
+      walletId,
+      taker,
+      USDC_MINT,
+      stockAddress,
+      toBaseUnits(usdc, USDC_DECIMALS),
+    );
+    if (!result.succeeded) {
+      return tradeFailure(result);
+    }
+
+    const usdcSpent = fromRawAmount(result.inputAmount, USDC_DECIMALS);
+    const stocks = fromRawAmount(result.outputAmount, tokenDecimal);
+    const fillPrice = stocks ? usdcSpent / stocks : price;
+
+    const recorded = await recordTrade(
+      { tradeType: "BUY", userId, stockAddress, usdcSpent, stocks, requestId: result.requestId, signature: result.signature },
+      async (tx) => {
+        const held = await tx.investment.findFirst({
+          where: { userId, stockAddress },
+        });
+        if (!held) {
+          await tx.investment.create({
+            data: {
+              stockAddress,
+              stockAmount: stocks,
+              stockSymbol,
+              userId,
+              investmentAmount: usdcSpent,
+              averageStockPrice: fillPrice.toString(),
+            },
+          });
+        } else {
+          await tx.investment.update({
+            where: { id: held.id },
+            data: {
+              stockAmount: held.stockAmount + stocks,
+              investmentAmount: held.investmentAmount + usdcSpent,
+              averageStockPrice: averagePrice(
+                held.stockAmount,
+                held.investmentAmount,
+                stocks,
+                usdcSpent,
+              ).toString(),
+            },
+          });
+        }
+        await tx.trades.create({
+          data: {
+            investmentAmount: usdcSpent,
+            stockAddress,
+            stockPrice: fillPrice,
+            tradeType: "BUY",
+            userId,
+          },
+        });
+      },
+    );
+    return tradeSuccess(result, recorded);
   }
 
   public async sellStock(
@@ -190,80 +169,62 @@ export class TradeService {
     stockAmount: number | undefined,
     usdcAmount: number | undefined,
     walletId: string,
+    taker: string,
     userId: string,
     tokenDecimal: number,
     stockType: string,
-  ) {
-    try {
-      let price: number | undefined;
-      if (stockType == "USStock") {
-        price = await getUSStockPrice(stockSymbol);
-      } else {
-        price = Number(await getPreIPOStockPrice(stockAddress));
-      }
-      console.log("price: ", price);
-      if (!price) {
-        return;
-      }
-      if (!usdcAmount) usdcAmount = 0;
-      if (!stockAmount) {
-        stockAmount = usdcAmount / price;
-      }
-      const responce = await sellStockOnChain(
-        stockAddress,
-        stockAmount,
-        walletId,
-        tokenDecimal,
-      );
-      const result = await getTransectionResults(walletId, responce.id);
-      if (result != "succeeded") {
-        return { status: result };
-      }
-      const currentInvestedInStock = await prisma.investment.findFirst({
-        where: {
-          userId: userId,
-          stockAddress: stockAddress,
-        },
-      });
-      if (!currentInvestedInStock) {
-        await prisma.investment.create({
-          data: {
-            stockAddress: stockAddress,
-            stockAmount: 0,
-            stockSymbol: stockSymbol,
-            userId: userId,
-            investmentAmount: 0,
-          },
-        });
-      } else {
-        const investmentUSDCAmount =
-          currentInvestedInStock.investmentAmount - usdcAmount;
-        const investedStockAmount =
-          currentInvestedInStock.stockAmount - stockAmount;
-        await prisma.investment.update({
-          where: {
-            id: currentInvestedInStock.id,
-          },
-          data: {
-            stockAmount: investedStockAmount,
-            investmentAmount: investmentUSDCAmount,
-          },
-        });
-      }
-      await prisma.trades.create({
-        data: {
-          investmentAmount: usdcAmount,
-          stockAddress: stockAddress,
-          stockPrice: price,
-          tradeType: "SELL",
-          userId: userId,
-        },
-      });
-      return { responce: responce, status: result };
-    } catch (error) {
-      console.error(error);
+  ): Promise<TradeSwapResult | undefined> {
+    const price = await getStockPrice(stockType, stockAddress, stockSymbol);
+    if (!price) {
       return;
     }
+    const stocks = stockAmount || (usdcAmount ?? 0) / price;
+    const result = await swap(
+      walletId,
+      taker,
+      stockAddress,
+      USDC_MINT,
+      toBaseUnits(stocks, tokenDecimal),
+    );
+    if (!result.succeeded) {
+      return tradeFailure(result);
+    }
+
+    const stocksSold = fromRawAmount(result.inputAmount, tokenDecimal);
+    const usdcReceived = fromRawAmount(result.outputAmount, USDC_DECIMALS);
+    const fillPrice = stocksSold ? usdcReceived / stocksSold : price;
+
+    const recorded = await recordTrade(
+      { tradeType: "SELL", userId, stockAddress, stocksSold, usdcReceived, requestId: result.requestId, signature: result.signature },
+      async (tx) => {
+        const held = await tx.investment.findFirst({
+          where: { userId, stockAddress },
+        });
+        if (held) {
+          await tx.investment.update({
+            where: { id: held.id },
+            data: {
+              stockAmount: Math.max(0, held.stockAmount - stocksSold),
+              investmentAmount: costBasisAfterSell(
+                held.stockAmount,
+                held.investmentAmount,
+                stocksSold,
+              ),
+            },
+          });
+        }
+        await tx.trades.create({
+          data: {
+            investmentAmount: usdcReceived,
+            stockAddress,
+            stockPrice: fillPrice,
+            tradeType: "SELL",
+            userId,
+          },
+        });
+      },
+    );
+    return tradeSuccess(result, recorded);
   }
 
   public async startRecurringBuy(
@@ -274,6 +235,23 @@ export class TradeService {
     userId: string,
   ) {
     try {
+      const stock = await prisma.stocks.findUnique({
+        where: { tokenAddress: stockAddress },
+        select: { symbol: true, stockType: true },
+      });
+      if (!stock) {
+        return { error: "stock not found" };
+      }
+      const usdc = usdcAmount
+        ? Number(usdcAmount)
+        : Number(stockAmount) *
+          (await getStockPrice(stock.stockType, stockAddress, stock.symbol));
+      if (!Number.isFinite(usdc)) {
+        return;
+      }
+      if (usdc < MIN_RECURRING_USDC) {
+        return { error: `Minimum recurring buy is $${MIN_RECURRING_USDC}` };
+      }
       const data = await prisma.recurringBuyRequest.create({
         data: {
           buyDate: buyDate,
@@ -296,114 +274,79 @@ export class TradeService {
     indexAmount: number | undefined,
     usdcAmount: number | undefined,
     walletId: string,
-    userId: string,
-    solanaAddress: string
+    userDbId: string,
+    taker: string,
   ) {
-    // Index details
     const indexDetails = await prisma.indexFunds.findUnique({
       where: { id: indexId },
       include: { stocks: true },
     });
-    // User details
-    const user = await prisma.user.findUnique({
-      where: { userId: userId, wallets: { some: { walletId: walletId } } },
-      include: {
-        wallets: true,
-      },
-    });
-    // {walletId: walletId}
-    if (!user) return;
-    // Get USDC balance
-    if (Number(usdcAmount) > (await getUSDCBalance(solanaAddress ?? "")))
-      return;
-    // Get Index Price
-    var combinedPrice: number = 0;
-    (indexDetails?.stocks ?? []).forEach(async (stock) => {
-      const price = await getStockPrice(
-        stock.stockType,
-        stock.tokenAddress,
-        stock.symbol,
-      );
-      combinedPrice += price;
-    });
-    const indexFundPrice = combinedPrice / (indexDetails?.stocks ?? []).length;
-    var usdcAmountPerStock = 0;
-    if (indexFundPrice == 0) {
-      return;
-    }
-    // check inputs and calculate usdc / stock
-    if (!usdcAmount && !indexAmount) return;
-    if (!usdcAmount && indexAmount) {
-      usdcAmountPerStock = indexAmount * indexFundPrice;
-    }
-    if (usdcAmount && !indexAmount) {
-      usdcAmountPerStock = usdcAmount / (indexDetails?.stocks ?? []).length;
-      indexAmount = usdcAmount / combinedPrice;
-    }
-    // Buy stock
-    (indexDetails?.stocks ?? []).forEach(async (stock) => {
-      const responce = await buyStockOnChain(
-        stock.tokenAddress,
-        usdcAmountPerStock,
-        walletId,
-      );
-      const result = await getTransectionResults(walletId, responce.id);
-      if (!(result == "succeeded")) {
-        console.log("Retrying buying");
+    if (!indexDetails) return;
+    const stocks = indexDetails.stocks;
+    const order = indexOrder(await getStockPrices(stocks), usdcAmount, indexAmount);
+    if (!order) return;
+    if (order.totalUsdc > (await getUSDCBalance(taker))) return;
 
-        const responce = await buyStockOnChain(
+    const results: SwapResult[] = [];
+    for (const [i, stock] of stocks.entries()) {
+      if (i) await sleep(SWAP_SPACING_MS);
+      results.push(
+        await jupiterSwapWithRetry(
+          walletId,
+          taker,
+          USDC_MINT,
           stock.tokenAddress,
-          usdcAmountPerStock,
-          user?.id,
-        );
-      }
-    });
-    // Check if user bought it before
-    const ownedIndexFund = await prisma.indexFundsHolding.findFirst({
-      where: {
-        indexId: indexId,
-        userId: user.id,
-      },
-    });
-    if (ownedIndexFund) {
-      const totalIndexFund =
-        Number(ownedIndexFund.indexQuantity) + (indexAmount ?? 0);
-      // Get average Price per stock
-      const averagePrice =
-        indexFundPrice * (indexAmount ?? 0) +
-        (Number(ownedIndexFund.indexQuantity) *
-          Number(ownedIndexFund.indexPrice)) /
-          totalIndexFund;
-      // UPdate prisma
-      await prisma.indexFundsHolding.updateMany({
-        where: {
-          indexId: indexId,
-          userId: user.id,
-        },
-        data: {
-          indexQuantity: totalIndexFund.toString(),
-          indexPrice: averagePrice.toString(),
-        },
-      });
-      return {
-        success: true,
-        message: "index fund bought",
-        data: { indexFundAmount: indexAmount },
-      };
+          toBaseUnits(order.usdcPerStock, USDC_DECIMALS),
+        ),
+      );
     }
-    // If first time buy, add to holdings
-    await prisma.indexFundsHolding.create({
-      data: {
-        indexId: indexId,
-        indexQuantity: (indexAmount ?? 0).toString(),
-        userId: user.userId,
-        indexPrice: indexFundPrice.toString(),
+    const succeeded = results.filter((result) => result.succeeded);
+    const bought = succeeded.length;
+    const unconfirmed = results.filter((r) => r.kind === "unconfirmed").length;
+    if (!bought) return unconfirmedIndexResult(unconfirmed);
+
+    const boughtAmount = (order.indexAmount * bought) / stocks.length;
+    const boughtCost = succeeded.reduce(
+      (sum, result) => sum + fromRawAmount(result.inputAmount, USDC_DECIMALS),
+      0,
+    );
+    const recorded = await recordTrade(
+      { tradeType: "INDEX_BUY", userDbId, indexId, boughtAmount, boughtCost, requestIds: succeeded.map((r) => r.requestId) },
+      async (tx) => {
+        const owned = await tx.indexFundsHolding.findFirst({
+          where: { indexId, userId: userDbId },
+        });
+        if (owned) {
+          const heldAmount = Number(owned.indexQuantity);
+          await tx.indexFundsHolding.update({
+            where: { id: owned.id },
+            data: {
+              indexQuantity: (heldAmount + boughtAmount).toString(),
+              indexPrice: averagePrice(
+                heldAmount,
+                heldAmount * Number(owned.indexPrice),
+                boughtAmount,
+                boughtCost,
+              ).toString(),
+            },
+          });
+        } else {
+          await tx.indexFundsHolding.create({
+            data: {
+              indexId,
+              indexQuantity: boughtAmount.toString(),
+              userId: userDbId,
+              indexPrice: (boughtCost / boughtAmount).toString(),
+            },
+          });
+        }
       },
-    });
+    );
+    const complete = bought == stocks.length;
     return {
-      success: true,
-      message: "index fund bought",
-      data: { indexFundAmount: indexAmount },
+      success: complete,
+      message: complete ? "index fund bought" : "index fund partially bought",
+      data: { indexFundAmount: boughtAmount, unconfirmed, recorded },
     };
   }
 
@@ -412,104 +355,155 @@ export class TradeService {
     indexAmount: number | undefined,
     usdcAmount: number | undefined,
     walletId: string,
-    userId: string,
+    userDbId: string,
+    taker: string,
   ) {
-    // Get index fund details
     const indexDetails = await prisma.indexFunds.findUnique({
       where: { id: indexId },
       include: { stocks: true },
     });
-    // Get user details
-    const user = await prisma.user.findUnique({
-      where: { userId: userId },
-    });
-    if (!user) return;
-    // Get stock price
-    var combinedPrice: number = 0;
-    (indexDetails?.stocks ?? []).forEach(async (stock) => {
-      const price = await getStockPrice(
-        stock.stockType,
-        stock.tokenAddress,
-        stock.symbol,
-      );
-      combinedPrice += price;
-    });
-    const indexFundPrice = combinedPrice / (indexDetails?.stocks ?? []).length;
+    if (!indexDetails) return;
+    const stocks = indexDetails.stocks;
+    const order = indexOrder(await getStockPrices(stocks), usdcAmount, indexAmount);
+    if (!order) return;
 
-    // var usdcAmountPerStock = 0;
-    if (indexFundPrice == 0) {
-      return;
-    }
-    // Get stock sell amount
-    if (!usdcAmount && !indexAmount) return;
-    if (!usdcAmount && indexAmount) {
-      usdcAmount = indexAmount * indexFundPrice;
-    }
-    if (usdcAmount && !indexAmount) {
-      indexAmount = usdcAmount / combinedPrice;
-    }
-    // Get index holding and check if user is selling more then he hold
     const indexHolding = await prisma.indexFundsHolding.findFirst({
       where: {
         indexId: indexId,
-        userId: user.id,
-      },
-      include: {
-        indexDatils: true,
+        userId: userDbId,
       },
     });
-    if (Number(indexHolding?.indexQuantity) > (indexAmount ?? 0)) return;
-    // Sell stock
-    (indexDetails?.stocks ?? []).forEach(async (stock) => {
-      const responce = await sellStockOnChain(
-        stock.tokenAddress,
-        indexAmount ?? 0,
-        walletId,
-        stock.decimals,
-      );
-      const result = await getTransectionResults(walletId, responce.id);
-      if (!(result == "succeeded")) {
-        console.log("Retrying buying");
+    const heldAmount = Number(indexHolding?.indexQuantity ?? 0);
+    if (!indexHolding || heldAmount < order.indexAmount) return;
 
-        const responce = await sellStockOnChain(
-          stock.tokenAddress,
-          indexAmount ?? 0,
+    const results: SwapResult[] = [];
+    for (const [i, stock] of stocks.entries()) {
+      if (i) await sleep(SWAP_SPACING_MS);
+      results.push(
+        await jupiterSwapWithRetry(
           walletId,
-          stock.decimals,
-        );
-      }
-    });
-    // Update holding in db
-    const totalHolding = Number(indexHolding) - (indexAmount ?? 0);
-    prisma.indexFundsHolding.updateMany({
-      where: {
-        indexId: indexId,
-        userId: user.id,
+          taker,
+          stock.tokenAddress,
+          USDC_MINT,
+          toBaseUnits(order.stockAmounts[i], stock.decimals),
+        ),
+      );
+    }
+    const sold = results.filter((result) => result.succeeded).length;
+    const unconfirmed = results.filter((r) => r.kind === "unconfirmed").length;
+    if (!sold) return unconfirmedIndexResult(unconfirmed);
+
+    const soldAmount = (order.indexAmount * sold) / stocks.length;
+    const recorded = await recordTrade(
+      { tradeType: "INDEX_SELL", userDbId, indexId, soldAmount },
+      async (tx) => {
+        const holding = await tx.indexFundsHolding.findUniqueOrThrow({
+          where: { id: indexHolding.id },
+        });
+        await tx.indexFundsHolding.update({
+          where: { id: holding.id },
+          data: {
+            indexQuantity: Math.max(
+              0,
+              Number(holding.indexQuantity) - soldAmount,
+            ).toString(),
+          },
+        });
       },
-      data: {
-        indexQuantity: totalHolding.toString(),
-      },
-    });
+    );
+    const complete = sold == stocks.length;
     return {
-      success: true,
-      message: "index fund bought",
-      data: { indexFundAmount: indexAmount },
+      success: complete,
+      message: complete ? "index fund sold" : "index fund partially sold",
+      data: { indexFundAmount: soldAmount, unconfirmed, recorded },
     };
   }
 }
 
+function tradeSuccess(result: SwapResult, recorded: boolean): TradeSwapResult {
+  return {
+    status: "succeeded",
+    data: {
+      signature: result.signature,
+      inputAmount: result.inputAmount,
+      outputAmount: result.outputAmount,
+      requestId: result.requestId,
+      recorded,
+    },
+  };
+}
+
+function tradeFailure(result: SwapResult): TradeSwapResult {
+  return {
+    status: "failed",
+    kind: result.kind,
+    code: result.code,
+    error: result.error,
+    requestId: result.requestId,
+    signature: result.signature,
+  };
+}
+
+function unconfirmedIndexResult(unconfirmed: number) {
+  if (!unconfirmed) return;
+  return {
+    success: false,
+    message: "index fund swaps submitted but not confirmed",
+    data: { indexFundAmount: 0, unconfirmed, recorded: false },
+  };
+}
+
+async function recordTrade(
+  details: Record<string, unknown>,
+  write: (tx: Prisma.TransactionClient) => Promise<unknown>,
+) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await prisma.$transaction(write);
+      return true;
+    } catch (error) {
+      console.error("Trade DB write failed:", { attempt, ...details }, error);
+    }
+  }
+  console.error("UNRECORDED TRADE, reconcile manually:", details);
+  return false;
+}
+
+async function jupiterSwapWithRetry(
+  walletId: string,
+  taker: string,
+  inputMint: string,
+  outputMint: string,
+  amount: string,
+) {
+  let result = await swap(walletId, taker, inputMint, outputMint, amount);
+  if (!result.succeeded && isRetryable(result)) {
+    await sleep(SWAP_SPACING_MS);
+    result = await swap(walletId, taker, inputMint, outputMint, amount);
+  }
+  return result;
+}
+
 // Price functions
+function getStockPrices(
+  stocks: { stockType: string; tokenAddress: string; symbol: string }[],
+) {
+  return Promise.all(
+    stocks.map((stock) =>
+      getStockPrice(stock.stockType, stock.tokenAddress, stock.symbol),
+    ),
+  );
+}
+
 async function getStockPrice(
   stockType: string,
   stockAddress: string,
   stockSymbol: string,
 ) {
-  var price;
-  if (stockType == "USStock") {
-    price = await getUSStockPrice(stockSymbol);
-  } else {
-    price = await getPreIPOStockPrice(stockAddress);
-  }
+  const price =
+    stockType == "USStock"
+      ? await getUSStockPrice(stockSymbol)
+      : await getPreIPOStockPrice(stockAddress);
   return Number(price);
 }
 

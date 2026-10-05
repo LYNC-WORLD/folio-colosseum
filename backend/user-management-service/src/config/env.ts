@@ -11,30 +11,12 @@ export const env = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
   PRIVY_AUTH_KEY: process.env.PRIVY_AUTH_KEY,
   PRIVY_AUTH_ADDRESS: process.env.PRIVY_AUTH_ADDRESS,
-  ENCRYPTION_KEY: process.env.ENCRYPTION_KEY
+  ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
+  JUPITER_API_KEY: process.env.JUPITER_API_KEY,
 };
 
-if (!env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is required!!");
-}
-if (!env.ENCRYPTION_KEY) {
-  throw new Error("ENCRYPTION_KEY is required!!");
-}
-if (!env.RPC_URL) {
-  throw new Error("RPC_URL is required!!");
-}
-if (!env.PRIVY_APP_ID) {
-  throw new Error("DATABASE_URL is required!!");
-}
-if (!env.PRIVY_APP_SECRET) {
-  throw new Error("RPC_URL is required!!");
-}
-if (!env.PRIVY_AUTH_KEY) {
-  throw new Error("PRIVY_AUTH_KEY is required!!");
-}
-if (!env.PRIVY_AUTH_ADDRESS) {
-  throw new Error("PRIVY_AUTH_KEY is required!!");
-}
-if (!env.GOOGLE_CLIENT_ID) {
-  throw new Error("RPC_URL is required!!");
+for (const [name, value] of Object.entries(env)) {
+  if (!value) {
+    throw new Error(`${name} is required!!`);
+  }
 }
