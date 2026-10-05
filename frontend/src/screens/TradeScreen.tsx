@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,7 +13,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Path } from "react-native-svg";
+import Svg, { Path, SvgUri } from "react-native-svg";
 import {
   useNavigation,
   useRoute,
@@ -60,6 +61,7 @@ import {
 } from "../hooks/perps";
 import { useBalances } from "../hooks/useBalances";
 import { errMsg } from "../services/hyperliquid/format";
+import { DEFAULT_PERP_MARKETS } from "../data/perpMarketsDefault";
 
 type PTab = "pos" | "ord" | "book" | "info";
 type TransferOpts = { dir?: "in" | "out"; amt?: number; then?: () => void };
@@ -137,8 +139,8 @@ export function TradeScreen() {
 
   const meta = metaOf(sym);
   const label = labelOf(sym);
-  const category: string = meta?.category ?? "stocks";
-  const name: string = meta?.name ?? sym;
+  const category: string = "stocks";
+  const name: string = sym;
   const open = meta ? mktOpen(meta) : true;
   const listed = !!live.market;
   const notListed = !markets.loading && !markets.error && !listed;
@@ -220,6 +222,10 @@ export function TradeScreen() {
     ? Math.min(DEFAULT_LEV, live.maxLeverage)
     : DEFAULT_LEV;
 
+  const selectedMarket = DEFAULT_PERP_MARKETS.find(
+    (market) => market.marketSymbol === label,
+  );
+
   return (
     <SafeAreaView style={tradeStyles.safe} edges={["top"]}>
       <ScrollView
@@ -229,7 +235,6 @@ export function TradeScreen() {
         // extra room: the dock is now two rows (balance + Long/Short)
         contentContainerStyle={{ paddingTop: 18, paddingBottom: bottom + 120 }}
       >
-        {/* header */}
         <View style={tradeStyles.head}>
           <Pressable
             style={tradeStyles.mktBtn}
@@ -240,10 +245,18 @@ export function TradeScreen() {
             accessibilityRole="button"
             accessibilityLabel="Change market"
           >
-            <View style={tradeStyles.logo}>
-              <Text style={tradeStyles.logoT}>
-                {logoTxt(meta?.symbol ?? sym)}
-              </Text>
+            <View
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 999,
+                backgroundColor: "#262C36",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+              }}
+            >
+              <SvgUri uri={selectedMarket!.imageUrl} width={42} height={42} />
             </View>
             <View style={{ gap: 3, flexShrink: 1 }}>
               <View style={tradeStyles.rowC}>
@@ -281,7 +294,6 @@ export function TradeScreen() {
           </Pressable>
         </View>
 
-        {/* price */}
         {markets.error && !listed ? (
           <View style={[tradeStyles.empty, { paddingHorizontal: 20 }]}>
             <Text style={tradeStyles.ttl}>Prices aren't loading</Text>
@@ -628,7 +640,7 @@ export function TradeScreen() {
           onDone={async () => {
             const side = sheet.side;
             try {
-              await onboarding.unlock(); // asks the wallet for 1–2 signatures
+              await onboarding.unlock();
               setSheet({ t: "ticket", side });
             } catch (e) {
               toast("Wallet approval needed", errMsg(e).toUpperCase());
@@ -643,8 +655,6 @@ export function TradeScreen() {
           initialSide={sheet.side}
           perpBal={bal.perp}
           spotBal={bal.spot}
-          // "Move money from spot" link, and the low-balance button.
-          // Reopens the ticket on the same side once the money has moved.
           onTransfer={(amt?: number) => {
             const side = sheet.side;
             openTransfer({
@@ -682,7 +692,6 @@ export function TradeScreen() {
               f,
             )
           }
-          // after a close, "Move to spot" sends the freed margin back
           onMoveToSpot={() =>
             openTransfer({
               dir: "out",

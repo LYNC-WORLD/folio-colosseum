@@ -95,7 +95,6 @@ const WORD_MS = 28;
 const PULSE_PREFER = [
   ["SPY", "VOO", "SP500"],
   ["QQQ", "NDX100"],
-  ["GLD", "XAUT"],
   ["NVDA"],
   ["TSLA"],
   ["AAPL"],
@@ -107,7 +106,6 @@ const SHORT: Record<string, string> = {
   QQQ: "NASDAQ-100",
   NDX100: "NASDAQ-100",
   GLD: "GOLD",
-  XAUT: "GOLD",
 };
 
 export function SignalsScreen() {

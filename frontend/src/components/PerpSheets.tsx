@@ -1,6 +1,3 @@
-// src/components/perps/PerpSheets.tsx
-// PositionSheet (close / add margin / TP-SL / reverse / share), UnlockSheet (first-trade quiz),
-// MarketPickerSheet, MarketStatusSheet.
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Path } from "react-native-svg";
+import Svg, { Path, SvgUri } from "react-native-svg";
 import { C, FONT } from "../theme";
 import { hTap } from "../lib/haptics";
 import {
@@ -39,13 +36,7 @@ import {
   usePerps,
   type Snap,
 } from "../data/perpsStore";
-import {
-  PERP_CATEGORIES,
-  PERP_MARKETS,
-  perpLabel,
-  searchPerps,
-  type PerpCategory,
-} from "../data/perps";
+import { perpLabel, searchPerps } from "../data/perps";
 import {
   Body,
   Btn,
@@ -58,6 +49,7 @@ import {
   Sheet,
   Tag,
 } from "./PerpUi";
+import { useTradablePerps } from "../hooks/useTradablePerps";
 
 const tone = (n: number) => (n >= 0 ? C.mint : C.loss);
 const clean = (t: string) => {
@@ -65,9 +57,14 @@ const clean = (t: string) => {
   const i = x.indexOf(".");
   return i < 0 ? x : x.slice(0, i + 1) + x.slice(i + 1).replace(/\./g, "");
 };
-const code = (sym: string) => sym.replace(/[^A-Z0-9]/g, "").slice(0, 3);
-
-function Logo({ sym, size = 42 }: { sym: string; size?: number }) {
+function Logo({
+  imageUrl,
+  size = 42,
+}: {
+  sym: string;
+  imageUrl?: string;
+  size?: number;
+}) {
   return (
     <View
       style={{
@@ -77,20 +74,14 @@ function Logo({ sym, size = 42 }: { sym: string; size?: number }) {
         backgroundColor: "#262C36",
         alignItems: "center",
         justifyContent: "center",
+        overflow: "hidden",
       }}
     >
-      <Text
-        style={{
-          fontFamily: FONT.mono400,
-          fontSize: size > 40 ? 10.5 : 10,
-          color: C.ink2,
-        }}
-      >
-        {code(sym)}
-      </Text>
+      <SvgUri uri={imageUrl!} width={size} height={size} />
     </View>
   );
 }
+
 function Chip({
   label,
   on,
@@ -869,23 +860,18 @@ export function MarketPickerSheet({
   onPick: (sym: string) => void;
   onClose: () => void;
 }) {
-  const st = usePerps();
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState<"all" | PerpCategory>("all");
-  const list = useMemo(
-    () =>
-      searchPerps(
-        PERP_MARKETS.filter((m) => cat === "all" || m.category === cat),
-        q,
-      ),
-    [q, cat],
-  );
+  const { markets, error, refetch } = useTradablePerps();
+
+  const list = useMemo(() => searchPerps(markets, q), [markets, q]);
+
   return (
     <Sheet onClose={onClose}>
       <View style={{ gap: 6 }}>
         <Lbl>PERP MARKETS</Lbl>
-        <H2>Long or short any of {PERP_MARKETS.length}</H2>
+        <H2>Long or short any of {markets.length}</H2>
       </View>
+
       <View style={s.search}>
         <Svg
           width={18}
@@ -902,7 +888,7 @@ export function MarketPickerSheet({
         <TextInput
           value={q}
           onChangeText={setQ}
-          placeholder="NVDA, gold, S&P 500…"
+          placeholder="NVDA, Tesla, Apple…"
           placeholderTextColor={C.ink4}
           autoCorrect={false}
           autoCapitalize="none"
@@ -910,80 +896,73 @@ export function MarketPickerSheet({
           style={s.searchIn}
         />
       </View>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {PERP_CATEGORIES.map((c) => (
-          <Chip
-            key={c.key}
-            label={c.label}
-            on={c.key === cat}
-            onPress={() => setCat(c.key)}
-          />
-        ))}
-      </View>
+
       <View style={{ marginTop: -6 }}>
-        {list.length ? (
-          list.map((m, i) => {
-            const mark = st.marks[m.symbol].mark,
-              ch = changeOf(m.symbol);
-            return (
-              <Pressable
-                key={m.symbol}
-                onPress={() => {
-                  hTap();
-                  onPick(m.symbol);
-                }}
-                style={[
-                  s.mRow,
-                  i < list.length - 1 && {
-                    borderBottomWidth: 1,
-                    borderBottomColor: C.hair,
-                  },
-                ]}
-              >
-                <Logo sym={m.symbol} size={38} />
-                <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-                  <View style={[s.rowC, { gap: 7 }]}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.sans800,
-                        fontSize: 15,
-                        color: C.ink1,
-                      }}
-                    >
-                      {perpLabel(m)}
-                    </Text>
-                    {m.symbol === current ? <Tag label="VIEWING" /> : null}
-                  </View>
-                  <Text style={s.sub} numberOfLines={1}>
-                    {m.name} · {m.kind}
-                  </Text>
-                </View>
-                <View style={{ alignItems: "flex-end", gap: 3 }}>
+        {error ? (
+          <Pressable onPress={refetch}>
+            <Text style={[s.sub, { paddingVertical: 14, fontSize: 13.5 }]}>
+              Couldn't load markets. Tap to retry.
+            </Text>
+          </Pressable>
+        ) : list.length ? (
+          list.map((m, i) => (
+            <Pressable
+              key={m.symbol}
+              onPress={() => {
+                hTap();
+                onPick(m.symbol);
+              }}
+              style={[
+                s.mRow,
+                i < list.length - 1 && {
+                  borderBottomWidth: 1,
+                  borderBottomColor: C.hair,
+                },
+              ]}
+            >
+              <Logo sym={m.symbol} imageUrl={m.imageUrl} size={38} />
+              <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
+                <View style={[s.rowC, { gap: 7 }]}>
                   <Text
                     style={{
-                      fontFamily: FONT.mono400,
-                      fontSize: 13,
+                      fontFamily: FONT.sans800,
+                      fontSize: 15,
                       color: C.ink1,
                     }}
                   >
-                    {fmtPx(mark)}
+                    {m.symbol}
                   </Text>
-                  <Text
-                    style={{
-                      fontFamily: FONT.mono400,
-                      fontSize: 11.5,
-                      color: tone(ch),
-                    }}
-                  >
-                    {sPct(ch)}
-                  </Text>
+                  {m.symbol === current ? <Tag label="VIEWING" /> : null}
                 </View>
-              </Pressable>
-            );
-          })
+                <Text style={s.sub} numberOfLines={1}>
+                  {m.name} · up to {m.maxLev}x
+                </Text>
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 3 }}>
+                <Text
+                  style={{
+                    fontFamily: FONT.mono400,
+                    fontSize: 13,
+                    color: C.ink1,
+                  }}
+                >
+                  {fmtPx(m.mark)}
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: FONT.mono400,
+                    fontSize: 11.5,
+                    color: tone(m.change),
+                  }}
+                >
+                  {sPct(m.change)}
+                </Text>
+              </View>
+            </Pressable>
+          ))
         ) : (
           <Text style={[s.sub, { paddingVertical: 14, fontSize: 13.5 }]}>
-            No perp market for that yet.
+            No stock found for that.
           </Text>
         )}
       </View>

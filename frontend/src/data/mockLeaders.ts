@@ -32,7 +32,6 @@ export const INVESTORS: Investor[] = [
     holds: [
       ["NVDA", 31],
       ["SpaceX", 62],
-      ["XAUT", -2],
     ],
   },
   {
@@ -81,17 +80,6 @@ export const INVESTORS: Investor[] = [
     followers: "3.9K",
     color: "#7FD8A8",
     holds: [["NVDA", 22]],
-    friend: true,
-  },
-  {
-    id: "priya",
-    name: "Priya",
-    city: "MUMBAI",
-    ret: 24,
-    trades: 44,
-    followers: "3.1K",
-    color: "#7FD3E0",
-    holds: [["XAUT", 14]],
     friend: true,
   },
   {

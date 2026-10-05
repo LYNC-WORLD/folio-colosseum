@@ -134,7 +134,6 @@ const ALIASES: Record<string, string[]> = {
   "s&p": ["SPY", "VOO", "IVV", "SP500"],
   sp500: ["SPY", "VOO", "IVV", "SP500"],
   nasdaq: ["QQQ", "NDX100"],
-  gold: ["GLD", "XAUT"],
   spacex: ["SPACEX"],
 };
 
