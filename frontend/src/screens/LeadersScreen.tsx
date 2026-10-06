@@ -1,64 +1,38 @@
-// Social tab — prototype #s-leaders + #s-groups, joined by one switch
-//
-//   ( [ Leaderboard ]   Groups )            ← segmented, thumb slides
-//
-//   Leaderboard
-//   TOP INVESTORS
-//   This quarter                                ┐ rise in
-//   Ranked by median return, not by size. …     ┘
-//   [Global] [Friends]
-//   ┌ 01 (E) Emma   LONDON · 38 TRADES   +42% ┐  ← #1 has a mint ring
-//   ┌ 02 …                                    ┐  top three are cards
-//   04 (L) Lucas             FOLLOWING   +29%     rest are hairline rows
-//   ── (S) You                     3 positions
-//
-//   Groups (coming soon)
-//   GROUPS
-//   Buy together
-//   ┌ (A)(M)(C)(H)(O)(L)          COMING SOON ┐
-//   │ Pool one order with the people you trust │
-//   │ ①②③ how it works                         │
-//   │ [ Notify me when it launches ]           │  → "✓ We will let you know" + toast
-//   └──────────────────────────────────────────┘
+// Social tab: Leaderboard (live perp data, preloaded by LeaderboardProvider) + Groups (coming soon)
 
 import { useEffect, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useNavigation, useScrollToTop } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useScrollToTop } from "@react-navigation/native";
 
 import { useAuth } from "../context";
-import { useWallet } from "../context/WalletContext";
-import type { LeadersStackParamList } from "../navigation/LeadersStack";
+import { useLeaderboard } from "../context/LeaderboardContext";
 import { useTabBarSpace } from "../navigation/TabBar";
 import { C, FONT, TYPE, em } from "../theme";
-import { Badge, Button, Chip, PressScale, Rise } from "../components/ui";
+import { Badge, Button, PressScale, Rise } from "../components/ui";
 import { Segmented } from "../components/Segmented";
 import { useSplashDone } from "../components/SplashIntro";
 import { useToast } from "../components/Toast";
-import {
-  LEADERS_ARE_SAMPLE,
-  useLeaders,
-  type Investor,
-  type LeaderFilter,
-} from "../data/mockLeaders";
-import { useFollowing } from "../lib/follows";
-import { hTap } from "../lib/haptics";
+import { PerpLeaderboardEntry } from "../services";
 
-type Nav = NativeStackNavigationProp<LeadersStackParamList, "LeadersMain">;
 type Section = "leaders" | "groups";
 
 const SECTIONS = [
   ["leaders", "Leaderboard"],
   ["groups", "Groups"],
 ] as const;
-const FILTERS: LeaderFilter[] = ["Global", "Friends"];
 const NOTIFY_KEY = "folio.groupsNotify";
 
-// avatars on the coming-soon card (prototype MEM)
+// avatars on the coming-soon card
 const MEMBERS: [string, string][] = [
   ["A", "#E8A33D"],
   ["M", "#6FA8F5"],
@@ -72,6 +46,33 @@ const STEPS = [
   "Anyone proposes a buy: an asset, a share each, and a deadline.",
   "Everyone who is in pays their part, and it lands in their own Folio.",
 ];
+
+// ---------- helpers ----------
+
+const NEG = "#F0657A";
+const PALETTE = [
+  "#E8A33D",
+  "#6FA8F5",
+  "#F07F9B",
+  "#7FD8A8",
+  "#C79BF0",
+  "#F0A07F",
+];
+const colorFor = (name: string) => {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+};
+const fmtRet = (r: number | null) =>
+  r == null ? "—" : `${r > 0 ? "+" : ""}${r.toFixed(1)}%`;
+const retColor = (r: number | null) =>
+  r == null ? C.ink4 : r < 0 ? NEG : C.mint;
+const fmtUsd = (v: string) => {
+  const n = Number(v);
+  return `$${Number.isFinite(n) ? n.toFixed(2) : "0.00"}`;
+};
+
+// ---------- screen ----------
 
 export function LeadersScreen() {
   const bottom = useTabBarSpace();
@@ -100,7 +101,7 @@ export function LeadersScreen() {
           />
         </Rise>
 
-        {/* keyed by section: crossfades like the prototype's 'fade' screen change */}
+        {/* keyed by section: crossfades between the two tabs */}
         <Animated.View
           key={section}
           entering={FadeIn.duration(280)}
@@ -116,20 +117,20 @@ export function LeadersScreen() {
 // ---------- leaderboard ----------
 
 function Leaderboard() {
-  const nav = useNavigation<Nav>();
   const splashDone = useSplashDone();
   const { user } = useAuth();
-  const { tokens } = useWallet();
-  const following = useFollowing();
-  const [filter, setFilter] = useState<LeaderFilter>("Global");
-  const { investors } = useLeaders(filter);
+  const { entries, me, loading, error, refresh } = useLeaderboard();
   const initial = (user?.name ?? "").trim().charAt(0).toUpperCase() || "·";
+
+  // If data was already preloaded when this tab mounted, don't replay the stagger.
+  const preloaded = useRef(entries.length > 0).current;
+  const step = preloaded ? 0 : 45;
 
   return (
     <>
       <View style={{ gap: 8 }}>
         <Rise when={splashDone} duration={460} delay={55}>
-          <Text style={TYPE.lbl}>TOP INVESTORS</Text>
+          <Text style={TYPE.lbl}>TOP TRADERS</Text>
         </Rise>
         <Rise when={splashDone} duration={460} delay={110}>
           <Text style={TYPE.h1} accessibilityRole="header">
@@ -138,56 +139,42 @@ function Leaderboard() {
         </Rise>
         <Rise when={splashDone} duration={460} delay={165}>
           <Text style={TYPE.body}>
-            Ranked by median return, not by size. Follow anyone to see their
-            next move.
+            Ranked by return on deposits, not by size.
           </Text>
         </Rise>
       </View>
 
-      <Rise when={splashDone} duration={460} delay={220} style={s.chips}>
-        {FILTERS.map((f) => (
-          <Chip
-            key={f}
-            label={f}
-            on={f === filter}
-            onPress={() => setFilter(f)}
-          />
-        ))}
-      </Rise>
-
-      {/* keyed by filter: the list crossfades and re-cascades on every switch */}
-      <Animated.View
-        key={filter}
-        entering={FadeIn.duration(180)}
-        style={{ gap: 8 }}
-      >
-        {investors.length === 0 ? (
+      <View style={{ gap: 8 }}>
+        {loading && entries.length === 0 ? (
+          <ActivityIndicator color={C.mint} style={{ marginVertical: 24 }} />
+        ) : error && entries.length === 0 ? (
+          <PressScale onPress={refresh} accessibilityRole="button">
+            <Text style={TYPE.sub}>{error} · Tap to retry</Text>
+          </PressScale>
+        ) : entries.length === 0 ? (
           <Text style={TYPE.sub}>No one here yet.</Text>
         ) : (
-          investors.map((v, i) => (
+          entries.map((v, i) => (
             <Rise
-              key={v.id}
+              key={`${v.rank}-${v.displayName}`}
               when={splashDone}
-              delay={275 + i * 45}
+              delay={220 + i * step}
               duration={420}
             >
-              <LeaderRow
-                v={v}
-                i={i}
-                following={following.has(v.id)}
-                onPress={() => nav.navigate("Investor", { id: v.id })}
-              />
+              <LeaderRow v={v} />
             </Rise>
           ))
         )}
 
         <Rise
           when={splashDone}
-          delay={275 + investors.length * 45}
+          delay={220 + entries.length * step}
           duration={420}
         >
           <View style={s.you}>
-            <Text style={s.rankDim}>—</Text>
+            <Text style={s.rankDim}>
+              {me?.rank != null ? String(me.rank).padStart(2, "0") : "—"}
+            </Text>
             <View
               style={[
                 s.av,
@@ -198,46 +185,34 @@ function Leaderboard() {
                 {initial}
               </Text>
             </View>
-            <Text style={[TYPE.ttl, { flex: 1, fontFamily: FONT.sans600 }]}>
-              You
-            </Text>
-            <Text style={s.youMeta}>
-              {tokens.length} {tokens.length === 1 ? "position" : "positions"}
-            </Text>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={[TYPE.ttl, { fontFamily: FONT.sans600 }]}>You</Text>
+              {me && me.rank == null ? (
+                <Text style={s.meta}>UNRANKED</Text>
+              ) : null}
+            </View>
+            <Text style={s.youMeta}>{me ? fmtUsd(me.accountValue) : "—"}</Text>
+            {me?.returnPercent != null ? (
+              <Text style={[s.ret, { color: retColor(me.returnPercent) }]}>
+                {fmtRet(me.returnPercent)}
+              </Text>
+            ) : null}
           </View>
         </Rise>
-      </Animated.View>
-
-      {LEADERS_ARE_SAMPLE ? (
-        <Text style={s.foot}>SAMPLE RANKINGS · LIVE DATA COMING SOON</Text>
-      ) : null}
+      </View>
     </>
   );
 }
 
-function LeaderRow({
-  v,
-  i,
-  following,
-  onPress,
-}: {
-  v: Investor;
-  i: number;
-  following: boolean;
-  onPress: () => void;
-}) {
-  const top = i < 3;
-  const first = i === 0;
+function LeaderRow({ v }: { v: PerpLeaderboardEntry }) {
+  const top = v.rank <= 3;
+  const first = v.rank === 1;
+  const name = v.displayName?.trim() || "Anonymous";
   return (
-    <PressScale
-      scaleTo={0.985}
-      onPress={() => {
-        hTap();
-        onPress();
-      }}
+    <View
       style={[top ? s.card : s.row, first && s.first]}
-      accessibilityRole="button"
-      accessibilityLabel={`Rank ${i + 1}, ${v.name}, plus ${v.ret} percent${following ? ", following" : ""}`}
+      accessible
+      accessibilityLabel={`Rank ${v.rank}, ${name}, return ${fmtRet(v.returnPercent)}`}
     >
       <Text
         style={[
@@ -245,7 +220,7 @@ function LeaderRow({
           { fontSize: top ? 12 : 11, color: first ? C.mint : C.ink4 },
         ]}
       >
-        {String(i + 1).padStart(2, "0")}
+        {String(v.rank).padStart(2, "0")}
       </Text>
       <View
         style={[
@@ -253,23 +228,31 @@ function LeaderRow({
           {
             width: top ? 34 : 30,
             height: top ? 34 : 30,
-            backgroundColor: v.color,
+            backgroundColor: colorFor(name),
           },
         ]}
       >
-        <Text style={[s.avText, { fontSize: top ? 14 : 12 }]}>{v.name[0]}</Text>
+        <Text style={[s.avText, { fontSize: top ? 14 : 12 }]}>
+          {name.charAt(0).toUpperCase()}
+        </Text>
       </View>
       <View style={{ flex: 1, gap: 3 }}>
-        <Text style={TYPE.ttl}>{v.name}</Text>
+        <Text style={TYPE.ttl} numberOfLines={1}>
+          {name}
+        </Text>
         {top ? (
-          <Text style={s.meta}>
-            {v.city} · {v.trades} TRADES
-          </Text>
+          <Text style={s.meta}>{fmtUsd(v.accountValue)} VALUE</Text>
         ) : null}
       </View>
-      {following ? <Badge label="FOLLOWING" variant="mint" /> : null}
-      <Text style={[s.ret, { fontSize: top ? 15 : 13 }]}>+{v.ret}%</Text>
-    </PressScale>
+      <Text
+        style={[
+          s.ret,
+          { fontSize: top ? 15 : 13, color: retColor(v.returnPercent) },
+        ]}
+      >
+        {fmtRet(v.returnPercent)}
+      </Text>
+    </View>
   );
 }
 
@@ -394,7 +377,6 @@ function SoonGlow() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.ground },
   page: { paddingTop: 22, paddingHorizontal: 20, gap: 20 },
-  chips: { flexDirection: "row", gap: 8 },
 
   card: {
     minHeight: 68,
@@ -444,14 +426,6 @@ const s = StyleSheet.create({
     gap: 12,
   },
   youMeta: { fontFamily: FONT.mono400, fontSize: 12, color: C.ink3 },
-
-  foot: {
-    textAlign: "center",
-    fontFamily: FONT.mono400,
-    fontSize: 9.5,
-    letterSpacing: em(9.5, 0.16),
-    color: C.ink4,
-  },
 
   soon: {
     gap: 18,

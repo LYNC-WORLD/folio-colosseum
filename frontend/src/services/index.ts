@@ -6,3 +6,4 @@ export * from "./trade";
 export * from "./chartService";
 export * from "./user";
 export * from "./onboarding";
+export * from "./leaderboard";
