@@ -130,6 +130,8 @@ export class PerpTradeService {
         grouping = "normalTpsl";
       }
       // Placing batch order
+      console.log(JSON.stringify(batchOrder));
+      
       const marketOrder = await client.order({
         orders: batchOrder,
         grouping: grouping,
