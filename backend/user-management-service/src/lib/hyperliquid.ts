@@ -6,19 +6,24 @@ import {
 } from "@nktkas/hyperliquid/utils";
 import { Signature, Wallet } from "ethers";
 import { privateKeyToAccount } from "viem/accounts";
-import { privy } from "./privy";
+import { getTransectionResults, privy, sendSOl } from "./privy";
 import { env } from "../config/env";
+import { getUSDCBalance, USDC_MINT, WSOL_MINT } from "./solana";
+import { fromRawAmount, swap } from "./jupiter";
+import { toBaseUnits } from "./tradeMath";
 import { prisma } from "./prisma";
+import { decrypt, encrypt } from "../utils/encryption";
 
 export const hyperliquidTransport = new HttpTransport();
 export const hyperliquidInfoClient = new InfoClient({
   transport: hyperliquidTransport,
 });
 
-const HYPERLIQUID_INFO_URL = "https://api.hyperliquid.xyz/info";
-
 const HYPERLIQUID_DEPOSIT_URL =
   "https://api.hyperunit.xyz/gen/solana/hyperliquid/sol";
+
+const SOL_DECIMALS = 9;
+const SOL_TRANSFER_FEE_BUFFER = 0.002;
 
 export async function getDepositAddress(ethAddress: string) {
   try {
@@ -43,29 +48,11 @@ export async function getDepositAddress(ethAddress: string) {
   }
 }
 
-export async function getHyperliquidSpotBalances(
-  walletAddress: string,
-): Promise<HyperliquidSpotBalance[]> {
+export async function getHyperliquidSpotBalances(walletAddress: string) {
   try {
-    const response = await fetch(HYPERLIQUID_INFO_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        type: "spotClearinghouseState",
-        user: walletAddress,
-      }),
+    const data = await hyperliquidInfoClient.spotClearinghouseState({
+      user: walletAddress,
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      throw new Error(`Hyperliquid API error ${response.status}: ${errorText}`);
-    }
-
-    const data = (await response.json()) as HyperliquidSpotBalanceResponse;
-
     return data.balances;
   } catch (error) {
     console.error("Failed to fetch Hyperliquid spot balances:", error);
@@ -203,18 +190,131 @@ export async function getBestPriceFromOrderBook(
     limitPrice: isBuy ? Number(asks[0].px) * 1.1 : Number(bids[0].px) * 0.9,
   };
 }
-interface HyperliquidSpotBalance {
-  coin: string;
-  token: number;
-  total: string;
-  hold: string;
-  entryNtl: string;
+
+export async function depositToHyperliquid(
+  userId: string,
+  depositAmount: string,
+  solanaAddress: string,
+  solanaWalletId: string,
+  ethereumAddress: string,
+  ethereumWalletId: string,
+) {
+  try {
+    // check balance
+    const usdcBalance = await getUSDCBalance(solanaAddress);
+    if (usdcBalance < Number(depositAmount)) {
+      return;
+    }
+    const depositAddress = await getDepositAddress(ethereumAddress);
+    if (!depositAddress) {
+      return;
+    }
+
+    // convert to sol
+    const swapResult = await swap(
+      solanaWalletId,
+      solanaAddress,
+      USDC_MINT,
+      WSOL_MINT,
+      toBaseUnits(Number(depositAmount), 6),
+    );
+    if (!swapResult.succeeded || !swapResult.outputAmount) {
+      return;
+    }
+
+    const solOut = fromRawAmount(swapResult.outputAmount, SOL_DECIMALS);
+    const sendAmount = solOut - SOL_TRANSFER_FEE_BUFFER;
+    if (sendAmount <= 0) {
+      return;
+    }
+
+    // send sol to hyperliquid
+    const sentSOl = await sendSOl(
+      solanaWalletId,
+      sendAmount.toString(),
+      depositAddress,
+    );
+    const sentSOlConfirmation = await getTransectionResults(
+      solanaWalletId,
+      sentSOl.id,
+    );
+    if (sentSOlConfirmation != "succeeded") {
+      return;
+    }
+    await prisma.depositRequest.create({
+      data: {
+        userId: userId,
+        walletAddress: ethereumAddress,
+        walletId: ethereumWalletId,
+        depositAmount: depositAmount,
+      },
+    });
+    // request return
+  } catch (error) {
+    console.error("error while deposit: ", error);
+  }
 }
 
-interface HyperliquidSpotBalanceResponse {
-  balances: HyperliquidSpotBalance[];
+export async function checkDepositUSOL(ethereumAddress: string) {
+  // verify sol in spot account
+  let spotBalance = await getHyperliquidSpotBalances(ethereumAddress);
+  const solana = spotBalance.find((item) => item.coin === "USOL");
+  if (Number(solana?.total ?? 0) <= 0) {
+    return true;
+  }
+  return false;
 }
 
+export async function convertUSOL(
+  ethereumAddress: string,
+  ethereumWalletId: string,
+): Promise<boolean> {
+  let spotBalance = await getHyperliquidSpotBalances(ethereumAddress);
+  const solana = spotBalance.find((item) => item.coin === "USOL");
+  if (Number(solana?.total ?? 0) <= 0) {
+    return false;
+  }
+  // convert sol to usdc
+  const walletDetails = await prisma.wallet.findFirst({
+    where: { walletId: ethereumWalletId },
+    include: {
+      hyperLiquidDetails: true,
+    },
+  });
+
+  let agentSecret;
+  if (!walletDetails?.hyperLiquidDetails) {
+    const agent = await createAgentWallet(ethereumWalletId);
+    if (!agent.result.ok) {
+      return false;
+    }
+    agentSecret = agent.apiSecret;
+    const encryptedApiSecret = encrypt(agent.apiSecret);
+    await prisma.hyperLiquidDetails.create({
+      data: {
+        agentApiKey: agent.apiKey,
+        agentApiSecret: encryptedApiSecret,
+        walletId: ethereumWalletId,
+      },
+    });
+  } else {
+    const encryptedPrivateKey = walletDetails.hyperLiquidDetails.agentApiSecret;
+    agentSecret = decrypt(encryptedPrivateKey);
+  }
+  const sellSOL = await sellSolForUsdc(
+    (solana?.total ?? 0).toString(),
+    agentSecret,
+  );
+  if (sellSOL.status != "ok") {
+    return false;
+  }
+  spotBalance = await getHyperliquidSpotBalances(ethereumAddress);
+  const usdc = spotBalance.find((item) => item.coin === "USDC");
+  if (Number(usdc?.total ?? 0) <= 0) {
+    return false;
+  }
+  return true;
+}
 interface depositAddressResponce {
   address?: string;
   [key: string]: any;

@@ -2,6 +2,7 @@ import express from "express";
 import { env } from "./config/env";
 import { startRecurringBuyCron } from "./cron/recurringBuy";
 import { startPerpLeaderboardCron } from "./cron/perpLeaderboard";
+import { startPerpDepositCron } from "./cron/hyperLiquidDepositRequest";
 
 import {authRoute} from "./routes/authRoutes";
 import { stockRoutes } from "./routes/stockRoutes";
@@ -30,6 +31,7 @@ const PORT = env.PORT;
 
 startRecurringBuyCron();
 startPerpLeaderboardCron();
+startPerpDepositCron();
 
 app.use("/api/auth", authRoute);
 app.use("/api/stocks", stockRoutes);

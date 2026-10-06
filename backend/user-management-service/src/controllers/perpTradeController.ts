@@ -219,6 +219,10 @@ export class PerpTradeController {
     }
   };
 
+  // place tp sl
+
+  // close position
+
   public getOpenOrders = async (req: Request, res: Response): Promise<void> => {
     try {
       if (!req.user || !req.user.solanaWalletId || !req.user.ethereumWalletId) {
