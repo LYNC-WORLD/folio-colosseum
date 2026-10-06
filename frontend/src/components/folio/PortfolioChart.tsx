@@ -1,6 +1,3 @@
-// Folio's big chart (prototype #fChartWrap): full-width, dotted grid behind,
-// smooth mint line that draws itself (1s), gradient fill, pinging end dot,
-// drag to scrub (reports the index so the hero number can follow).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
@@ -14,7 +11,15 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Svg, { Circle, Defs, LinearGradient, Path, Pattern, Rect, Stop } from "react-native-svg";
+import Svg, {
+  Circle,
+  Defs,
+  LinearGradient,
+  Path,
+  Pattern,
+  Rect,
+  Stop,
+} from "react-native-svg";
 import { C } from "../../theme";
 import { timing } from "../../theme/motion";
 import { hSelect } from "../../lib/haptics";
@@ -40,7 +45,11 @@ function smoothPath(pts: [number, number][]) {
   return d;
 }
 
-type Props = { points: SeriesPoint[]; onScrub: (index: number | null) => void; replayKey: string };
+type Props = {
+  points: SeriesPoint[];
+  onScrub: (index: number | null) => void;
+  replayKey: string;
+};
 
 export function PortfolioChart({ points, onScrub, replayKey }: Props) {
   const [width, setWidth] = useState(0);
@@ -48,20 +57,93 @@ export function PortfolioChart({ points, onScrub, replayKey }: Props) {
 
   const geo = useMemo(() => {
     if (width === 0 || points.length < 2) return null;
-    const vs = points.map((p) => p.v);
+
+    // Remove invalid points before calculating min/max or SVG coordinates.
+    const validPoints = points.filter(
+      (p) => Number.isFinite(p.t) && Number.isFinite(p.v),
+    );
+
+    if (validPoints.length < 2) return null;
+
+    const vs = validPoints.map((p) => p.v);
+
     const lo = Math.min(...vs);
     const hi = Math.max(...vs);
-    const pad = (hi - lo) * 0.18 || Math.max(1, hi * 0.02);
-    const W = width - 14;
-    const y = (v: number) => TOP + (1 - (v - (lo - pad)) / (hi + pad - (lo - pad))) * (H - TOP - BOT);
-    const pts = vs.map((v, i) => [(i / (vs.length - 1)) * W, y(v)] as [number, number]);
+
+    // Extra safety.
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+      return null;
+    }
+
+    const valueRange = hi - lo;
+
+    const pad =
+      valueRange > 0 ? valueRange * 0.18 : Math.max(1, Math.abs(hi) * 0.02);
+
+    const chartLo = lo - pad;
+    const chartHi = hi + pad;
+    const chartRange = chartHi - chartLo;
+
+    if (!Number.isFinite(chartRange) || chartRange <= 0) {
+      return null;
+    }
+
+    const W = Math.max(1, width - 14);
+    const chartHeight = H - TOP - BOT;
+
+    const y = (v: number) => {
+      const normalized = (v - chartLo) / chartRange;
+
+      if (!Number.isFinite(normalized)) {
+        return H / 2;
+      }
+
+      return TOP + (1 - normalized) * chartHeight;
+    };
+
+    const pts = validPoints.map((p, i) => {
+      const x =
+        validPoints.length === 1 ? 0 : (i / (validPoints.length - 1)) * W;
+
+      const yy = y(p.v);
+
+      return [Number.isFinite(x) ? x : 0, Number.isFinite(yy) ? yy : H / 2] as [
+        number,
+        number,
+      ];
+    });
+
+    if (pts.length < 2) return null;
+
     const line = smoothPath(pts);
-    const area = `${line} L${pts[pts.length - 1][0].toFixed(1)},${H} L0,${H} Z`;
-    // curve length ≈ polyline length (+5% for the bends) — used for the draw-in dash
+
+    const last = pts[pts.length - 1];
+
+    const area = `${line} ` + `L${last[0].toFixed(1)},${H} ` + `L0,${H} Z`;
+
     let len = 0;
-    for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+
+    for (let i = 1; i < pts.length; i++) {
+      const dx = pts[i][0] - pts[i - 1][0];
+      const dy = pts[i][1] - pts[i - 1][1];
+
+      len += Math.hypot(dx, dy);
+    }
+
     len *= 1.05;
-    return { pts, line, area, W, len };
+
+    // Never allow an invalid dash length.
+    if (!Number.isFinite(len) || len <= 0) {
+      len = 1;
+    }
+
+    return {
+      pts,
+      line,
+      area,
+      W,
+      len,
+    };
   }, [points, width]);
 
   // draw-in: dash the line by its own length, then slide the offset to 0
@@ -79,18 +161,32 @@ export function PortfolioChart({ points, onScrub, replayKey }: Props) {
   }, [replayKey, geo != null]);
 
   const len = geo?.len ?? 1;
-  const lineProps = useAnimatedProps(() => ({ strokeDashoffset: (1 - draw.value) * len }));
+  const lineProps = useAnimatedProps(() => ({
+    strokeDashoffset: (1 - draw.value) * len,
+  }));
   const areaProps = useAnimatedProps(() => ({ opacity: fill.value }));
 
   const reduced = useReducedMotion();
   const ping = useSharedValue(reduced ? 1 : 0); // 1 = ring fully faded out
   useEffect(() => {
     if (reduced) return; // Reduce Motion: keep the dot, drop the pulsing ring
-    ping.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.bezier(0.22, 0.61, 0.36, 1) }), -1, false);
+    ping.value = withRepeat(
+      withTiming(1, {
+        duration: 1800,
+        easing: Easing.bezier(0.22, 0.61, 0.36, 1),
+      }),
+      -1,
+      false,
+    );
   }, [reduced]);
   const scrubbing = active != null;
-  const dotStyle = useAnimatedStyle(() => ({ opacity: scrubbing ? 0 : dot.value }));
-  const pingStyle = useAnimatedStyle(() => ({ opacity: 1 - ping.value, transform: [{ scale: 0.6 + 1.6 * ping.value }] }));
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: scrubbing ? 0 : dot.value,
+  }));
+  const pingStyle = useAnimatedStyle(() => ({
+    opacity: 1 - ping.value,
+    transform: [{ scale: 0.6 + 1.6 * ping.value }],
+  }));
 
   // scrub
   const geoRef = useRef(geo);
@@ -101,7 +197,10 @@ export function PortfolioChart({ points, onScrub, replayKey }: Props) {
   const pick = (x: number) => {
     const g = geoRef.current;
     if (!g) return;
-    const i = Math.max(0, Math.min(g.pts.length - 1, Math.round((x / g.W) * (g.pts.length - 1))));
+    const i = Math.max(
+      0,
+      Math.min(g.pts.length - 1, Math.round((x / g.W) * (g.pts.length - 1))),
+    );
     if (i === last.current) return;
     last.current = i;
     setActive(i);
@@ -132,12 +231,23 @@ export function PortfolioChart({ points, onScrub, replayKey }: Props) {
 
   return (
     <GestureDetector gesture={pan}>
-      <View style={s.wrap} onLayout={(e) => setWidth(e.nativeEvent.layout.width)} accessibilityLabel="Total value over time">
+      <View
+        style={s.wrap}
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        accessibilityLabel="Total value over time"
+      >
         {width > 0 ? (
           <Svg width={width} height={H} style={StyleSheet.absoluteFill}>
             <Defs>
               {/* prototype: radial dots every 14px */}
-              <Pattern id="dots" x="7" y="7" width="14" height="14" patternUnits="userSpaceOnUse">
+              <Pattern
+                id="dots"
+                x="7"
+                y="7"
+                width="14"
+                height="14"
+                patternUnits="userSpaceOnUse"
+              >
                 <Circle cx="0" cy="0" r="1.1" fill="#1B2029" />
               </Pattern>
               <LinearGradient id="fg" x1="0" y1="0" x2="0" y2="1">
@@ -148,7 +258,11 @@ export function PortfolioChart({ points, onScrub, replayKey }: Props) {
             <Rect x="0" y="0" width={width} height={H} fill="url(#dots)" />
             {geo ? (
               <>
-                <AnimatedPath d={geo.area} fill="url(#fg)" animatedProps={areaProps} />
+                <AnimatedPath
+                  d={geo.area}
+                  fill="url(#fg)"
+                  animatedProps={areaProps}
+                />
                 <AnimatedPath
                   d={geo.line}
                   fill="none"
@@ -165,7 +279,14 @@ export function PortfolioChart({ points, onScrub, replayKey }: Props) {
         ) : null}
 
         {endPt ? (
-          <Animated.View pointerEvents="none" style={[s.endWrap, { left: endPt[0] - 7, top: endPt[1] - 7 }, dotStyle]}>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              s.endWrap,
+              { left: endPt[0] - 7, top: endPt[1] - 7 },
+              dotStyle,
+            ]}
+          >
             <Animated.View style={[s.ring, pingStyle]} />
             <View style={s.glow} />
             <View style={s.endDot} />
@@ -174,8 +295,14 @@ export function PortfolioChart({ points, onScrub, replayKey }: Props) {
 
         {act ? (
           <>
-            <View pointerEvents="none" style={[s.scrubLine, { left: act[0] }]} />
-            <View pointerEvents="none" style={[s.scrubDot, { left: act[0] - 6, top: act[1] - 6 }]} />
+            <View
+              pointerEvents="none"
+              style={[s.scrubLine, { left: act[0] }]}
+            />
+            <View
+              pointerEvents="none"
+              style={[s.scrubDot, { left: act[0] - 6, top: act[1] - 6 }]}
+            />
           </>
         ) : null}
       </View>
@@ -186,8 +313,22 @@ export function PortfolioChart({ points, onScrub, replayKey }: Props) {
 const s = StyleSheet.create({
   wrap: { height: H, marginHorizontal: -20 },
   endWrap: { position: "absolute", width: 14, height: 14 },
-  endDot: { position: "absolute", width: 14, height: 14, borderRadius: 999, backgroundColor: C.mint },
-  glow: { position: "absolute", left: -4, top: -4, width: 22, height: 22, borderRadius: 999, backgroundColor: "rgba(55,224,153,0.18)" },
+  endDot: {
+    position: "absolute",
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: C.mint,
+  },
+  glow: {
+    position: "absolute",
+    left: -4,
+    top: -4,
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    backgroundColor: "rgba(55,224,153,0.18)",
+  },
   ring: {
     position: "absolute",
     left: -4,
@@ -198,6 +339,20 @@ const s = StyleSheet.create({
     borderWidth: 2,
     borderColor: "rgba(55,224,153,0.45)",
   },
-  scrubLine: { position: "absolute", top: 0, bottom: 0, width: 1, backgroundColor: "rgba(255,255,255,0.22)" },
-  scrubDot: { position: "absolute", width: 12, height: 12, borderRadius: 999, backgroundColor: C.ink1, borderWidth: 3, borderColor: C.ground },
+  scrubLine: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  scrubDot: {
+    position: "absolute",
+    width: 12,
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: C.ink1,
+    borderWidth: 3,
+    borderColor: C.ground,
+  },
 });
