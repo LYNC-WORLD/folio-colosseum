@@ -10,6 +10,7 @@ import { tradeRoutes } from "./routes/tradeRoutes";
 import { userRoutes } from "./routes/userRoutes";
 import { perpTradeRoutes } from "./routes/perpTradeRoutes";
 import { leaderboardRoutes } from "./routes/leaderboardRoutes";
+import { depositRoute } from "./routes/depositRoutes";
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use("/api/trade", tradeRoutes);
 app.use("/api/perp-trade", perpTradeRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
+app.use("/api/deposit", depositRoute);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

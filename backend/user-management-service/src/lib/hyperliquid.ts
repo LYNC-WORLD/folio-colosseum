@@ -203,11 +203,11 @@ export async function depositToHyperliquid(
     // check balance
     const usdcBalance = await getUSDCBalance(solanaAddress);
     if (usdcBalance < Number(depositAmount)) {
-      return;
+      return false;
     }
     const depositAddress = await getDepositAddress(ethereumAddress);
     if (!depositAddress) {
-      return;
+      return false;
     }
 
     // convert to sol
@@ -219,13 +219,13 @@ export async function depositToHyperliquid(
       toBaseUnits(Number(depositAmount), 6),
     );
     if (!swapResult.succeeded || !swapResult.outputAmount) {
-      return;
+      return false;
     }
 
     const solOut = fromRawAmount(swapResult.outputAmount, SOL_DECIMALS);
     const sendAmount = solOut - SOL_TRANSFER_FEE_BUFFER;
     if (sendAmount <= 0) {
-      return;
+      return false;
     }
 
     // send sol to hyperliquid
@@ -239,7 +239,7 @@ export async function depositToHyperliquid(
       sentSOl.id,
     );
     if (sentSOlConfirmation != "succeeded") {
-      return;
+      return false;
     }
     await prisma.depositRequest.create({
       data: {
@@ -249,7 +249,7 @@ export async function depositToHyperliquid(
         depositAmount: depositAmount,
       },
     });
-    // request return
+    return true;
   } catch (error) {
     console.error("error while deposit: ", error);
   }
