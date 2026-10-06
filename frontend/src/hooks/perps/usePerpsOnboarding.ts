@@ -1,68 +1,54 @@
-// "Unlock perps" flow for UnlockSheet. Checks and, if needed, runs the two one-time
-// signatures from the user's own wallet: approveAgent (our backend agent) and approveBuilderFee.
+// "Unlock perps" flow. The backend holds each user's agent key and signs on their
+// behalf, so onboarding is just: check whether the backend-held agent is approved,
+// and if not, ask the backend to create + confirm one. No client wallet or address
+// is involved anywhere in this flow.
 
 import { useCallback, useEffect, useState } from "react";
-import { BUILDER_ADDRESS, BUILDER_MAX_FEE } from "../../services/hyperliquid/config";
-import { errMsg, feePctToTenthBps } from "../../services/hyperliquid/format";
-import { hlInfo } from "../../services/hyperliquid/info";
-import type { Address } from "../../services/hyperliquid/types";
 import { tradeService, unwrap } from "../../services/perps/tradeService";
-import { walletService, type UserWallet } from "../../services/perps/walletService";
-
-const REQUIRED_FEE = feePctToTenthBps(BUILDER_MAX_FEE);
-
-export function usePerpsOnboarding(opts: { address?: Address | null; wallet?: UserWallet | null; idToken?: string | null }) {
-  const { address, wallet, idToken } = opts;
+import { errMsg } from "../../services/hyperliquid/format";
+export function usePerpsOnboarding(opts: { idToken?: string | null }) {
+  const { idToken } = opts;
   const [agentOk, setAgentOk] = useState(false);
-  const [builderOk, setBuilderOk] = useState(false);
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [step, setStep] = useState<"idle" | "agent" | "builder" | "done">("idle");
+  const [step, setStep] = useState<"idle" | "agent" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
 
   const check = useCallback(async () => {
-    if (!address || !idToken) {
+    if (!idToken) {
       setChecking(false);
       return;
     }
     setChecking(true);
     try {
-      const [agent, fee] = await Promise.all([
-        unwrap(tradeService.getAgentStatus(idToken)),
-        hlInfo.maxBuilderFee(address, BUILDER_ADDRESS),
-      ]);
-      setAgentOk(!!agent?.approved);
-      setBuilderOk(fee >= REQUIRED_FEE);
+      const status = await unwrap(tradeService.getAgentStatus(idToken));
+      setAgentOk(!!status?.approved);
       setError(null);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setChecking(false);
     }
-  }, [address, idToken]);
+  }, [idToken]);
 
   useEffect(() => {
     check();
   }, [check]);
 
-  /** Prompts the wallet for up to two signatures. Resolves when trading is ready. */
+  /** Asks the backend to create + confirm its own agent key. No signature needed. */
   const unlock = useCallback(async () => {
-    if (!wallet || !idToken) throw new Error("Connect your wallet first");
+    if (!idToken) throw new Error("Sign in first");
+    if (agentOk) {
+      setStep("done");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      if (!agentOk) {
-        setStep("agent");
-        const { agentAddress, agentName } = await unwrap(tradeService.createAgent(idToken));
-        await walletService.approveAgent(wallet, agentAddress, agentName);
-        await unwrap(tradeService.confirmAgent(idToken));
-        setAgentOk(true);
-      }
-      if (!builderOk) {
-        setStep("builder");
-        await walletService.approveBuilderFee(wallet);
-        setBuilderOk(true);
-      }
+      setStep("agent");
+      await unwrap(tradeService.createAgent(idToken));
+      await unwrap(tradeService.confirmAgent(idToken));
+      setAgentOk(true);
       setStep("done");
     } catch (e) {
       setError(errMsg(e));
@@ -71,7 +57,16 @@ export function usePerpsOnboarding(opts: { address?: Address | null; wallet?: Us
     } finally {
       setBusy(false);
     }
-  }, [wallet, idToken, agentOk, builderOk]);
+  }, [idToken, agentOk]);
 
-  return { ready: agentOk && builderOk, agentOk, builderOk, checking, busy, step, error, unlock, recheck: check };
+  return {
+    ready: agentOk,
+    agentOk,
+    checking,
+    busy,
+    step,
+    error,
+    unlock,
+    recheck: check,
+  };
 }

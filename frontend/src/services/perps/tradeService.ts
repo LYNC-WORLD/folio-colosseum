@@ -4,6 +4,22 @@
 
 import { request } from "../api/client";
 
+export interface PlaceOrderBase {
+  stockSymbol: string;
+  dollarSize: number;
+  leverage: number;
+  isBuy: boolean;
+  margin: "ISOLATED" | "CROSS";
+  tpPrice: number | undefined;
+  slPrice: number | undefined;
+  tpPercent: number | undefined;
+  slPercent: number | undefined;
+}
+export type PlaceMarketOrder = PlaceOrderBase;
+export interface PlaceLimitOrder extends PlaceOrderBase {
+  limitPrice: number;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   message?: string;
@@ -87,6 +103,12 @@ export const tradeService = {
       method: "POST",
       token: idToken,
     }),
+
+  placeMarketOrder: (payload: PlaceMarketOrder, idToken: string) =>
+    request<ApiResponse<OrderResult>>("/api/perp-trade/market-order", { method: "POST", token: idToken, body: payload }),
+
+  placeLimitOrder: (payload: PlaceLimitOrder, idToken: string) =>
+    request<ApiResponse<OrderResult>>("/api/perp-trade/limit-order", { method: "POST", token: idToken, body: payload }),
 
   /** Called after the user signed approveAgent, so the backend can verify via extraAgents. */
   confirmAgent: (idToken: string) =>

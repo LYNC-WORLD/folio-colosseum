@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +18,7 @@ import {
   useRoute,
   useScrollToTop,
 } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { TAB_BAR_HEIGHT, useTabBarSpace } from "../navigation/TabBar";
 import { hTap } from "../lib/haptics";
@@ -26,6 +26,7 @@ import {
   MarketPickerSheet,
   MarketStatusSheet,
   UnlockSheet,
+  QUIZ_SEEN_KEY,
 } from "../components/PerpSheets";
 import { AMBER, Btn, Kv, ON_MINT, ON_SHORT, Tag } from "../components/PerpUi";
 import { perpLabel } from "../data/perps";
@@ -54,7 +55,6 @@ import {
   useAccount,
   useLiveMarket,
   useMarkets,
-  usePerpsOnboarding,
   usePerpsSession,
   useSocketStatus,
   useTradeActions,
@@ -115,9 +115,16 @@ export function TradeScreen() {
   const live = useLiveMarket(sym);
   const acct = useAccount(session.address);
   const actions = useTradeActions(session.idToken);
-  const onboarding = usePerpsOnboarding(session);
   const socket = useSocketStatus();
-  const bal = useBalances(); // { spot, perp }
+  const bal = useBalances();
+
+  // ---- first-trade quiz flag (replaces the wallet-based onboarding check)
+  const [quizSeen, setQuizSeen] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(QUIZ_SEEN_KEY)
+      .then((v) => setQuizSeen(v === "1"))
+      .catch(() => {});
+  }, []);
 
   const [tab, setTab] = useState<PTab>("pos");
   const [sheet, setSheet] = useState<SheetState>(null);
@@ -157,15 +164,14 @@ export function TradeScreen() {
   const markOf = (coin: string, fallback: number) =>
     coin === live.coin ? live.mark : (markets.byCoin[coin]?.mid ?? fallback);
 
+  // No wallet / session gate: quiz the first time, ticket every time after.
   const openTicket = (side: 1 | -1) => {
     if (!listed)
       return toast(
         "Not tradable",
         `${label.toUpperCase()} ISN'T LISTED ON HYPERLIQUID`,
       );
-    if (!session.address || !session.idToken)
-      return toast("Sign in to trade", "CONNECT YOUR WALLET FIRST");
-    setSheet(onboarding.ready ? { t: "ticket", side } : { t: "unlock", side });
+    setSheet(quizSeen ? { t: "ticket", side } : { t: "unlock", side });
   };
   const toChart = () =>
     scrollRef.current?.scrollTo({
@@ -256,7 +262,9 @@ export function TradeScreen() {
                 overflow: "hidden",
               }}
             >
-              <SvgUri uri={selectedMarket!.imageUrl} width={42} height={42} />
+              {selectedMarket?.imageUrl ? (
+                <SvgUri uri={selectedMarket.imageUrl} width={42} height={42} />
+              ) : null}
             </View>
             <View style={{ gap: 3, flexShrink: 1 }}>
               <View style={tradeStyles.rowC}>
@@ -440,14 +448,7 @@ export function TradeScreen() {
 
         <View style={tradeStyles.panel}>
           {tab === "pos" ? (
-            !session.address ? (
-              <View style={tradeStyles.empty}>
-                <Text style={tradeStyles.ttl}>Connect your wallet</Text>
-                <Text style={tradeStyles.emptyT}>
-                  Your positions show here once you're signed in.
-                </Text>
-              </View>
-            ) : acct.loading ? (
+            acct.loading ? (
               <View style={tradeStyles.empty}>
                 <ActivityIndicator color={C.ink3} />
               </View>
@@ -591,7 +592,6 @@ export function TradeScreen() {
         locations={[0, 0.2]}
         style={[tradeStyles.dock, { bottom: TAB_BAR_HEIGHT + insets.bottom }]}
       >
-        {/* one column wrapper: balance row on top, Long / Short side by side below */}
         <View style={tradeStyles.dockInner}>
           <DockBalance perp={bal.perp} onTransfer={() => openTransfer()} />
           <View style={tradeStyles.dockRow}>
@@ -637,15 +637,12 @@ export function TradeScreen() {
       {sheet?.t === "unlock" ? (
         <UnlockSheet
           onClose={() => setSheet(null)}
-          onDone={async () => {
+          onDone={() => {
             const side = sheet.side;
-            try {
-              await onboarding.unlock();
-              setSheet({ t: "ticket", side });
-            } catch (e) {
-              toast("Wallet approval needed", errMsg(e).toUpperCase());
-              setSheet(null);
-            }
+            setQuizSeen(true);
+            // close the quiz first, then open the Long/Short ticket once it has dismissed
+            setSheet(null);
+            setTimeout(() => setSheet({ t: "ticket", side }), 380);
           }}
         />
       ) : null}

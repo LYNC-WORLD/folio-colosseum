@@ -44,15 +44,78 @@ import {
 } from "./PerpUi";
 import { C, FONT } from "../theme";
 import { hTap } from "../lib/haptics";
-import {
-  useAccount,
-  useLiveMarket,
-  usePerpsSession,
-  useTradeActions,
-  type TicketResult,
-} from "../hooks/perps";
+import { useAccount, useLiveMarket, usePerpsSession } from "../hooks/perps";
+import { tradeService, unwrap } from "../services/perps/tradeService";
 import { errMsg, toSym } from "../services/hyperliquid/format";
 
+type OrderType = "Market" | "Limit";
+type MarginMode = "ISOLATED" | "CROSS";
+type TpSlMode = "price" | "pct";
+type Result = { filled: boolean; entry: number | null; size: number };
+
+function Radio({
+  label,
+  sub,
+  on,
+  onPress,
+}: {
+  label: string;
+  sub: string;
+  on: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => {
+        hTap();
+        onPress();
+      }}
+      style={[s.radio, on && { borderColor: C.mint }]}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: on }}
+    >
+      <View style={[s.radioDot, on && { borderColor: C.mint }]}>
+        {on ? <View style={s.radioFill} /> : null}
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={s.ttl}>{label}</Text>
+        <Text style={s.sub}>{sub}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function ModeToggle({
+  value,
+  onChange,
+}: {
+  value: TpSlMode;
+  onChange: (m: TpSlMode) => void;
+}) {
+  return (
+    <View style={{ flexDirection: "row", gap: 4 }}>
+      {(["price", "pct"] as const).map((m) => (
+        <Pressable
+          key={m}
+          hitSlop={{ top: 8, bottom: 8 }}
+          onPress={() => {
+            hTap();
+            onChange(m);
+          }}
+          style={[
+            s.chip,
+            { height: 26, paddingHorizontal: 10 },
+            value === m && { backgroundColor: C.mint },
+          ]}
+        >
+          <Text style={[s.chipT, value === m && { color: "#06120D" }]}>
+            {m === "price" ? "$" : "%"}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
 const clean = (t: string) => {
   const x = t.replace(/[^0-9.]/g, "");
   const i = x.indexOf(".");
@@ -103,7 +166,6 @@ export function OrderTicketSheet({
   const session = usePerpsSession();
   const live = useLiveMarket(sym);
   const acct = useAccount(session.address);
-  const { openPosition } = useTradeActions(session.idToken);
 
   const meta = metaOf(sym);
   const nm: string = meta?.short ?? toSym(sym);
@@ -113,7 +175,12 @@ export function OrderTicketSheet({
   const usdc = perpBal;
 
   const [side, setSide] = useState<1 | -1>(initialSide);
-  const [otype, setOtype] = useState<"Market" | "Limit" | "Stop">("Market");
+  const [otype, setOtype] = useState<"Market" | "Limit">("Market");
+  const [marginMode, setMarginMode] = useState<MarginMode>("ISOLATED");
+  const [tpMode, setTpMode] = useState<TpSlMode>("price");
+  const [slMode, setSlMode] = useState<TpSlMode>("price");
+  const [err, setErr] = useState("");
+
   const [opx, setOpx] = useState("");
   const [marginT, setMarginT] = useState("");
   const [lev, setLevRaw] = useState(Math.min(10, maxLev));
@@ -123,7 +190,7 @@ export function OrderTicketSheet({
   const [tpT, setTpT] = useState("");
   const [slT, setSlT] = useState("");
   const [phase, setPhase] = useState<"form" | "busy" | "done">("form");
-  const [result, setResult] = useState<TicketResult | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
   const [, tick] = useState(0);
   useEffect(() => {
     const i = setInterval(() => tick((n) => n + 1), 1000);
@@ -157,8 +224,18 @@ export function OrderTicketSheet({
   );
   const toneCol = tone === "ok" ? C.mint : tone === "warn" ? AMBER : C.loss;
   const fpay = notional * (live.fundingPct / 100) * side;
-  const tp = num(tpT) || null,
-    sl = num(slT) || null;
+  const tpIn = num(tpT),
+    slIn = num(slT);
+  const tp = tpIn
+    ? tpMode === "price"
+      ? tpIn
+      : en * (1 + (side * tpIn) / 100 / lev)
+    : null;
+  const sl = slIn
+    ? slMode === "price"
+      ? slIn
+      : en * (1 - (side * slIn) / 100 / lev)
+    : null;
 
   // funding: margin + fee must fit in the PERP account; if not, can spot cover it?
   const need = mg + fee - usdc;
@@ -178,15 +255,9 @@ export function OrderTicketSheet({
   if (tpOn && sl && (side > 0 ? sl >= en || sl <= liq : sl <= en || sl >= liq))
     bad = `Stop loss has to sit between your entry and ${fmtPx(liq)}.`;
 
-  const setType = (t: "Market" | "Limit" | "Stop") => {
+  const setType = (t: OrderType) => {
     setOtype(t);
-    if (t !== "Market")
-      setOpx(
-        (t === "Limit"
-          ? mk * (1 - side * 0.01)
-          : mk * (1 + side * 0.01)
-        ).toFixed(2),
-      );
+    if (t === "Limit") setOpx((mk * (1 - side * 0.01)).toFixed(2));
   };
   const pickSide = (v: 1 | -1) => {
     setSide(v);
@@ -199,27 +270,44 @@ export function OrderTicketSheet({
   };
 
   const go = async () => {
+    setErr("");
     setPhase("busy");
     try {
-      const r = await openPosition({
-        sym,
-        side,
-        lev,
-        margin: mg,
-        kind: otype,
-        px: num(opx) || null,
-        tp: tpOn ? tp : null,
-        sl: tpOn ? sl : null,
-        markPx: mk,
+      const token = session.idToken ?? "";
+      const common = {
+        stockSymbol: sym,
+        dollarSize: notional,
+        leverage: lev,
+        isBuy: side > 0,
+        margin: marginMode,
+        tpPrice: tpOn && tpMode === "price" ? (tp ?? undefined) : undefined,
+        slPrice: tpOn && slMode === "price" ? (sl ?? undefined) : undefined,
+        tpPercent: tpOn && tpMode === "pct" ? tpIn || undefined : undefined,
+        slPercent: tpOn && slMode === "pct" ? slIn || undefined : undefined,
+      };
+      const r =
+        otype === "Market"
+          ? await unwrap(tradeService.placeMarketOrder(common, token))
+          : await unwrap(
+              tradeService.placeLimitOrder(
+                { ...common, limitPrice: num(opx) },
+                token,
+              ),
+            );
+      if (r.status === "error") throw new Error(r.error ?? "Order rejected");
+      setResult({
+        filled: r.status === "filled",
+        entry: r.avgPx ? parseFloat(r.avgPx) : null,
+        size: r.totalSz ? parseFloat(r.totalSz) : qty,
       });
-      setResult(r);
       setPhase("done");
     } catch (e) {
-      toast("Order not placed", errMsg(e).toUpperCase());
+      const m = errMsg(e);
+      setErr(m);
+      toast("Order not placed", m.toUpperCase());
       setPhase("form");
     }
   };
-
   const short = mg > 0 && need > 0; // not enough in the perp account
   const holdNeeded = lev >= 25 && !short;
   const btnLabel = short
@@ -324,7 +412,7 @@ export function OrderTicketSheet({
       <View style={s.row}>
         <Lbl style={{ flex: 1 }}>ORDER</Lbl>
         <View style={{ flexDirection: "row", gap: 6 }}>
-          {(["Market", "Limit", "Stop"] as const).map((t) => (
+          {(["Market", "Limit"] as const).map((t) => (
             <Pressable
               key={t}
               hitSlop={{ top: 6, bottom: 6 }}
@@ -361,6 +449,34 @@ export function OrderTicketSheet({
           <Text style={s.k}>USD</Text>
         </View>
       ) : null}
+
+      <View style={{ gap: 8 }}>
+        <Lbl>MARGIN MODE</Lbl>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flex: 1 }}>
+            <Radio
+              label="Isolated"
+              sub="Risk only this margin"
+              on={marginMode === "ISOLATED"}
+              onPress={() => setMarginMode("ISOLATED")}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Radio
+              label="Cross"
+              sub="Uses your whole account"
+              on={marginMode === "CROSS"}
+              onPress={() => setMarginMode("CROSS")}
+            />
+          </View>
+        </View>
+        {marginMode === "CROSS" ? (
+          <Text style={s.sub}>
+            The liquidation price below is an isolated estimate. In cross it
+            will be further away.
+          </Text>
+        ) : null}
+      </View>
 
       <View style={{ gap: 10 }}>
         <View style={s.row}>
@@ -507,21 +623,35 @@ export function OrderTicketSheet({
                 value={tpT}
                 onChangeText={(t) => setTpT(clean(t))}
                 keyboardType="decimal-pad"
-                placeholder="Price"
+                placeholder={tpMode === "price" ? "Price" : "% on margin"}
                 placeholderTextColor={C.ink4}
                 style={s.pxIn}
               />
-              <Text style={[s.mono, { color: C.mint, fontSize: 12 }]}>
-                {tp ? sMoney(side * (tp - en) * qty) : ""}
-              </Text>
+              <ModeToggle
+                value={tpMode}
+                onChange={(m) => {
+                  setTpMode(m);
+                  setTpT("");
+                }}
+              />
             </View>
+            {tp ? (
+              <Text style={[s.mono, { color: C.mint, fontSize: 12 }]}>
+                {tpMode === "pct" ? `${fmtPx(tp)} · ` : ""}
+                {sMoney(side * (tp - en) * qty)}
+              </Text>
+            ) : null}
             <View style={s.chips}>
               {[25, 50, 100].map((v) => (
                 <Pressable
                   key={v}
                   onPress={() => {
                     hTap();
-                    setTpT((en * (1 + (side * v) / 100 / lev)).toFixed(2));
+                    setTpT(
+                      tpMode === "pct"
+                        ? String(v)
+                        : (en * (1 + (side * v) / 100 / lev)).toFixed(2),
+                    );
                   }}
                   style={s.chip}
                 >
@@ -530,27 +660,42 @@ export function OrderTicketSheet({
               ))}
               <Text style={s.sub}>on margin</Text>
             </View>
+
             <View style={s.pxField}>
               <Text style={[s.k, { color: C.loss }]}>SL</Text>
               <TextInput
                 value={slT}
                 onChangeText={(t) => setSlT(clean(t))}
                 keyboardType="decimal-pad"
-                placeholder="Price"
+                placeholder={slMode === "price" ? "Price" : "% on margin"}
                 placeholderTextColor={C.ink4}
                 style={s.pxIn}
               />
-              <Text style={[s.mono, { color: C.loss, fontSize: 12 }]}>
-                {sl ? sMoney(side * (sl - en) * qty) : ""}
-              </Text>
+              <ModeToggle
+                value={slMode}
+                onChange={(m) => {
+                  setSlMode(m);
+                  setSlT("");
+                }}
+              />
             </View>
+            {sl ? (
+              <Text style={[s.mono, { color: C.loss, fontSize: 12 }]}>
+                {slMode === "pct" ? `${fmtPx(sl)} · ` : ""}
+                {sMoney(side * (sl - en) * qty)}
+              </Text>
+            ) : null}
             <View style={s.chips}>
               {[10, 25, 50].map((v) => (
                 <Pressable
                   key={v}
                   onPress={() => {
                     hTap();
-                    setSlT((en * (1 - (side * v) / 100 / lev)).toFixed(2));
+                    setSlT(
+                      slMode === "pct"
+                        ? String(v)
+                        : (en * (1 - (side * v) / 100 / lev)).toFixed(2),
+                    );
                   }}
                   style={s.chip}
                 >
@@ -576,6 +721,24 @@ export function OrderTicketSheet({
           last
         />
       </View>
+
+      {err ? (
+        <View
+          style={[
+            s.coach,
+            {
+              backgroundColor: "rgba(240,96,77,.10)",
+              borderColor: "rgba(240,96,77,.4)",
+            },
+          ]}
+        >
+          <Text style={[s.coachH, { color: C.loss }]}>ORDER FAILED</Text>
+          <Text style={s.coachT}>{err}</Text>
+          <Text style={s.sub}>
+            Nothing was placed. Tap the button below to try again.
+          </Text>
+        </View>
+      ) : null}
 
       {short ? (
         <View style={s.coach}>
@@ -774,5 +937,31 @@ const s = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: C.ink1,
+  },
+  radio: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minHeight: 56,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: CARD,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+  radioDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: "#3A404A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioFill: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: C.mint,
   },
 });
