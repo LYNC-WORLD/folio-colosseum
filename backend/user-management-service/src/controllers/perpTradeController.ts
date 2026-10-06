@@ -182,6 +182,42 @@ export class PerpTradeController {
     }
   };
 
+  public cancelOrder = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!req.user || !req.user.solanaWalletId || !req.user.ethereumWalletId) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const body: cancelOrder = req.body;
+      if (!body.assetId || !body.orderId) {
+        res.status(404).json({
+          success: false,
+          message: "assetId and orderId is required",
+        });
+        return;
+      }
+      const cancelOrder = await this.perpTradeService.cancelOrder(
+        req.user.ethereumWalletId,
+        body.orderId,
+        body.assetId,
+      );
+      res.status(200).json({
+        success: true,
+        message: "cancelOrder",
+        data: cancelOrder,
+      });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
+
   public getOpenOrders = async (req: Request, res: Response): Promise<void> => {
     try {
       if (!req.user || !req.user.solanaWalletId || !req.user.ethereumWalletId) {
@@ -323,4 +359,9 @@ interface placeLimitOrder {
   slPrice: number | undefined;
   tpPercent: number | undefined;
   slPercent: number | undefined;
+}
+
+interface cancelOrder {
+  assetId: string;
+  orderId: string;
 }

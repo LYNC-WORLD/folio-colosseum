@@ -10,6 +10,7 @@ router.post("/market-order", authMiddleware, perpTradeController.marketOrder);
 
 router.post("/limit-order", authMiddleware, perpTradeController.limitOrder);
 
+router.post("/cancel-order", authMiddleware, perpTradeController.cancelOrder)
 // Cancel order
 // TP / SL order create 
 

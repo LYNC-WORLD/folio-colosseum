@@ -300,6 +300,33 @@ export class PerpTradeService {
     }
   }
 
+  public async cancelOrder(ethereumWalletId: string, orderId: string, assetId: string) {
+    try {
+      const walletDetails = await prisma.wallet.findFirst({
+        where: { walletId: ethereumWalletId },
+        include: {
+          hyperLiquidDetails: true,
+        },
+      });
+      if (!walletDetails || !walletDetails.hyperLiquidDetails) {
+        return;
+      }
+      const apiSecret = decrypt(
+        walletDetails.hyperLiquidDetails.agentApiSecret,
+      );
+      const wallet = privateKeyToAccount(apiSecret as `0x${string}`);
+      const client = new ExchangeClient({
+        transport: hyperliquidTransport,
+        wallet,
+      });
+      const cancelOrder = await client.cancelByCloid({ cancels: [{ asset: assetId, cloid: orderId }] });
+      return cancelOrder;
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
+
   public async getOpenOrders(ethereumAddress: string) {
     try {
       const orders = await hyperliquidInfoClient.openOrders({
