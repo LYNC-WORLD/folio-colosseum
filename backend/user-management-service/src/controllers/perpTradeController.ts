@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { PerpTradeService } from "../services/perpTradeServices";
+import { dex } from "viem/tempo/actions";
 
 export class PerpTradeController {
   private perpTradeService: PerpTradeService;

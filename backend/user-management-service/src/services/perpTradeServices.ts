@@ -255,6 +255,7 @@ export class PerpTradeService {
               },
             },
           });
+          grouping = "normalTpsl";
         }
         if (tpsl.SlPrice || tpsl.SlPercentage) {
           const slTriggerPrice =
@@ -282,8 +283,8 @@ export class PerpTradeService {
               },
             },
           });
+          grouping = "normalTpsl";
         }
-        grouping = "normalTpsl";
       }
       console.log(JSON.stringify(batchOrder));
       const limitOrder = await client.order({
@@ -386,6 +387,7 @@ export class PerpTradeService {
     try {
       const data = await hyperliquidInfoClient.clearinghouseState({
         user: ethereumAddress,
+        dex: "xyz",
       });
       console.log(data);
       return data.assetPositions;
@@ -399,6 +401,7 @@ export class PerpTradeService {
     try {
       const data = await hyperliquidInfoClient.clearinghouseState({
         user: ethereumAddress,
+        dex: "xyz",
       });
       const marketDetails = data.assetPositions.find((asset) => {
         const coin = asset.position.coin;
