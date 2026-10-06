@@ -2,6 +2,7 @@
 // Until this returns real values, market data (prices, chart, order book) still works;
 // account data and trading stay off.
 
+import { useAuth } from "../../context";
 import type { Address } from "../../services/hyperliquid/types";
 import type { UserWallet } from "../../services/perps/walletService";
 
@@ -18,9 +19,6 @@ export interface PerpsSession {
 }
 
 export function usePerpsSession(): PerpsSession {
-  // TODO: replace with your real hooks, e.g.
-  //   const { user, idToken } = useAuth();
-  //   const { address, signer } = useEmbeddedWallet();
-  //   return { address, idToken, wallet: signer };
-  return { address: DEMO_ADDRESS, idToken: null, wallet: null };
+    const {  idToken } = useAuth();
+  return { address: DEMO_ADDRESS, idToken: idToken, wallet: null };
 }

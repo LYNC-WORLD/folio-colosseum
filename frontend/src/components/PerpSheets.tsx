@@ -37,6 +37,8 @@ import {
   type Snap,
 } from "../data/perpsStore";
 import { perpLabel, searchPerps } from "../data/perps";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+export const QUIZ_SEEN_KEY = "perps_quiz_completed_v1";
 import {
   Body,
   Btn,
@@ -77,7 +79,7 @@ function Logo({
         overflow: "hidden",
       }}
     >
-      <SvgUri uri={imageUrl!} width={size} height={size} />
+      {imageUrl ? <SvgUri uri={imageUrl} width={size} height={size} /> : null}
     </View>
   );
 }
@@ -691,6 +693,34 @@ export function UnlockSheet({
   const [step, setStep] = useState(0);
   const [ok, setOk] = useState(false);
   const [pick, setPick] = useState<number | null>(null);
+  const [checkingSeen, setCheckingSeen] = useState(true);
+
+  // One-time check: if the person already passed the quiz on a previous
+  // visit, skip the disclaimer + questions and go straight to "unlocked".
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem(QUIZ_SEEN_KEY)
+      .then((seen) => {
+        if (!alive) return;
+        if (seen === "1") {
+          unlockPerps();
+          // Returning user: skip the quiz AND the "unlocked" screen.
+          // Keep checkingSeen = true so this sheet renders nothing,
+          // and hand control straight back to the parent.
+          onDone();
+          return;
+        }
+        setCheckingSeen(false);
+      })
+      .catch(() => {
+        // if storage read fails, fall back to showing the quiz
+        if (alive) setCheckingSeen(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []); // eslint-disable-line
+
   const Dots = () => (
     <View style={{ flexDirection: "row", gap: 6 }}>
       {[0, 1, 2, 3].map((i) => (
@@ -706,6 +736,12 @@ export function UnlockSheet({
       ))}
     </View>
   );
+
+  // Don't mount Sheet until we know which content to show. Mounting it with a
+  // small spinner first leaves it sized for the spinner, so the quiz overflows
+  // the bottom of the screen.
+  if (checkingSeen) return null;
+
   if (step === 0)
     return (
       <Sheet onClose={onClose}>
@@ -827,6 +863,7 @@ export function UnlockSheet({
               if (step < 3) setStep(step + 1);
               else {
                 unlockPerps();
+                AsyncStorage.setItem(QUIZ_SEEN_KEY, "1").catch(() => {});
                 setStep(4);
               }
             }}
