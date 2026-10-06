@@ -99,6 +99,7 @@ export class PerpTradeService {
               },
             },
           });
+          grouping = "normalTpsl";
         }
         if (tpsl.SlPrice || tpsl.SlPercentage) {
           const slTriggerPrice =
@@ -126,12 +127,12 @@ export class PerpTradeService {
               },
             },
           });
+          grouping = "normalTpsl";
         }
-        grouping = "normalTpsl";
       }
       // Placing batch order
       console.log(JSON.stringify(batchOrder));
-      
+
       const marketOrder = await client.order({
         orders: batchOrder,
         grouping: grouping,
@@ -302,7 +303,11 @@ export class PerpTradeService {
     }
   }
 
-  public async cancelOrder(ethereumWalletId: string, orderId: string, assetId: string) {
+  public async cancelOrder(
+    ethereumWalletId: string,
+    orderId: string,
+    assetId: string,
+  ) {
     try {
       const walletDetails = await prisma.wallet.findFirst({
         where: { walletId: ethereumWalletId },
@@ -321,7 +326,9 @@ export class PerpTradeService {
         transport: hyperliquidTransport,
         wallet,
       });
-      const cancelOrder = await client.cancelByCloid({ cancels: [{ asset: assetId, cloid: orderId }] });
+      const cancelOrder = await client.cancelByCloid({
+        cancels: [{ asset: assetId, cloid: orderId }],
+      });
       return cancelOrder;
     } catch (error) {
       console.error(error);
