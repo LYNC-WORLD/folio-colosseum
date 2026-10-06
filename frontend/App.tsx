@@ -24,6 +24,7 @@ import { SplashIntro, SplashDoneContext } from "./src/components/SplashIntro";
 import { SheetProvider } from "./src/components/Sheet";
 import { ToastProvider } from "./src/components/Toast";
 import { AppFlowContext } from "./src/context/AppFlowContext";
+import { LeaderboardProvider } from "./src/context/LeaderboardContext";
 
 // Keep the native splash up until fonts are loaded and <SplashIntro> has drawn
 // its first frame (it hides the native splash itself).
@@ -127,18 +128,20 @@ function Root() {
           {/* Toast sits above the sheet; both sit above every screen, below the splash. */}
           <ToastProvider>
             <SheetProvider>
-              <Animated.View
-                key={phase}
-                style={{ flex: 1 }}
-                // No fade while the splash is up — the splash's own crossfade reveals the first screen.
-                entering={
-                  splashDone
-                    ? FadeIn.duration(280).easing(Easing.linear)
-                    : undefined
-                }
-              >
-                {content}
-              </Animated.View>
+              <LeaderboardProvider>
+                <Animated.View
+                  key={phase}
+                  style={{ flex: 1 }}
+                  // No fade while the splash is up — the splash's own crossfade reveals the first screen.
+                  entering={
+                    splashDone
+                      ? FadeIn.duration(280).easing(Easing.linear)
+                      : undefined
+                  }
+                >
+                  {content}
+                </Animated.View>
+              </LeaderboardProvider>
             </SheetProvider>
           </ToastProvider>
           {!splashDone && (
