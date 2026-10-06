@@ -1,4 +1,4 @@
-import { ExchangeClient } from "@nktkas/hyperliquid";
+import { ExchangeClient, OrderStatusResponse } from "@nktkas/hyperliquid";
 import { prisma } from "../lib/prisma";
 import { decrypt } from "../utils/encryption";
 import {
@@ -306,7 +306,15 @@ export class PerpTradeService {
         user: ethereumAddress,
         dex: "xyz",
       });
-      return orders;
+      let orderDetails: OrderStatusResponse[] = [];
+      orders.forEach(async (order) => {
+        const orderDetail = await hyperliquidInfoClient.orderStatus({
+          user: ethereumAddress,
+          oid: order.oid,
+        });
+        orderDetails.push(orderDetail);
+      });
+      return orderDetails;
     } catch (error) {
       console.error(error);
       return;
@@ -323,7 +331,15 @@ export class PerpTradeService {
         (order) => order.coin.split(":").pop() === stock,
       );
 
-      return stockOrder;
+      let orderDetails: OrderStatusResponse[] = [];
+      stockOrder.forEach(async (order) => {
+        const orderDetail = await hyperliquidInfoClient.orderStatus({
+          user: ethereumAddress,
+          oid: order.oid,
+        });
+        orderDetails.push(orderDetail);
+      });
+      return orderDetails;
     } catch (error) {
       console.error(error);
       return;
