@@ -68,7 +68,7 @@ export class PerpTradeService {
           p: formatPrice(priceData.limitPrice, sizeDecimal),
           s: formatSize(size, sizeDecimal),
           r: false,
-          t: { limit: { tif: "FrontendMarket" } },
+          t: { limit: { tif: "Ioc" } },
         },
       ];
       // TP SL Order creation
