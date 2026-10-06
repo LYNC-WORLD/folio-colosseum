@@ -1,24 +1,3 @@
-// src/screens/PortfolioScreen.tsx — the Folio tab (prototype #s-folio)
-//
-//   ┌──────────── cover ───────────── [share][activity][settings]
-//   (S)                                  ← avatar overlaps the cover, pen badge → Account
-//   Shanu
-//   @shanu
-//   [THE PATIENT BUILDER]
-//   ◷ 3–5 years horizon   ⇄ 3 trades   ▦ Since Sep 2026
-//   ───────────────────────────────────
-//   $1,240.50                     24h 7d 30d All
-//   +$32.10 30d                           ← follows your finger when scrubbing
-//   ····· chart, full width, draws itself ·····
-//   ($) Cash in wallet  $440          [+] [⋯]
-//       + $182 in perps · +$12            ← only when you hold perps
-//       Perp account $0.00  Transfer ›    ← opens TransferSheet (drawer)
-//   Positions (3)       ( One-time • | Recurring | Perps )
-//   $800 in positions
-//   [All] [Stocks] [Pre-IPOs] [Index funds]   (Perps tab: All · Stocks · Index funds · Commodities)
-//   rows…
-//   HELD AT 4a91…f2c7 · SELF-CUSTODY
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
@@ -156,13 +135,26 @@ export function PortfolioScreen() {
   const [range, setRange] = useState(RANGES[3]);
   const holdings = useMemo(
     () =>
-      tokens.map((t) => ({
-        mint: t.mint,
-        balance: t.balance,
-        price: Number(t.price),
-      })),
+      tokens
+        .map((t) => {
+          const price = Number(t.price);
+          const balance = Number(t.balance);
+
+          return {
+            mint: t.mint,
+            balance,
+            price,
+          };
+        })
+        .filter(
+          (t) =>
+            Number.isFinite(t.balance) &&
+            Number.isFinite(t.price) &&
+            t.price >= 0,
+        ),
     [tokens],
   );
+
   const { points } = usePortfolioSeries(holdings, usdcValue, range.period);
   const [scrubIdx, setScrubIdx] = useState<number | null>(null);
 
