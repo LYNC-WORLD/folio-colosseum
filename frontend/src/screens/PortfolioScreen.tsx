@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  ActivityIndicator,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -55,6 +56,7 @@ import { hSelect, hTap } from "../lib/haptics";
 import Animated, { FadeIn } from "react-native-reanimated";
 import type { ChartPeriod } from "../hooks";
 import { usePerpPositions, type PerpCategory } from "../hooks/usePerpPositions";
+import { useAllPositions } from "../hooks/perps";
 
 type Nav = BottomTabNavigationProp<TabParamList, "Portfolio">;
 
@@ -107,6 +109,10 @@ export function PortfolioScreen() {
   useScrollToTop(scrollRef);
 
   const { user, idToken } = useAuth();
+
+  const allPos = useAllPositions(idToken);
+  const perpMargin = allPos.data.reduce((t, p) => t + p.margin, 0);
+  const perpPnl = allPos.data.reduce((t, p) => t + p.pnl, 0);
   const {
     wallet,
     walletAddress,
@@ -605,8 +611,8 @@ export function PortfolioScreen() {
               {tab === "perp" ? (
                 <PerpsHeader
                   count={perp.positions.length}
-                  margin={perp.margin}
-                  pnl={perp.pnl}
+                  margin={perpMargin}
+                  pnl={perpPnl}
                 />
               ) : (
                 <View style={{ gap: 3 }}>
@@ -677,12 +683,25 @@ export function PortfolioScreen() {
             style={{ marginTop: 8 }}
           >
             {tab === "perp" ? (
-              <PerpPositionList
-                positions={perp.positions}
-                category={perpCat}
-                onOpen={(p) => {}}
-                onOpenTrade={() => {}}
-              />
+              allPos.loading ? (
+                <ActivityIndicator
+                  color={C.ink3}
+                  style={{ paddingVertical: 24 }}
+                />
+              ) : allPos.error && !allPos.data.length ? (
+                <Pressable onPress={allPos.refetch} accessibilityRole="button">
+                  <Text style={s.empty}>
+                    Couldn't load perp positions. Tap to retry.
+                  </Text>
+                </Pressable>
+              ) : (
+                <PerpPositionList
+                  positions={allPos.data}
+                  category={perpCat}
+                  onOpen={() => {}}
+                  onOpenTrade={() => {}}
+                />
+              )
             ) : tab === "open" && cat === "index" ? (
               funds.length === 0 ? (
                 <Text style={s.empty}>
