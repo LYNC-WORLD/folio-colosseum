@@ -15,12 +15,16 @@ import { useNavigation, useScrollToTop } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { useAuth, type OnboardingProfile } from "../context";
 import { useWallet } from "../context/WalletContext";
+import { useLeaderboard } from "../context/LeaderboardContext";
 import { useIndexFunds, useStocks } from "../hooks";
 import { useRecurringBuys } from "../hooks/useTrade";
 import { useUserTransactions } from "../hooks/useUserRecords";
 import { usePortfolioSeries } from "../hooks/usePortfolioSeries";
 import { useCountUp } from "../hooks/useCountUp";
 import { useBalances } from "../hooks/useBalances";
+import { useAccount } from "../hooks/perps/useAccount";
+import { toTrades, usePortfolioPnl } from "../hooks/usePortfolioPnl";
+import type { Address } from "../services/hyperliquid/types";
 import { getOnboardingProfile } from "../lib";
 import type { TabParamList } from "../navigation/RootTabs";
 import { useTabBarSpace } from "../navigation/TabBar";
@@ -90,6 +94,11 @@ const PERP_CATS: [PerpCat, string][] = [
   ["commodities", "Commodities"],
 ];
 
+const num = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
 export function PortfolioScreen() {
   const nav = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
@@ -98,7 +107,7 @@ export function PortfolioScreen() {
   const sheet = useSheet();
   const toast = useToast();
   const following = useFollowing();
-  const perp = usePerpPositions();
+  const perp = usePerpPositions(); // still mock: drives the Perps list rows only
   const bal = useBalances(); // { spot, perp }
   const [xfer, setXfer] = useState(false); // Transfer drawer (spot <-> perp)
   const [xferDir, setXferDir] = useState<"in" | "out">("in");
@@ -125,6 +134,39 @@ export function PortfolioScreen() {
   const pre = useStocks("pre-ipo");
   const idx = useIndexFunds();
   const fundLots = useFundLots();
+
+  // ---------- perp account + PnL ----------
+  // TODO: set this to the Hyperliquid address you trade perps with (e.g. from usePerpsSession).
+  // While it is null, the leaderboard /me numbers are used instead.
+  const perpAddress: Address | null = null;
+  const acct = useAccount(perpAddress);
+  const { me } = useLeaderboard();
+
+  const perpEquity = perpAddress
+    ? acct.accountValue
+    : me
+      ? num(me.accountValue)
+      : perp.equity;
+  const perpNetDeposits =
+    me && Number.isFinite(Number(me.netDepositsUsdc))
+      ? Number(me.netDepositsUsdc)
+      : null;
+  const perpPositionsPnl = perpAddress
+    ? acct.positions.reduce((t, p) => t + p.pnl, 0)
+    : perp.pnl;
+
+  const trades = useMemo(() => toTrades(txs.data?.data), [txs.data]);
+  const pnl = usePortfolioPnl({
+    tokens,
+    trades,
+    fundLots,
+    walletAddress,
+    perp: {
+      accountValue: perpEquity,
+      netDeposits: perpNetDeposits,
+      positionsPnl: perpPositionsPnl,
+    },
+  });
 
   const [profile, setProfile] = useState<OnboardingProfile | null>(null);
   useEffect(() => {
@@ -160,10 +202,10 @@ export function PortfolioScreen() {
 
   // Total value = wallet + perp equity (same rule as the prototype's total).
   // The chart series is wallet-only, so perp equity is added on top as a flat offset.
-  const liveTotal = useCountUp(usdValue + perp.equity);
+  const liveTotal = useCountUp(usdValue + perpEquity);
   const shownValue =
     scrubIdx != null
-      ? (points[scrubIdx]?.v ?? usdValue) + perp.equity
+      ? (points[scrubIdx]?.v ?? usdValue) + perpEquity
       : liveTotal;
   const startV = points[0]?.v ?? usdValue;
   const endV = scrubIdx != null ? (points[scrubIdx]?.v ?? usdValue) : usdValue;
@@ -180,6 +222,15 @@ export function PortfolioScreen() {
             day: "numeric",
             month: "short",
           });
+
+  // All-time (not scrubbing) shows real total PnL: spot + realized + perps.
+  // Shorter ranges keep the wallet-only chart delta (there is no perp history series).
+  const allTime = range.key === "All" && scrubIdx == null;
+  const heroDelta = allTime ? pnl.total : delta;
+  const heroLabel = allTime
+    ? `all-time P&L${pnl.untracked > 0 ? " · partial" : ""}`
+    : deltaLabel;
+  const heroPct = allTime && pnl.totalPct != null ? pnl.totalPct : null;
 
   const cash = useCountUp(usdcValue);
 
@@ -336,7 +387,7 @@ export function PortfolioScreen() {
           value: p.value,
           change: p.change,
         }))}
-        perp={{ positions: perp.positions, pnl: perp.pnl }}
+        perp={{ positions: perp.positions, pnl: pnl.perpPnl }}
       />,
       { label: "Share" },
     );
@@ -385,6 +436,7 @@ export function PortfolioScreen() {
               refresh();
               reloadRecurring();
               txs.refetch();
+              acct.refresh();
             }}
             tintColor={C.mint}
             colors={[C.mint]}
@@ -455,11 +507,14 @@ export function PortfolioScreen() {
             <View style={{ flex: 1, gap: 8 }}>
               <HeroMoney value={loading ? 0 : shownValue} />
               <Text style={s.delta}>
-                <Text style={{ color: delta >= 0 ? C.mint : C.loss }}>
-                  {delta >= 0 ? "+" : "−"}
-                  {money(Math.abs(delta))}
+                <Text style={{ color: heroDelta >= 0 ? C.mint : C.loss }}>
+                  {heroDelta >= 0 ? "+" : "−"}
+                  {money(Math.abs(heroDelta))}
+                  {heroPct != null
+                    ? ` (${heroPct >= 0 ? "+" : "−"}${Math.abs(heroPct).toFixed(1)}%)`
+                    : ""}
                 </Text>{" "}
-                <Text style={s.deltaLbl}>{deltaLabel}</Text>
+                <Text style={s.deltaLbl}>{heroLabel}</Text>
               </Text>
             </View>
             <View style={s.rg} accessibilityRole="tablist">
@@ -581,8 +636,8 @@ export function PortfolioScreen() {
               </View>
 
               <PerpSummaryLine
-                equity={perp.equity}
-                pnl={perp.pnl}
+                equity={perpEquity}
+                pnl={pnl.perpPnl}
                 count={perp.positions.length}
               />
               {/* perp account balance + Transfer (opens the drawer) */}
@@ -606,7 +661,7 @@ export function PortfolioScreen() {
                 <PerpsHeader
                   count={perp.positions.length}
                   margin={perp.margin}
-                  pnl={perp.pnl}
+                  pnl={pnl.perpPnl}
                 />
               ) : (
                 <View style={{ gap: 3 }}>
@@ -757,57 +812,72 @@ export function PortfolioScreen() {
                     : "You hold nothing in this category yet."}
                 </Text>
               ) : (
-                shownPositions.map((p, i) => (
-                  <Rise key={p.mint} delay={i * 45} duration={400}>
-                    <PressScale
-                      scaleTo={0.985}
-                      onPress={() => {
-                        hTap();
-                        openAsset(p.symbol, p.stockType);
-                      }}
-                      style={s.posRow}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${p.symbol}, ${money(p.value)}`}
-                    >
-                      <AssetAvatar
-                        symbol={p.symbol}
-                        imageUrl={p.imageUrl}
-                        size={48}
-                        radius={999}
-                      />
-                      <View style={{ flex: 1, gap: 4 }}>
-                        <Text
-                          style={[TYPE.ttl, { fontSize: 16 }]}
-                          numberOfLines={1}
-                        >
-                          {p.symbol}
-                        </Text>
-                        <Text style={s.qty}>
-                          {p.balance.toLocaleString("en-US", {
-                            maximumFractionDigits: 4,
-                          })}{" "}
-                          {p.symbol}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: "flex-end", gap: 4 }}>
-                        <Text style={s.val}>{money(p.value)}</Text>
-                        {p.change != null ? (
+                shownPositions.map((p, i) => {
+                  const tp = pnl.byMint.get(p.mint); // undefined = no cost history
+                  return (
+                    <Rise key={p.mint} delay={i * 45} duration={400}>
+                      <PressScale
+                        scaleTo={0.985}
+                        onPress={() => {
+                          hTap();
+                          openAsset(p.symbol, p.stockType);
+                        }}
+                        style={s.posRow}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${p.symbol}, ${money(p.value)}`}
+                      >
+                        <AssetAvatar
+                          symbol={p.symbol}
+                          imageUrl={p.imageUrl}
+                          size={48}
+                          radius={999}
+                        />
+                        <View style={{ flex: 1, gap: 4 }}>
                           <Text
-                            style={[
-                              s.chg,
-                              { color: p.change >= 0 ? C.mint : C.loss },
-                            ]}
+                            style={[TYPE.ttl, { fontSize: 16 }]}
+                            numberOfLines={1}
                           >
-                            <Text style={s.tri}>
-                              {p.change >= 0 ? "▲ " : "▼ "}
-                            </Text>
-                            {Math.abs(p.change).toFixed(2)}%
+                            {p.symbol}
                           </Text>
-                        ) : null}
-                      </View>
-                    </PressScale>
-                  </Rise>
-                ))
+                          <Text style={s.qty}>
+                            {p.balance.toLocaleString("en-US", {
+                              maximumFractionDigits: 4,
+                            })}{" "}
+                            {p.symbol}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: "flex-end", gap: 4 }}>
+                          <Text style={s.val}>{money(p.value)}</Text>
+                          {p.change != null ? (
+                            <Text
+                              style={[
+                                s.chg,
+                                { color: p.change >= 0 ? C.mint : C.loss },
+                              ]}
+                            >
+                              <Text style={s.tri}>
+                                {p.change >= 0 ? "▲ " : "▼ "}
+                              </Text>
+                              {Math.abs(p.change).toFixed(2)}%
+                            </Text>
+                          ) : null}
+                          {tp ? (
+                            <Text
+                              style={[
+                                s.chg,
+                                { color: tp.pnl >= 0 ? C.mint : C.loss },
+                              ]}
+                            >
+                              {tp.pnl >= 0 ? "+" : "−"}
+                              {money(Math.abs(tp.pnl))}
+                              {tp.pct != null ? ` · ${pct(tp.pct)}` : ""}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </PressScale>
+                    </Rise>
+                  );
+                })
               )
             ) : cat === "index" ? (
               <Text style={s.empty}>
@@ -1264,6 +1334,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
+    paddingVertical: 6,
   },
   qty: { fontFamily: FONT.mono400, fontSize: 12, color: C.ink3 },
   val: {
