@@ -49,7 +49,8 @@ model User {
     investments         Investment[]
     trades              Trades[]
     recurringBuyRequest RecurringBuyRequest[]
-    indexFundsHoldings  IndexFundsHolding[]
+    indexFundsHoldings       IndexFundsHolding[]
+    perpLeaderboardSnapshot  PerpLeaderboardSnapshot?
 
     @@index([userId])
 }
@@ -171,4 +172,21 @@ model PerpStocks {
     maxLeverage   Int    @default(10)
     imageUrl      String
     szDecimals    Int
+}
+
+model PerpLeaderboardSnapshot {
+    userId          String   @id
+    user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    ethAddress      String   @unique
+    displayName     String
+    netDepositsUsdc String   @default("0")
+    accountValue    String   @default("0")
+    returnPercent   Float?
+    rank            Int?
+    ledgerCursorMs  BigInt   @default(0)
+    refreshError    String?
+    refreshedAt     DateTime @updatedAt
+
+    @@index([returnPercent(sort: Desc)])
+    @@index([rank])
 }
