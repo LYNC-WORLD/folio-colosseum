@@ -59,6 +59,13 @@ import {
   useSocketStatus,
   useTradeActions,
 } from "../hooks/perps";
+import {
+  useOrdersBySymbol,
+  usePositionsBySymbol,
+  type SymOrder,
+  type SymPosition,
+} from "../hooks/perps/useSymbolTrading";
+import { tradeService, unwrap } from "../services/perps/tradeService";
 import { useBalances } from "../hooks/useBalances";
 import { errMsg } from "../services/hyperliquid/format";
 import { DEFAULT_PERP_MARKETS } from "../data/perpMarketsDefault";
@@ -113,7 +120,12 @@ export function TradeScreen() {
   const session = usePerpsSession();
   const markets = useMarkets();
   const live = useLiveMarket(sym);
-  const acct = useAccount(session.address);
+  const posQ = usePositionsBySymbol(sym, session.idToken);
+  const ordQ = useOrdersBySymbol(sym, session.idToken);
+  const refreshTrading = () => {
+    posQ.refetch();
+    ordQ.refetch();
+  };
   const actions = useTradeActions(session.idToken);
   const socket = useSocketStatus();
   const bal = useBalances();
@@ -205,25 +217,33 @@ export function TradeScreen() {
     ["OPEN INTEREST", `$${(live.oiUsd / 1e6).toFixed(1)}M`, null],
   ];
 
-  const positions = acct.positions
-    .slice()
-    .sort((a, b) => Number(b.sym === sym) - Number(a.sym === sym));
+  const positions = posQ.data;
   const sheetPos =
     sheet?.t === "position"
-      ? acct.positions.find((p) => p.id === sheet.id)
+      ? posQ.data.find((p) => p.id === sheet.id)
       : undefined;
 
-  const cancel = (o: (typeof acct.orders)[number]) =>
-    actions
-      .cancelOrder(o)
-      .then(() =>
-        toast(
-          "Order cancelled",
-          `${labelOf(o.sym).toUpperCase()} · ${fmtPx(o.px)}`,
+  const [cancelling, setCancelling] = useState<number | null>(null);
+  const cancel = async (o: SymOrder) => {
+    setCancelling(o.oid);
+    try {
+      await unwrap(
+        tradeService.cancelOrder(
+          { coin: o.coin, oid: o.oid },
+          session.idToken ?? "",
         ),
-      )
-      .catch((e) => toast("Couldn't cancel", errMsg(e).toUpperCase()));
-
+      );
+      toast(
+        "Order cancelled",
+        `${labelOf(o.sym).toUpperCase()} · ${fmtPx(o.px)}`,
+      );
+      ordQ.refetch();
+    } catch (e) {
+      toast("Couldn't cancel", errMsg(e).toUpperCase());
+    } finally {
+      setCancelling(null);
+    }
+  };
   const levLabel = listed
     ? Math.min(DEFAULT_LEV, live.maxLeverage)
     : DEFAULT_LEV;
@@ -411,8 +431,8 @@ export function TradeScreen() {
             <ChartStage
               sym={sym}
               onScrollLock={setLocked}
-              positions={acct.positions}
-              orders={acct.orders}
+              positions={posQ.data}
+              orders={ordQ.data}
             />
           </View>
         ) : null}
@@ -421,8 +441,8 @@ export function TradeScreen() {
         <View style={tradeStyles.tabs}>
           {(
             [
-              ["pos", "Positions", acct.positions.length],
-              ["ord", "Orders", acct.orders.length],
+              ["pos", "Positions", posQ.data.length],
+              ["ord", "Orders", ordQ.data.length],
               ["book", "Order book"],
               ["info", "Contract"],
             ] as [PTab, string, number?][]
@@ -448,9 +468,20 @@ export function TradeScreen() {
 
         <View style={tradeStyles.panel}>
           {tab === "pos" ? (
-            acct.loading ? (
+            posQ.loading ? (
               <View style={tradeStyles.empty}>
                 <ActivityIndicator color={C.ink3} />
+              </View>
+            ) : posQ.error && !positions.length ? (
+              <View style={tradeStyles.empty}>
+                <Text style={tradeStyles.ttl}>Couldn't load positions</Text>
+                <Text style={tradeStyles.emptyT}>{posQ.error}</Text>
+                <Btn
+                  kind="ghost"
+                  small
+                  label="Try again"
+                  onPress={posQ.refetch}
+                />
               </View>
             ) : positions.length ? (
               positions.map((p) => {
@@ -505,8 +536,23 @@ export function TradeScreen() {
           ) : null}
 
           {tab === "ord" ? (
-            acct.orders.length ? (
-              acct.orders.map((o) => (
+            ordQ.loading ? (
+              <View style={tradeStyles.empty}>
+                <ActivityIndicator color={C.ink3} />
+              </View>
+            ) : ordQ.error && !ordQ.data.length ? (
+              <View style={tradeStyles.empty}>
+                <Text style={tradeStyles.ttl}>Couldn't load orders</Text>
+                <Text style={tradeStyles.emptyT}>{ordQ.error}</Text>
+                <Btn
+                  kind="ghost"
+                  small
+                  label="Try again"
+                  onPress={ordQ.refetch}
+                />
+              </View>
+            ) : ordQ.data.length ? (
+              ordQ.data.map((o) => (
                 <View key={o.id} style={tradeStyles.pRow}>
                   <View style={tradeStyles.logo}>
                     <Text style={tradeStyles.logoT}>{logoTxt(o.sym)}</Text>
@@ -528,14 +574,18 @@ export function TradeScreen() {
                       hTap();
                       cancel(o);
                     }}
-                    disabled={actions.busy}
+                    disabled={cancelling === o.oid}
                     style={[
                       tradeStyles.cancel,
-                      actions.busy && { opacity: 0.5 },
+                      cancelling === o.oid && { opacity: 0.5 },
                     ]}
                     accessibilityRole="button"
                   >
-                    <Text style={tradeStyles.cancelT}>Cancel</Text>
+                    {cancelling === o.oid ? (
+                      <ActivityIndicator size="small" color={C.loss} />
+                    ) : (
+                      <Text style={tradeStyles.cancelT}>Cancel</Text>
+                    )}
                   </Pressable>
                 </View>
               ))
@@ -660,7 +710,10 @@ export function TradeScreen() {
               then: () => setSheet({ t: "ticket", side }),
             });
           }}
-          onClose={() => setSheet(null)}
+          onClose={() => {
+            setSheet(null);
+            refreshTrading();
+          }}
           onChart={toChart}
         />
       ) : null}
