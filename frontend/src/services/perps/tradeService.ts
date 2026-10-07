@@ -20,6 +20,37 @@ export interface PlaceLimitOrder extends PlaceOrderBase {
   limitPrice: number;
 }
 
+export interface PositionApi {
+  coin: string; // "xyz:NVDA"
+  szi: string; // signed: negative = short
+  leverage: { type: "cross" | "isolated"; value: number };
+  entryPx: string;
+  positionValue: string;
+  unrealizedPnl: string;
+  returnOnEquity: string;
+  liquidationPx: string | null;
+  marginUsed: string;
+  maxLeverage: number;
+  cumFunding: { allTime: string; sinceOpen: string; sinceChange: string };
+}
+
+export interface PositionResponse {
+  type: "oneWay" | string;
+  position: PositionApi | null;
+}
+
+export interface OrderApi {
+  oid: number;
+  coin: string;
+  stockSymbol: string;
+  isBuy: boolean;
+  orderType: "market" | "limit" | "stop";
+  price: string;
+  size: string;
+  reduceOnly?: boolean;
+  timestamp?: number; // ms
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   message?: string;
@@ -80,6 +111,12 @@ export const tradeService = {
       body: payload,
     }),
 
+      getAllPositions: (idToken: string) =>
+    request<ApiResponse<PositionResponse[]>>(
+      "/api/perp-trade/positions",
+      { method: "GET", token: idToken },
+    ),
+
   modifyOrder: (payload: { coin: string; oid: number; price: string; size: string; isBuy: boolean }, idToken: string) =>
     request<ApiResponse<OrderResult>>("/api/perps/order/modify", { method: "POST", token: idToken, body: payload }),
 
@@ -113,6 +150,17 @@ export const tradeService = {
   /** Called after the user signed approveAgent, so the backend can verify via extraAgents. */
   confirmAgent: (idToken: string) =>
     request<ApiResponse<AgentStatus>>("/api/perps/agent/confirm", { method: "POST", token: idToken }),
+  getPositionsBySymbol: (stock: string, idToken: string) =>
+  request<ApiResponse<PositionResponse | null>>(
+    `/api/perp-trade/positions-by-symbol/${encodeURIComponent(stock)}`,
+    { method: "GET", token: idToken },
+  ),
+
+  getOrdersBySymbol: (stock: string, idToken: string) =>
+    request<ApiResponse<OrderApi[]>>(
+      `/api/perp-trade/orders-by-symbol/${encodeURIComponent(stock)}`,
+      { method: "GET", token: idToken },
+    ),
 };
 
 /** Throws on success:false so hooks can just await. */

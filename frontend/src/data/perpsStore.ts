@@ -11,7 +11,7 @@ import { PERP_MARKETS, type PerpMarket } from "./perps";
 export const MAXLEV = 50;
 export const MMR = 0.005; // maintenance margin
 export const TAKER = 0.0006; // 0.06 %
-export const MIN_MARGIN = 5;
+export const MIN_MARGIN = 3;
 
 // typical one-day move in %, drives the feed, chart and the pre-trade check
 const DVOL: Record<string, number> = {

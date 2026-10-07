@@ -7,3 +7,4 @@ export * from "./useAccount";
 export * from "./useTradeActions";
 export * from "./usePerpsOnboarding";
 export * from "./usePerpsSession";
+export * from "./useSymbolTrading";
