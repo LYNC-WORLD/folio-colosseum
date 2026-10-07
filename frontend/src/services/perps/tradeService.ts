@@ -155,6 +155,11 @@ export const tradeService = {
     `/api/perp-trade/positions-by-symbol/${encodeURIComponent(stock)}`,
     { method: "GET", token: idToken },
   ),
+  closePosition: (payload: { stockSymbol: string }, idToken: string) =>
+  request<ApiResponse<{ status: string }>>(
+    "/api/perp-trade/close-position",
+    { method: "POST", token: idToken, body: payload },
+  ),
 
   getOrdersBySymbol: (stock: string, idToken: string) =>
     request<ApiResponse<OrderApi[]>>(

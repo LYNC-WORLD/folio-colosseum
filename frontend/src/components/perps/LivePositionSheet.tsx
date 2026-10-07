@@ -19,26 +19,23 @@ export function LivePositionSheet({
   mark: number;
   label: string;
   onClose: () => void;
-  onClosePosition: (fraction: number) => Promise<unknown>;
+  onClosePosition: () => Promise<unknown>;
   onMoveToSpot?: () => void;
 }) {
-  const [busy, setBusy] = useState<null | number>(null);
+  const [busy, setBusy] = useState(false);
   const pnl = livePnl(p, mark);
   const roe = liveRoe(p, mark);
 
-  const close = async (fraction: number) => {
-    setBusy(fraction);
+  const close = async () => {
+    setBusy(true);
     try {
-      await onClosePosition(fraction);
-      toast(
-        fraction === 1 ? "Position closed" : "Half closed",
-        `${label.toUpperCase()} · ${sMoney(pnl * fraction)}`,
-      );
+      await onClosePosition();
+      toast("Position closed", `${label.toUpperCase()} · ${sMoney(pnl)}`);
       onClose();
     } catch (e) {
       toast("Couldn't close", errMsg(e).toUpperCase());
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
@@ -87,16 +84,9 @@ export function LivePositionSheet({
       </Body>
       <Btn
         kind={p.side > 0 ? "short" : "long"}
-        label={busy === 1 ? "Closing…" : "Close position"}
-        disabled={busy != null}
-        onPress={() => close(1)}
-      />
-      <Btn
-        kind="ghost"
-        small
-        label={busy === 0.5 ? "Closing…" : "Close half"}
-        disabled={busy != null}
-        onPress={() => close(0.5)}
+        label={busy ? "Closing…" : "Close position"}
+        disabled={busy}
+        onPress={close}
       />
     </Sheet>
   );

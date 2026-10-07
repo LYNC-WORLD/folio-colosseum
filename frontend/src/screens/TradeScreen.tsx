@@ -57,7 +57,6 @@ import {
   useMarkets,
   usePerpsSession,
   useSocketStatus,
-  useTradeActions,
 } from "../hooks/perps";
 import {
   useOrdersBySymbol,
@@ -127,7 +126,6 @@ export function TradeScreen() {
     posQ.refetch();
     ordQ.refetch();
   };
-  const actions = useTradeActions(session.idToken);
   const socket = useSocketStatus();
   const walletBal = useWalletBalance();
   const bal = {
@@ -769,12 +767,13 @@ export function TradeScreen() {
           mark={markOf(sheetPos.coin, sheetPos.entry)}
           label={labelOf(sheetPos.sym)}
           onClose={() => setSheet(null)}
-          onClosePosition={(f) =>
-            actions.closePosition(
-              sheetPos,
-              markOf(sheetPos.coin, sheetPos.entry),
-              f,
-            )
+          onClosePosition={() =>
+            unwrap(
+              tradeService.closePosition(
+                { stockSymbol: sheetPos.sym },
+                session.idToken ?? "",
+              ),
+            ).then(() => refreshTrading())
           }
           onMoveToSpot={() =>
             openTransfer({
