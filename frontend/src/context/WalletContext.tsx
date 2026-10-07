@@ -6,6 +6,7 @@ import { useAuth } from "./AuthContext";
 type WalletData = Awaited<ReturnType<typeof getWalletBalance>>["data"];
 type Usdc = WalletData["usdc"];
 type Token = WalletData["tokens"][number];
+type Perp = NonNullable<WalletData["perpBalance"]>;
 
 export type WalletContextValue = {
   /** Raw wallet response */
@@ -13,11 +14,20 @@ export type WalletContextValue = {
   walletAddress: string | undefined;
   usdc: Usdc | undefined;
   tokens: Token[];
+  perpBalance: Perp | undefined;
 
-  /** Derived USD values */
-  usdcValue: number;
-  tokensValue: number;
-  usdValue: number;
+  /** Derived USD values — spot wallet */
+  usdcValue: number; // cash in wallet
+  tokensValue: number; // stocks + pre-IPOs
+  usdValue: number; // usdcValue + tokensValue (wallet only, no perp)
+
+  /** Derived USD values — perp account */
+  perpValue: number; // total USDC in the perp account
+  perpHold: number; // USDC locked in open orders
+  perpAvailable: number; // perpValue - perpHold (free to transfer out)
+
+  /** usdValue + perpValue */
+  totalValue: number;
 
   /** Status */
   loading: boolean; // first load only
@@ -29,6 +39,11 @@ export type WalletContextValue = {
 };
 
 const EMPTY_TOKENS: Token[] = [];
+
+const num = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
@@ -52,22 +67,33 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<WalletContextValue>(() => {
     const usdcValue = wallet
-      ? wallet.usdc.balance * Number(wallet.usdc.price)
+      ? num(wallet.usdc.balance) * num(wallet.usdc.price)
       : 0;
 
     const tokensValue = wallet
-      ? wallet.tokens.reduce((sum, t) => sum + t.balance * Number(t.price), 0)
+      ? wallet.tokens.reduce((sum, t) => sum + num(t.balance) * num(t.price), 0)
       : 0;
+
+    const perpValue = num(wallet?.perpBalance?.total);
+    const perpHold = num(wallet?.perpBalance?.hold);
+    const usdValue = usdcValue + tokensValue;
 
     return {
       wallet,
       walletAddress: wallet?.walletAddress,
       usdc: wallet?.usdc,
       tokens: wallet?.tokens ?? EMPTY_TOKENS,
+      perpBalance: wallet?.perpBalance ?? undefined,
 
       usdcValue,
       tokensValue,
-      usdValue: usdcValue + tokensValue,
+      usdValue,
+
+      perpValue,
+      perpHold,
+      perpAvailable: Math.max(perpValue - perpHold, 0),
+
+      totalValue: usdValue + perpValue,
 
       loading: isLoading,
       refreshing: isFetching && !isLoading,

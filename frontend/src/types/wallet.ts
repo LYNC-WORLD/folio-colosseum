@@ -7,6 +7,14 @@ export type UsdcBalance = {
   name: string;
 };
 
+export type PerpBalance = {
+  coin: string;
+  token: number;
+  total: string;
+  hold: string;
+  entryNtl: string;
+};
+
 export type TokenBalance = {
   tokenAccount: string;
   mint: string;
@@ -17,11 +25,12 @@ export type TokenBalance = {
   name: string;
   symbol: string;
   imageUrl: string;
-    stockType: "USStock" | "PreIPO";
+  stockType: "USStock" | "PreIPO";
 };
 
 export type WalletBalance = {
   walletAddress: string;
+  perpBalance?: PerpBalance | null;
   sol: {
     balance: number;
     lamports: number;
