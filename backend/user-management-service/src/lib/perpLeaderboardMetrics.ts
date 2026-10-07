@@ -6,12 +6,42 @@ export const MIN_NET_DEPOSITS_USDC = 1;
 
 type LedgerEntry = UserNonFundingLedgerUpdatesResponse[number];
 
-export async function fetchPerpAccountValue(ethAddress: string) {
-  const state = await hyperliquidInfoClient.clearinghouseState({
-    user: ethAddress as `0x${string}`,
-    dex: PERP_DEX,
-  });
-  return Number(state.marginSummary.accountValue);
+const USDC_TOKEN = 0;
+
+export async function fetchSpotPrices() {
+  const [meta, ctxs] = await hyperliquidInfoClient.spotMetaAndAssetCtxs();
+  const pxByPair = new Map(ctxs.map((ctx) => [ctx.coin, Number(ctx.midPx ?? ctx.markPx)]));
+  const prices = new Map<number, number>([[USDC_TOKEN, 1]]);
+  for (const pair of meta.universe) {
+    const [base, quote] = pair.tokens;
+    if (quote === USDC_TOKEN && !prices.has(base)) {
+      prices.set(base, pxByPair.get(pair.name) ?? 0);
+    }
+  }
+  return prices;
+}
+
+export async function fetchPerpAccountValue(
+  ethAddress: string,
+  spotPrices: Map<number, number>,
+) {
+  const user = ethAddress as `0x${string}`;
+  const [xyz, main, spot] = await Promise.all([
+    hyperliquidInfoClient.clearinghouseState({ user, dex: PERP_DEX }),
+    hyperliquidInfoClient.clearinghouseState({ user }),
+    hyperliquidInfoClient.spotClearinghouseState({ user }),
+  ]);
+  let value =
+    Number(xyz.marginSummary.accountValue) +
+    Number(main.marginSummary.accountValue);
+  for (const balance of spot.balances) {
+    if (!("token" in balance)) continue;
+    value +=
+      balance.token === USDC_TOKEN
+        ? Number(balance.total) - Number(balance.hold)
+        : Number(balance.total) * (spotPrices.get(balance.token) ?? 0);
+  }
+  return value;
 }
 
 export async function fetchLedgerUpdates(
@@ -50,62 +80,25 @@ function ledgerDeltaUsdc(entry: LedgerEntry, ethAddress: string) {
       return Number(delta.usdc);
     case "withdraw":
       return -Number(delta.usdc);
-    case "accountClassTransfer":
-      return delta.toPerp ? Number(delta.usdc) : -Number(delta.usdc);
     case "send":
-      return sendDelta(delta, ethAddress);
-    case "internalTransfer": {
-      const v = Number(delta.usdc);
-      if (delta.destination.toLowerCase() === ethAddress.toLowerCase()) {
-        return v;
-      }
-      if (delta.user.toLowerCase() === ethAddress.toLowerCase()) {
-        return -v;
-      }
-      return 0;
-    }
-    case "subAccountTransfer": {
-      const v = Number(delta.usdc);
-      if (delta.destination.toLowerCase() === ethAddress.toLowerCase()) {
-        return v;
-      }
-      if (delta.user.toLowerCase() === ethAddress.toLowerCase()) {
-        return -v;
-      }
-      return 0;
-    }
-    case "spotTransfer": {
-      const v = Number(delta.usdcValue);
-      if (delta.destination.toLowerCase() === ethAddress.toLowerCase()) {
-        return v;
-      }
-      if (delta.user.toLowerCase() === ethAddress.toLowerCase()) {
-        return -v;
-      }
-      return 0;
-    }
+    case "spotTransfer":
+      return transferDelta(delta.user, delta.destination, Number(delta.usdcValue), ethAddress);
+    case "internalTransfer":
+    case "subAccountTransfer":
+      return transferDelta(delta.user, delta.destination, Number(delta.usdc), ethAddress);
     default:
       return 0;
   }
 }
 
-function sendDelta(
-  delta: Extract<LedgerEntry["delta"], { type: "send" }>,
-  ethAddress: string,
-) {
-  const v = Number(delta.usdcValue);
-  const user = delta.user.toLowerCase();
-  const dest = delta.destination.toLowerCase();
+function transferDelta(from: string, to: string, usdc: number, ethAddress: string) {
   const self = ethAddress.toLowerCase();
-  const fromXyz = isXyzPerpDex(delta.sourceDex);
-  const toXyz = isXyzPerpDex(delta.destinationDex);
-  if (dest === self && toXyz) return v;
-  if (user === self && fromXyz) return -v;
+  from = from.toLowerCase();
+  to = to.toLowerCase();
+  if (from === to) return 0;
+  if (to === self) return usdc;
+  if (from === self) return -usdc;
   return 0;
-}
-
-function isXyzPerpDex(dex: string) {
-  return dex === PERP_DEX || dex === "";
 }
 
 export function computeReturnPercent(accountValue: number, netDeposits: number) {

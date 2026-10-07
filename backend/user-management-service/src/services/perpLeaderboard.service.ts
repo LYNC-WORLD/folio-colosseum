@@ -5,6 +5,7 @@ import {
   computeReturnPercent,
   fetchLedgerUpdates,
   fetchPerpAccountValue,
+  fetchSpotPrices,
 } from "../lib/perpLeaderboardMetrics";
 import { prisma } from "../lib/prisma";
 
@@ -17,6 +18,7 @@ export async function refreshAllSnapshots() {
     where: { chain: Chain.ETH },
     include: { user: { select: { id: true, name: true } } },
   });
+  const spotPrices = await fetchSpotPrices();
 
   let refreshed = 0;
   let failed = 0;
@@ -32,6 +34,7 @@ export async function refreshAllSnapshots() {
           wallet.user.id,
           wallet.user.name,
           wallet.walletAddress,
+          spotPrices,
         );
         refreshed++;
       } catch (error) {
@@ -74,6 +77,7 @@ async function refreshOneWallet(
   userId: string,
   displayName: string,
   ethAddress: string,
+  spotPrices: Map<number, number>,
 ) {
   const existing = await prisma.perpLeaderboardSnapshot.findUnique({
     where: { userId },
@@ -83,7 +87,7 @@ async function refreshOneWallet(
 
   const [entries, accountValue] = await Promise.all([
     fetchLedgerUpdates(ethAddress, priorCursor),
-    fetchPerpAccountValue(ethAddress),
+    fetchPerpAccountValue(ethAddress, spotPrices),
   ]);
 
   const { netDeposits, cursorMs } = applyLedgerEntries(
