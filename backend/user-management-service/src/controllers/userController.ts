@@ -10,7 +10,11 @@ export class UserController {
 
   public getBalance = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user || !req.user?.solanaWalletAddress) {
+      if (
+        !req.user ||
+        !req.user?.solanaWalletAddress ||
+        !req.user?.ethereumWalletAddress
+      ) {
         res.status(404).json({
           success: false,
           message: "can not find wallet",
@@ -18,6 +22,7 @@ export class UserController {
         return;
       }
       const solanaWalletAddress = req.user?.solanaWalletAddress;
+      const ethereumWalletAddress = req.user?.ethereumWalletAddress;
       if (!solanaWalletAddress) {
         res.status(404).json({
           success: false,
@@ -25,14 +30,18 @@ export class UserController {
         });
         return;
       }
-      const userBalance = await this.userService.getBalance(solanaWalletAddress);
+      const userBalance = await this.userService.getBalance(
+        solanaWalletAddress,
+        ethereumWalletAddress,
+      );
       if (!userBalance) {
         res.status(404).json({ success: false, message: "No stocks found" });
         return;
       }
       res.status(200).json({
         success: true,
-        message: "Stock Details",
+        message:
+          "User Balance (For perp balance, total = total USDC balance, hold = USDC currently locked in orders )",
         data: userBalance,
       });
       return;
@@ -180,7 +189,7 @@ export class UserController {
       }
       const data = await this.userService.cancelRecurringBuyRequest(
         req.user.userId,
-        req.body.recurringId
+        req.body.recurringId,
       );
       if (!data) {
         res

@@ -16,6 +16,7 @@ export class PerpTradeService {
     assetId: number,
     dollarSize: number,
     leverage: number,
+    marginMode: "ISOLATED" | "CROSS",
     sizeDecimal: number,
     isBuy: boolean,
     tpsl?: TpSlInterface,
@@ -46,7 +47,7 @@ export class PerpTradeService {
       // update leverage
       const leverageUpdated = await client.updateLeverage({
         asset: assetId,
-        isCross: true,
+        isCross: marginMode == "CROSS",
         leverage: leverage,
       });
       if (!(leverageUpdated.status == "ok")) {
@@ -165,6 +166,7 @@ export class PerpTradeService {
     dollarSize: number,
     limitPrice: number,
     leverage: number,
+    marginMode: "ISOLATED" | "CROSS",
     sizeDecimal: number,
     isBuy: boolean,
     tpsl?: TpSlInterface,
@@ -195,7 +197,7 @@ export class PerpTradeService {
       // update leverage
       const leverageUpdated = await client.updateLeverage({
         asset: assetId,
-        isCross: true,
+        isCross: marginMode == "CROSS",
         leverage: leverage,
       });
       if (!(leverageUpdated.status == "ok")) {
@@ -337,6 +339,231 @@ export class PerpTradeService {
     }
   }
 
+  public async closePosition(
+    walletId: string,
+    ethereumAddress: string,
+    stockSymbol: string,
+  ) {
+    try {
+      const [stockDetails, openPosition, walletDetails] = await Promise.all([
+        prisma.perpStocks.findFirst({
+          where: {
+            marketSymbol: stockSymbol,
+          },
+        }),
+        this.getPositionBySymbol(ethereumAddress, stockSymbol),
+        prisma.wallet.findFirst({
+          where: {
+            walletId: walletId,
+          },
+          include: {
+            hyperLiquidDetails: true,
+          },
+        }),
+      ]);
+      if (
+        !stockDetails ||
+        !openPosition ||
+        !walletDetails ||
+        !walletDetails.hyperLiquidDetails
+      )
+        return;
+      const assetId = stockDetails.assetId;
+      const isBuy = Number(openPosition.position.szi) < 0 ? true : false;
+      const size = Math.abs(Number(openPosition.position.szi));
+      const priceData = await getBestPriceFromOrderBook(stockSymbol, isBuy);
+      if (!priceData) return;
+      const apiSecret = decrypt(
+        walletDetails.hyperLiquidDetails.agentApiSecret,
+      );
+      const wallet = privateKeyToAccount(apiSecret as `0x${string}`);
+
+      const client = new ExchangeClient({
+        transport: hyperliquidTransport,
+        wallet,
+      });
+
+      const closePosition = await client.order({
+        orders: [
+          {
+            a: assetId,
+            b: isBuy,
+            p: formatPrice(priceData.limitPrice, stockDetails.szDecimals),
+            r: false,
+            s: formatSize(size, stockDetails.szDecimals),
+            t: {
+              limit: {
+                tif: "Ioc",
+              },
+            },
+          },
+        ],
+        grouping: "na",
+      });
+      const firstOrder = closePosition.response.data.statuses[0];
+      if (typeof firstOrder === "object" && "filled" in firstOrder) {
+        return {
+          success: true,
+          message: "Order filled",
+          response: closePosition.response,
+        };
+      } else {
+        return {
+          success: false,
+          message: "Order not filled",
+          response: closePosition.response,
+        };
+      }
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
+
+  public async placeTPSL(
+    walletId: string,
+    ethereumAddress: string,
+    stockSymbol: string,
+    orderSize: string | undefined,
+    tpsl: TpSlInterface,
+  ) {
+    try {
+      const [stockDetails, openPosition, walletDetails] = await Promise.all([
+        prisma.perpStocks.findFirst({
+          where: {
+            marketSymbol: stockSymbol,
+          },
+        }),
+        this.getPositionBySymbol(ethereumAddress, stockSymbol),
+        prisma.wallet.findFirst({
+          where: {
+            walletId: walletId,
+          },
+          include: {
+            hyperLiquidDetails: true,
+          },
+        }),
+      ]);
+      if (
+        !stockDetails ||
+        !openPosition ||
+        !walletDetails ||
+        !walletDetails.hyperLiquidDetails
+      )
+        return { success: false, message: "cant fetch details" };
+      const assetId = stockDetails.assetId;
+      const isBuy = Number(openPosition.position.szi) > 0 ? true : false;
+      const size = orderSize ?? Math.abs(Number(openPosition.position.szi));
+      const leverage = openPosition.position.leverage.value;
+      const sizeDecimal = stockDetails.szDecimals;
+      const averageFillPrice = Number(openPosition.position.entryPx);
+      const priceData = await getBestPriceFromOrderBook(stockSymbol, isBuy);
+      let grouping: "na" | "normalTpsl" | "positionTpsl" = "na";
+      if (!priceData)
+        return { success: false, messages: "can not fetch orderbook" };
+      const apiSecret = decrypt(
+        walletDetails.hyperLiquidDetails.agentApiSecret,
+      );
+      const wallet = privateKeyToAccount(apiSecret as `0x${string}`);
+
+      const client = new ExchangeClient({
+        transport: hyperliquidTransport,
+        wallet,
+      });
+      let batchOrder: any[] = [];
+      if (
+        tpsl.TpPrice &&
+        (isBuy
+          ? tpsl.TpPrice < priceData.orderBookPrice
+          : tpsl.TpPrice > priceData.orderBookPrice)
+      ) {
+        return {
+          success: false,
+          message: "invalid TP details (order will  be filled immediately)",
+        };
+      }
+      if (
+        tpsl.SlPrice &&
+        (isBuy
+          ? tpsl.SlPrice > priceData.orderBookPrice
+          : tpsl.SlPrice < priceData.orderBookPrice)
+      ) {
+        return {
+          success: false,
+          message: "invalid SL details (order will  be filled immediately)",
+        };
+      }
+      if (tpsl.TpPrice || tpsl.TpPercentage) {
+        const tpTriggerPrice =
+          tpsl.TpPrice ??
+          (averageFillPrice *
+            (100 + ((isBuy ? 1 : -1) * (tpsl.TpPercentage ?? 0)) / leverage)) /
+            100;
+        const tpOrderPrice =
+          (priceData.orderBookPrice *
+            (100 + ((isBuy ? -1 : 1) * (tpsl.TpPercentage ?? 0)) / leverage)) /
+          100;
+        batchOrder.push({
+          a: assetId,
+          b: !isBuy,
+          p: formatPrice(tpOrderPrice, sizeDecimal),
+          s: formatSize(size, sizeDecimal),
+          r: true,
+          t: {
+            trigger: {
+              isMarket: true,
+              triggerPx: formatPrice(tpTriggerPrice, sizeDecimal),
+              tpsl: "tp",
+            },
+          },
+        });
+      }
+      if (tpsl.SlPrice || tpsl.SlPercentage) {
+        const slTriggerPrice =
+          tpsl.SlPrice ??
+          (averageFillPrice *
+            (100 + ((isBuy ? -1 : 1) * (tpsl.SlPercentage ?? 0)) / leverage)) /
+            100;
+        const slOrderPrice =
+          (priceData.orderBookPrice *
+            (100 + ((isBuy ? 1 : -1) * (tpsl.SlPercentage ?? 0)) / leverage)) /
+          100;
+        batchOrder.push({
+          a: assetId,
+          b: !isBuy,
+          p: formatPrice(slOrderPrice, sizeDecimal),
+          s: formatSize(size, sizeDecimal),
+          r: true,
+          t: {
+            trigger: {
+              isMarket: true,
+              triggerPx: formatPrice(slTriggerPrice, sizeDecimal),
+              tpsl: "sl",
+            },
+          },
+        });
+      }
+      if (batchOrder.length == 2) {
+        grouping = "na";
+      }
+      const tpslOrders = await client.order({
+        orders: batchOrder,
+        grouping: grouping,
+      });
+
+      return {
+        success: true,
+        message: "Order places",
+        data: tpslOrders.response.data.statuses,
+      };
+    } catch (error) {
+      console.error(error);
+      return {
+        success: false,
+        message: "something went wrong",
+      };
+    }
+  }
   public async getOpenOrders(ethereumAddress: string) {
     try {
       const orders = await hyperliquidInfoClient.openOrders({

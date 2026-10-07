@@ -1,8 +1,9 @@
+import { hyperliquidInfoClient } from "../lib/hyperliquid";
 import { prisma } from "../lib/prisma";
 import { getWalletTokens, USDC_MINT } from "../lib/solana";
 
 export class UserService {
-  public async getBalance(walletAddress: string) {
+  public async getBalance(walletAddress: string, ethereumAddress: string) {
     try {
       const tokenDetails = await getWalletTokens(walletAddress);
       if (!tokenDetails) {
@@ -25,9 +26,15 @@ export class UserService {
       const priceMap = new Map(
         stocks.map((stock) => [stock.tokenAddress, stock]),
       );
+      const perpBalance = await hyperliquidInfoClient.spotClearinghouseState({
+        user: ethereumAddress,
+      });
+      const perpUSDCBalance = perpBalance.balances.find(
+        (balance) => balance.coin.toUpperCase() === "USDC",
+      );
       const result = {
         walletAddress: tokenDetails.walletAddress,
-
+        perpBalance: perpUSDCBalance ?? 0,
         sol: tokenDetails.sol,
 
         usdc: usdcToken
@@ -71,10 +78,10 @@ export class UserService {
     try {
       const form = await prisma.loginDetails.findUnique({
         where: {
-          email: email
-        }
+          email: email,
+        },
       });
-      if(form){
+      if (form) {
         return form;
       }
       const responce = await prisma.loginDetails.create({

@@ -71,6 +71,7 @@ export class PerpTradeController {
         Number(result?.assetId),
         body.dollarSize,
         body.leverage,
+        body.margin,
         result?.szDecimals,
         body.isBuy,
         {
@@ -157,6 +158,7 @@ export class PerpTradeController {
         body.dollarSize,
         body.limitPrice,
         body.leverage,
+        body.margin,
         result?.szDecimals,
         body.isBuy,
       );
@@ -219,9 +221,109 @@ export class PerpTradeController {
     }
   };
 
-  // place tp sl
+  public closePosition = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (
+        !req.user ||
+        !req.user.solanaWalletId ||
+        !req.user.ethereumWalletId ||
+        !req.user.ethereumWalletAddress
+      ) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const body: closePosition = req.body;
+      if (!body.stockSymbol) {
+        res.status(404).json({
+          success: false,
+          message: "stockSymbol is required",
+        });
+        return;
+      }
+      const cancelOrder = await this.perpTradeService.closePosition(
+        req.user.ethereumWalletId,
+        req.user.ethereumWalletAddress,
+        body.stockSymbol,
+      );
+      res.status(200).json({
+        success: true,
+        message: "cancelOrder",
+        data: cancelOrder,
+      });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
 
-  // close position
+  public placeTpSlOrder = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      if (
+        !req.user ||
+        !req.user.solanaWalletId ||
+        !req.user.ethereumWalletId ||
+        !req.user.ethereumWalletAddress
+      ) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const body: TpSlOrder = req.body;
+      if (
+        !body.tpPrice &&
+        !body.slPrice &&
+        !body.tpPercent &&
+        !body.slPercent
+      ) {
+        res.status(404).json({
+          success: false,
+          message: "tpsl Order details required",
+        });
+        return;
+      }
+      if (!body.stockSymbol) {
+        res.status(404).json({
+          success: false,
+          message: "stockSymbol, orderSize is required",
+        });
+        return;
+      }
+      const cancelOrder = await this.perpTradeService.placeTPSL(
+        req.user.ethereumWalletId,
+        req.user.ethereumWalletAddress,
+        body.stockSymbol,
+        body.orderSize,
+        {
+          TpPrice: body.tpPrice,
+          SlPrice: body.slPrice,
+          TpPercentage: body.tpPercent,
+          SlPercentage: body.slPercent,
+        },
+      );
+      res.status(200).json({
+        success: true,
+        message: "cancelOrder",
+        data: cancelOrder,
+      });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
 
   public getOpenOrders = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -369,4 +471,17 @@ interface placeLimitOrder {
 interface cancelOrder {
   assetId: string;
   orderId: string;
+}
+
+interface closePosition {
+  stockSymbol: string;
+}
+
+interface TpSlOrder {
+  stockSymbol: string;
+  orderSize: string | undefined;
+  tpPrice: number | undefined;
+  slPrice: number | undefined;
+  tpPercent: number | undefined;
+  slPercent: number | undefined;
 }
