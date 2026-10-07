@@ -33,6 +33,13 @@ export class DepositController {
         });
         return;
       }
+      if (Number(body.depositAmount) < 20) {
+        res.status(400).json({
+          success: false,
+          message: "minimum deposit amount is $20",
+        });
+        return;
+      }
       const depositRequest = await this.depositService.createDepositRequest(
         req.user.id,
         body.depositAmount,
