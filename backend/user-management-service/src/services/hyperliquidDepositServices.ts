@@ -10,9 +10,11 @@ export async function CheckDepositRequest() {
       const depositComplete = await checkDepositUSOL(
         depositRequest.walletAddress,
       );
+      
       if (!depositComplete) {
         return;
       }
+      
       await prisma.depositRequest.update({
         where: { id: depositRequest.id },
         data: {
