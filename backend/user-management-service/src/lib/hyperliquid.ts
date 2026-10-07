@@ -324,6 +324,82 @@ export async function convertUSOL(
   }
   return true;
 }
+
+export async function makeUnifiedAccount(walletId: string, walletAddress: string) {
+  const nonce = Date.now();
+  const signature = await privy
+    .wallets()
+    .ethereum()
+    .signTypedData(walletId, {
+      params: {
+        typed_data: {
+          domain: {
+            name: "HyperliquidSignTransaction",
+            version: "1",
+            chainId: 1,
+            verifyingContract: "0x0000000000000000000000000000000000000000",
+          },
+          message: {
+            type: "userSetAbstraction",
+            user: walletAddress,
+            abstraction: "unifiedAccount",
+            nonce: nonce,
+            signatureChainId: "0x1",
+            hyperliquidChain: "Mainnet",
+          },
+          primary_type: "HyperliquidTransaction:UserSetAbstraction",
+          types: {
+            EIP712Domain: [
+              { name: "name", type: "string" },
+              { name: "version", type: "string" },
+              { name: "chainId", type: "uint256" },
+              { name: "verifyingContract", type: "address" },
+            ],
+            "HyperliquidTransaction:UserSetAbstraction": [
+              { name: "hyperliquidChain", type: "string" },
+              { name: "user", type: "address" },
+              { name: "abstraction", type: "string" },
+              { name: "nonce", type: "uint64" },
+            ],
+          },
+        },
+      },
+      authorization_context: {
+        authorization_private_keys: [env.PRIVY_AUTH_KEY!],
+      },
+    });
+
+  const parsed = Signature.from(signature.signature);
+  const body = {
+    action: {
+      type: "userSetAbstraction",
+      user: walletAddress,
+      abstraction: "unifiedAccount",
+      nonce: nonce,
+      signatureChainId: "0x1",
+      hyperliquidChain: "Mainnet",
+    },
+    expiresAfter: null,
+    nonce: nonce,
+    signature: {
+      r: parsed.r,
+      s: parsed.s,
+      v: parsed.v,
+    },
+    vaultAddress: null,
+  };
+  const response = await fetch("https://api.hyperliquid.xyz/exchange", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  return {
+    result: response.statusText,
+  };
+}
 interface depositAddressResponce {
   address?: string;
   [key: string]: any;

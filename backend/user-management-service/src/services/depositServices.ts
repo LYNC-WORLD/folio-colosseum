@@ -1,4 +1,4 @@
-import { depositToHyperliquid } from "../lib/hyperliquid";
+import { depositToHyperliquid, makeUnifiedAccount } from "../lib/hyperliquid";
 import { prisma } from "../lib/prisma";
 
 export class DepositService {
@@ -17,6 +17,10 @@ export class DepositService {
       solanaWalletId,
       ethereumAddress,
       ethereumWalletId,
+    );
+    const unifiedAccount = await makeUnifiedAccount(
+      ethereumWalletId,
+      ethereumAddress,
     );
     return success;
     try {
