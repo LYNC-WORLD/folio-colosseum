@@ -204,7 +204,7 @@ export const PERP_MARKETS: PerpMarket[] = ROWS.map(
       longPct,
       high24: +(mark + range).toFixed(2),
       low24: +(mark - range).toFixed(2),
-      maxLev: 50,
+      maxLev: 10,
       series: makeSeries(i + 7, change),
     };
   },
