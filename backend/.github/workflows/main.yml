@@ -25,6 +25,8 @@ jobs:
             echo "Pulling latest code..."
             git pull https://${{ secrets.GIT_HUB_USER_NAME }}:${{ secrets.GIT_HUB_SECRET }}@github.com/LYNC-WORLD/folio-backend.git main
 
+            docker compose down
+
             echo "Building and starting containers..."
             docker compose up -d --build
 
