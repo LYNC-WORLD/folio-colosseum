@@ -276,7 +276,7 @@ export function OrderTicketSheet({
       const token = session.idToken ?? "";
       const common = {
         stockSymbol: sym,
-        dollarSize: notional,
+        dollarSize: mg,
         leverage: lev,
         isBuy: side > 0,
         margin: marginMode,

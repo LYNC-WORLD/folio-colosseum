@@ -59,9 +59,17 @@ import {
   useSocketStatus,
   useTradeActions,
 } from "../hooks/perps";
-import { useBalances } from "../hooks/useBalances";
+import {
+  useOrdersBySymbol,
+  usePositionsBySymbol,
+  type SymOrder,
+  type SymPosition,
+} from "../hooks/perps/useSymbolTrading";
+import { tradeService, unwrap } from "../services/perps/tradeService";
+import { useWalletBalance } from "../hooks/useWalletBalance";
 import { errMsg } from "../services/hyperliquid/format";
 import { DEFAULT_PERP_MARKETS } from "../data/perpMarketsDefault";
+import { useSpotToPerpDeposit } from "../hooks/useSpotToPerpDeposit";
 
 type PTab = "pos" | "ord" | "book" | "info";
 type TransferOpts = { dir?: "in" | "out"; amt?: number; then?: () => void };
@@ -113,12 +121,39 @@ export function TradeScreen() {
   const session = usePerpsSession();
   const markets = useMarkets();
   const live = useLiveMarket(sym);
-  const acct = useAccount(session.address);
+  const posQ = usePositionsBySymbol(sym, session.idToken);
+  const ordQ = useOrdersBySymbol(sym, session.idToken);
+  const refreshTrading = () => {
+    posQ.refetch();
+    ordQ.refetch();
+  };
   const actions = useTradeActions(session.idToken);
   const socket = useSocketStatus();
-  const bal = useBalances();
+  const walletBal = useWalletBalance();
+  const bal = {
+    perp: walletBal.perpAvailable,
+    spot: walletBal.wallet?.usdc.balance ?? 0,
+  };
 
-  // ---- first-trade quiz flag (replaces the wallet-based onboarding check)
+  const {
+    deposit,
+    phase: depositPhase,
+    amount: depositAmount,
+    error: depositError,
+    reset: resetDeposit,
+  } = useSpotToPerpDeposit();
+
+  useEffect(() => {
+    if (depositPhase === "done") {
+      toast(`Moved ${fmtPx(depositAmount)} to perp`, "TRANSFER CONFIRMED");
+      resetDeposit();
+    } else if (depositPhase === "error" && depositError) {
+      toast("Transfer issue", depositError.toUpperCase());
+      resetDeposit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depositPhase]);
+
   const [quizSeen, setQuizSeen] = useState(false);
   useEffect(() => {
     AsyncStorage.getItem(QUIZ_SEEN_KEY)
@@ -205,25 +240,33 @@ export function TradeScreen() {
     ["OPEN INTEREST", `$${(live.oiUsd / 1e6).toFixed(1)}M`, null],
   ];
 
-  const positions = acct.positions
-    .slice()
-    .sort((a, b) => Number(b.sym === sym) - Number(a.sym === sym));
+  const positions = posQ.data;
   const sheetPos =
     sheet?.t === "position"
-      ? acct.positions.find((p) => p.id === sheet.id)
+      ? posQ.data.find((p) => p.id === sheet.id)
       : undefined;
 
-  const cancel = (o: (typeof acct.orders)[number]) =>
-    actions
-      .cancelOrder(o)
-      .then(() =>
-        toast(
-          "Order cancelled",
-          `${labelOf(o.sym).toUpperCase()} · ${fmtPx(o.px)}`,
+  const [cancelling, setCancelling] = useState<number | null>(null);
+  const cancel = async (o: SymOrder) => {
+    setCancelling(o.oid);
+    try {
+      await unwrap(
+        tradeService.cancelOrder(
+          { coin: o.coin, oid: o.oid },
+          session.idToken ?? "",
         ),
-      )
-      .catch((e) => toast("Couldn't cancel", errMsg(e).toUpperCase()));
-
+      );
+      toast(
+        "Order cancelled",
+        `${labelOf(o.sym).toUpperCase()} · ${fmtPx(o.px)}`,
+      );
+      ordQ.refetch();
+    } catch (e) {
+      toast("Couldn't cancel", errMsg(e).toUpperCase());
+    } finally {
+      setCancelling(null);
+    }
+  };
   const levLabel = listed
     ? Math.min(DEFAULT_LEV, live.maxLeverage)
     : DEFAULT_LEV;
@@ -234,6 +277,16 @@ export function TradeScreen() {
 
   return (
     <SafeAreaView style={tradeStyles.safe} edges={["top"]}>
+      {depositPhase === "depositing" || depositPhase === "confirming" ? (
+        <View style={[tradeStyles.depositBanner, { top: insets.top + 6 }]}>
+          <ActivityIndicator size="small" color={C.mint} />
+          <Text style={tradeStyles.depositBannerT}>
+            {depositPhase === "depositing"
+              ? `Sending ${fmtPx(depositAmount)} to perp…`
+              : `Confirming transfer of ${fmtPx(depositAmount)}…`}
+          </Text>
+        </View>
+      ) : null}
       <ScrollView
         ref={scrollRef}
         scrollEnabled={!locked}
@@ -411,8 +464,8 @@ export function TradeScreen() {
             <ChartStage
               sym={sym}
               onScrollLock={setLocked}
-              positions={acct.positions}
-              orders={acct.orders}
+              positions={posQ.data}
+              orders={ordQ.data}
             />
           </View>
         ) : null}
@@ -421,8 +474,8 @@ export function TradeScreen() {
         <View style={tradeStyles.tabs}>
           {(
             [
-              ["pos", "Positions", acct.positions.length],
-              ["ord", "Orders", acct.orders.length],
+              ["pos", "Positions", posQ.data.length],
+              ["ord", "Orders", ordQ.data.length],
               ["book", "Order book"],
               ["info", "Contract"],
             ] as [PTab, string, number?][]
@@ -448,9 +501,20 @@ export function TradeScreen() {
 
         <View style={tradeStyles.panel}>
           {tab === "pos" ? (
-            acct.loading ? (
+            posQ.loading ? (
               <View style={tradeStyles.empty}>
                 <ActivityIndicator color={C.ink3} />
+              </View>
+            ) : posQ.error && !positions.length ? (
+              <View style={tradeStyles.empty}>
+                <Text style={tradeStyles.ttl}>Couldn't load positions</Text>
+                <Text style={tradeStyles.emptyT}>{posQ.error}</Text>
+                <Btn
+                  kind="ghost"
+                  small
+                  label="Try again"
+                  onPress={posQ.refetch}
+                />
               </View>
             ) : positions.length ? (
               positions.map((p) => {
@@ -505,8 +569,23 @@ export function TradeScreen() {
           ) : null}
 
           {tab === "ord" ? (
-            acct.orders.length ? (
-              acct.orders.map((o) => (
+            ordQ.loading ? (
+              <View style={tradeStyles.empty}>
+                <ActivityIndicator color={C.ink3} />
+              </View>
+            ) : ordQ.error && !ordQ.data.length ? (
+              <View style={tradeStyles.empty}>
+                <Text style={tradeStyles.ttl}>Couldn't load orders</Text>
+                <Text style={tradeStyles.emptyT}>{ordQ.error}</Text>
+                <Btn
+                  kind="ghost"
+                  small
+                  label="Try again"
+                  onPress={ordQ.refetch}
+                />
+              </View>
+            ) : ordQ.data.length ? (
+              ordQ.data.map((o) => (
                 <View key={o.id} style={tradeStyles.pRow}>
                   <View style={tradeStyles.logo}>
                     <Text style={tradeStyles.logoT}>{logoTxt(o.sym)}</Text>
@@ -528,14 +607,18 @@ export function TradeScreen() {
                       hTap();
                       cancel(o);
                     }}
-                    disabled={actions.busy}
+                    disabled={cancelling === o.oid}
                     style={[
                       tradeStyles.cancel,
-                      actions.busy && { opacity: 0.5 },
+                      cancelling === o.oid && { opacity: 0.5 },
                     ]}
                     accessibilityRole="button"
                   >
-                    <Text style={tradeStyles.cancelT}>Cancel</Text>
+                    {cancelling === o.oid ? (
+                      <ActivityIndicator size="small" color={C.loss} />
+                    ) : (
+                      <Text style={tradeStyles.cancelT}>Cancel</Text>
+                    )}
                   </Pressable>
                 </View>
               ))
@@ -660,13 +743,17 @@ export function TradeScreen() {
               then: () => setSheet({ t: "ticket", side }),
             });
           }}
-          onClose={() => setSheet(null)}
+          onClose={() => {
+            setSheet(null);
+            refreshTrading();
+          }}
           onChart={toChart}
         />
       ) : null}
       {sheet?.t === "transfer" ? (
         <TransferSheet
           dir={sheet.dir}
+          onDeposit={deposit}
           amt={sheet.amt}
           onClose={() => setSheet(null)}
           onMoved={() => {
@@ -808,6 +895,28 @@ export const tradeStyles = StyleSheet.create({
     fontSize: 9.5,
     letterSpacing: 1.2,
     color: C.ink2,
+  },
+  depositBanner: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    zIndex: 60,
+    elevation: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: C.raised,
+    borderWidth: 1,
+    borderColor: "#262C36",
+  },
+  depositBannerT: {
+    fontFamily: FONT.sans600,
+    fontSize: 12.5,
+    color: C.ink1,
+    flexShrink: 1,
   },
   tabs: {
     flexDirection: "row",
