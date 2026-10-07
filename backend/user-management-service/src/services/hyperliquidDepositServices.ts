@@ -30,7 +30,7 @@ export async function CheckDepositRequest() {
     await prisma.depositRequest.update({
       where: { id: depositRequest.id },
       data: {
-        conversionComplete: conversionComplete,
+        conversionCompleted: conversionComplete,
       },
     });
   });
