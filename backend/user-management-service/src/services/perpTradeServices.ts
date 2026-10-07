@@ -616,7 +616,6 @@ export class PerpTradeService {
         user: ethereumAddress,
         dex: "xyz",
       });
-      console.log(data);
       return data.assetPositions;
     } catch (error) {
       console.error(error);
