@@ -13,7 +13,8 @@ router.post("/limit-order", authMiddleware, perpTradeController.limitOrder);
 router.post("/cancel-order", authMiddleware, perpTradeController.cancelOrder);
 
 router.post("/close-position", authMiddleware, perpTradeController.closePosition);
-// TP / SL order create 
+
+router.post("/place-tp-sl-orders", authMiddleware, perpTradeController.placeTpSlOrder);
 
 router.get("/open-orders", authMiddleware, perpTradeController.getOpenOrders);
 
