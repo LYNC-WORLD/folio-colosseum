@@ -26,15 +26,22 @@ export class UserService {
       const priceMap = new Map(
         stocks.map((stock) => [stock.tokenAddress, stock]),
       );
-      const perpBalance = await hyperliquidInfoClient.spotClearinghouseState({
-        user: ethereumAddress,
-      });
-      const perpUSDCBalance = perpBalance.balances.find(
+      const hyperliquidSpotBalance =
+        await hyperliquidInfoClient.spotClearinghouseState({
+          user: ethereumAddress,
+        });
+      const perpUSDCBalance = hyperliquidSpotBalance.balances.find(
         (balance) => balance.coin.toUpperCase() === "USDC",
       );
       const result = {
         walletAddress: tokenDetails.walletAddress,
-        perpBalance: perpUSDCBalance ?? 0,
+        perpBalance: perpUSDCBalance ?? {
+          coin: "USDC",
+          token: 0,
+          total: "0",
+          hold: "0",
+          entryNtl: "0",
+        },
         sol: tokenDetails.sol,
 
         usdc: usdcToken
