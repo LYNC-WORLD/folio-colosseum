@@ -89,7 +89,7 @@ export function ProfileScreen() {
     getOnboardingProfile().then(setProfile);
   }, []);
 
-  const total = useCountUp(usdValue + perp.equity);
+  const total = useCountUp(bal.perp + usdValue);
   const [signingOut, setSigningOut] = useState(false);
   const [xfer, setXfer] = useState(false); // Transfer drawer (spot <-> perp)
 
