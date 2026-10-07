@@ -1,0 +1,34 @@
+name: Deploy to Saga Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  Deploy:
+    name: Deploy to Saga Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy Application via SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.serverIp }}
+          username: ${{ secrets.USER_NAME }}
+          key: ${{ secrets.PRIVATE_KEY }}
+          script: |
+            set -e
+
+            cd ~/folio-backend
+
+            echo "Pulling latest code..."
+            git pull https://${{ secrets.GIT_HUB_USER_NAME }}:${{ secrets.GIT_HUB_SECRET }}@github.com/LYNC-WORLD/folio-backend.git main
+
+            echo "Building and starting containers..."
+            docker compose up -d --build
+
+            echo "Running containers:"
+            docker compose ps
+
+            echo "Deployment completed successfully."
