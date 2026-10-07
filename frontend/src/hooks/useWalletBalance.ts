@@ -20,10 +20,18 @@ export function useWalletBalance() {
       wallet.tokens.reduce((sum, t) => sum + t.balance * Number(t.price), 0)
     : 0;
 
+  const perpTotal = wallet ? Number(wallet.perpBalance.total) : 0;
+  const perpHold = wallet ? Number(wallet.perpBalance.hold) : 0;
+  const perpAvailable = Math.max(0, perpTotal - perpHold);
+
   return {
     wallet,
     walletAddress: wallet?.walletAddress,
     usdValue,
+    perpBalance: wallet?.perpBalance,
+    perpTotal,
+    perpHold,
+    perpAvailable,
     loading: query.isPending,
     error: query.error instanceof Error ? query.error.message : null,
     refresh: query.refetch,

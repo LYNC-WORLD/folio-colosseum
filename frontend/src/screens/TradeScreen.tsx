@@ -66,9 +66,10 @@ import {
   type SymPosition,
 } from "../hooks/perps/useSymbolTrading";
 import { tradeService, unwrap } from "../services/perps/tradeService";
-import { useBalances } from "../hooks/useBalances";
+import { useWalletBalance } from "../hooks/useWalletBalance";
 import { errMsg } from "../services/hyperliquid/format";
 import { DEFAULT_PERP_MARKETS } from "../data/perpMarketsDefault";
+import { useSpotToPerpDeposit } from "../hooks/useSpotToPerpDeposit";
 
 type PTab = "pos" | "ord" | "book" | "info";
 type TransferOpts = { dir?: "in" | "out"; amt?: number; then?: () => void };
@@ -128,9 +129,31 @@ export function TradeScreen() {
   };
   const actions = useTradeActions(session.idToken);
   const socket = useSocketStatus();
-  const bal = useBalances();
+  const walletBal = useWalletBalance();
+  const bal = {
+    perp: walletBal.perpAvailable,
+    spot: walletBal.wallet?.usdc.balance ?? 0,
+  };
 
-  // ---- first-trade quiz flag (replaces the wallet-based onboarding check)
+  const {
+    deposit,
+    phase: depositPhase,
+    amount: depositAmount,
+    error: depositError,
+    reset: resetDeposit,
+  } = useSpotToPerpDeposit();
+
+  useEffect(() => {
+    if (depositPhase === "done") {
+      toast(`Moved ${fmtPx(depositAmount)} to perp`, "TRANSFER CONFIRMED");
+      resetDeposit();
+    } else if (depositPhase === "error" && depositError) {
+      toast("Transfer issue", depositError.toUpperCase());
+      resetDeposit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depositPhase]);
+
   const [quizSeen, setQuizSeen] = useState(false);
   useEffect(() => {
     AsyncStorage.getItem(QUIZ_SEEN_KEY)
@@ -254,6 +277,16 @@ export function TradeScreen() {
 
   return (
     <SafeAreaView style={tradeStyles.safe} edges={["top"]}>
+      {depositPhase === "depositing" || depositPhase === "confirming" ? (
+        <View style={[tradeStyles.depositBanner, { top: insets.top + 6 }]}>
+          <ActivityIndicator size="small" color={C.mint} />
+          <Text style={tradeStyles.depositBannerT}>
+            {depositPhase === "depositing"
+              ? `Sending ${fmtPx(depositAmount)} to perp…`
+              : `Confirming transfer of ${fmtPx(depositAmount)}…`}
+          </Text>
+        </View>
+      ) : null}
       <ScrollView
         ref={scrollRef}
         scrollEnabled={!locked}
@@ -720,6 +753,7 @@ export function TradeScreen() {
       {sheet?.t === "transfer" ? (
         <TransferSheet
           dir={sheet.dir}
+          onDeposit={deposit}
           amt={sheet.amt}
           onClose={() => setSheet(null)}
           onMoved={() => {
@@ -861,6 +895,28 @@ export const tradeStyles = StyleSheet.create({
     fontSize: 9.5,
     letterSpacing: 1.2,
     color: C.ink2,
+  },
+  depositBanner: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    zIndex: 60,
+    elevation: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: C.raised,
+    borderWidth: 1,
+    borderColor: "#262C36",
+  },
+  depositBannerT: {
+    fontFamily: FONT.sans600,
+    fontSize: 12.5,
+    color: C.ink1,
+    flexShrink: 1,
   },
   tabs: {
     flexDirection: "row",
