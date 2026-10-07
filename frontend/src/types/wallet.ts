@@ -10,7 +10,7 @@ export type UsdcBalance = {
 export type PerpBalance = {
   coin: string;
   token: number;
-  total: string;
+  total: string; 
   hold: string;
   entryNtl: string;
 };
@@ -30,7 +30,7 @@ export type TokenBalance = {
 
 export type WalletBalance = {
   walletAddress: string;
-  perpBalance?: PerpBalance | null;
+  perpBalance: PerpBalance;
   sol: {
     balance: number;
     lamports: number;
@@ -88,3 +88,19 @@ export type TransactionsResponse =
       data?: UserTransaction[];
       transactions?: UserTransaction[];
     };
+
+    export type DepositSpotToPerpResponse = {
+  success: boolean;
+  message: string;
+  data?: { depositAmount: string };
+};
+
+// ⚠️ assumed shape — confirm against the real response and adjust field names
+export type DepositStatusResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    status: "pending" | "completed" | "failed";
+    depositAmount?: string;
+  };
+};
