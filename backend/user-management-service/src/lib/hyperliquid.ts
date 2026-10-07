@@ -203,11 +203,11 @@ export async function depositToHyperliquid(
     // check balance
     const usdcBalance = await getUSDCBalance(solanaAddress);
     if (usdcBalance < Number(depositAmount)) {
-      return false;
+      return {success: false, message: "not enough balance"};
     }
     const depositAddress = await getDepositAddress(ethereumAddress);
     if (!depositAddress) {
-      return false;
+      return {success: false, message: "cant fetch hyperliquid deposit account"};
     }
 
     // convert to sol
@@ -219,13 +219,13 @@ export async function depositToHyperliquid(
       toBaseUnits(Number(depositAmount), 6),
     );
     if (!swapResult.succeeded || !swapResult.outputAmount) {
-      return false;
+      return {success: false, message: "usdc to sol swap failed"};
     }
 
     const solOut = fromRawAmount(swapResult.outputAmount, SOL_DECIMALS);
     const sendAmount = solOut - SOL_TRANSFER_FEE_BUFFER;
     if (sendAmount <= 0) {
-      return false;
+      return {success: false, message: "usdc to sol swap failed"};
     }
 
     // send sol to hyperliquid
@@ -239,7 +239,7 @@ export async function depositToHyperliquid(
       sentSOl.id,
     );
     if (sentSOlConfirmation != "succeeded") {
-      return false;
+      return {success: false, message: "sol transfer to hyperliquid failed"};
     }
     await prisma.depositRequest.create({
       data: {
@@ -249,9 +249,10 @@ export async function depositToHyperliquid(
         depositAmount: depositAmount,
       },
     });
-    return true;
+    return {success: true, message: "created deposit request"};
   } catch (error) {
     console.error("error while deposit: ", error);
+    return {success: false, message: "error processing request"};
   }
 }
 

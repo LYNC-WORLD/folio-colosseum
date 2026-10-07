@@ -48,9 +48,9 @@ export class DepositController {
         req.user.ethereumWalletAddress,
         req.user.ethereumWalletId,
       );
-      res.status(200).json({
-        success: depositRequest,
-        message: "Request submitted",
+      res.status(depositRequest.success ? 200 : 400).json({
+        success: depositRequest.success,
+        message: depositRequest.message,
       });
       return;
     } catch (error) {
