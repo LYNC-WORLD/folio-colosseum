@@ -28,6 +28,8 @@ const SOL_TRANSFER_FEE_BUFFER = 0.002;
 export async function getDepositAddress(ethAddress: string) {
   try {
     const url = `${HYPERLIQUID_DEPOSIT_URL}/${encodeURIComponent(ethAddress)}`;
+    console.log(url);
+
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -37,6 +39,8 @@ export async function getDepositAddress(ethAddress: string) {
       return;
     }
     const data = (await response.json()) as depositAddressResponce;
+    console.log(JSON.stringify(data));
+
     if (data.address === undefined || data.address === null) {
       console.error(`No address for ${ethAddress}`);
       return;
@@ -200,12 +204,12 @@ export async function depositToHyperliquid(
   ethereumWalletId: string,
 ) {
   console.log({
-    "userId": userId,
-    "depositAmount": depositAmount,
-    "solanaAddress": solanaAddress,
-    "solanaWalletId": solanaWalletId,
-    "ethereumAddress": ethereumAddress,
-    "ethereumWalletId": ethereumWalletId,
+    userId: userId,
+    depositAmount: depositAmount,
+    solanaAddress: solanaAddress,
+    solanaWalletId: solanaWalletId,
+    ethereumAddress: ethereumAddress,
+    ethereumWalletId: ethereumWalletId,
   });
 
   try {
@@ -215,6 +219,8 @@ export async function depositToHyperliquid(
       return { success: false, message: "not enough balance" };
     }
     const depositAddress = await getDepositAddress(ethereumAddress);
+    console.log(depositAddress);
+
     if (!depositAddress) {
       return {
         success: false,
