@@ -83,7 +83,9 @@ type SheetState =
   | { t: "tpsl"; id: string }
   | { t: "transfer"; dir: "in" | "out"; amt?: number; then?: () => void };
 
+const MAX_LEV = 10;
 const DEFAULT_LEV = 10;
+
 const tone = (n: number) => (n >= 0 ? C.mint : C.loss);
 
 const ROLE_LABEL: Record<SymOrder["role"], string> = {
@@ -240,6 +242,7 @@ export function TradeScreen() {
   };
 
   const fr = live.fundingPct;
+  const maxLev = listed ? Math.min(MAX_LEV, live.maxLeverage) : MAX_LEV;
   const stats: [string, string, "up" | "down" | null][] = [
     ["MARK", fmtPx(live.mark), null],
     ["ORACLE", fmtPx(live.oracle), null],
@@ -281,9 +284,7 @@ export function TradeScreen() {
     refreshTrading();
   };
 
-  const levLabel = listed
-    ? Math.min(DEFAULT_LEV, live.maxLeverage)
-    : DEFAULT_LEV;
+  const levLabel = Math.min(DEFAULT_LEV, maxLev);
 
   const selectedMarket = DEFAULT_PERP_MARKETS.find(
     (market) => market.marketSymbol === label,
@@ -352,7 +353,7 @@ export function TradeScreen() {
               </View>
               <Text style={tradeStyles.sub} numberOfLines={1}>
                 {name}
-                {listed ? ` · up to ${live.maxLeverage}x` : ""}
+                {listed ? ` · up to ${maxLev}x` : ""}
               </Text>
             </View>
           </Pressable>
@@ -691,7 +692,7 @@ export function TradeScreen() {
                 [
                   ["UNDERLYING", category === "index" ? name + " index" : name],
                   ["VENUE", "Hyperliquid · " + live.coin],
-                  ["MAX LEVERAGE", live.maxLeverage + "x"],
+                  ["MAX LEVERAGE", maxLev + "x"],
                   [
                     "FUNDING",
                     `Every hour · ${fr >= 0 ? "+" : "−"}${Math.abs(fr).toFixed(4)}%`,

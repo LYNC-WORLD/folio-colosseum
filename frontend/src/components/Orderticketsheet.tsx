@@ -52,7 +52,7 @@ type OrderType = "Market" | "Limit";
 type MarginMode = "ISOLATED" | "CROSS";
 type TpSlMode = "price" | "pct";
 type Result = { filled: boolean; entry: number | null; size: number };
-
+const MAX_LEV = 10;
 function Radio({
   label,
   sub,
@@ -171,7 +171,8 @@ export function OrderTicketSheet({
   const nm: string = meta?.short ?? toSym(sym);
   const unit: string = meta?.category === "stocks" ? (meta?.symbol ?? nm) : nm;
   const mk = live.mark;
-  const maxLev = Math.max(1, live.maxLeverage);
+  const exchangeMaxLev = Math.max(1, live.maxLeverage);
+  const maxLev = Math.min(MAX_LEV, exchangeMaxLev); // what the user can pick
   const usdc = perpBal;
 
   const [side, setSide] = useState<1 | -1>(initialSide);
@@ -544,10 +545,10 @@ export function OrderTicketSheet({
           <Lbl style={{ flex: 1 }}>LEVERAGE</Lbl>
           <Text style={[s.levNum, { color: levTone(lev) }]}>{lev}x</Text>
         </View>
-        <LeverageSlider value={lev} onChange={setLev} />
+        <LeverageSlider value={lev} onChange={setLev} max={maxLev} />
         {maxLev < 50 ? (
           <Text style={[s.mono, { letterSpacing: 0.4 }]}>
-            {nm.toUpperCase()} ALLOWS UP TO {maxLev}X
+            MAX LEVERAGE IS LIMITED TO {maxLev}X
           </Text>
         ) : null}
       </View>
