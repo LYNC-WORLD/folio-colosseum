@@ -21,7 +21,7 @@ export class PerpTradeController {
       const body: placeMarketOrder = req.body;
       if (
         !body.dollarSize ||
-        !body.isBuy ||
+        body.isBuy == undefined ||
         !body.leverage ||
         !body.stockSymbol
       ) {
@@ -115,7 +115,7 @@ export class PerpTradeController {
       const body: placeLimitOrder = req.body;
       if (
         !body.dollarSize ||
-        !body.isBuy ||
+        body.isBuy == undefined ||
         !body.leverage ||
         !body.stockSymbol ||
         !body.limitPrice
