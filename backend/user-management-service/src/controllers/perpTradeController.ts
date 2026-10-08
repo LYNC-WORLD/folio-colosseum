@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { PerpTradeService } from "../services/perpTradeServices";
-import { dex } from "viem/tempo/actions";
 
 export class PerpTradeController {
   private perpTradeService: PerpTradeService;
@@ -198,7 +197,7 @@ export class PerpTradeController {
       if (!body.assetSymbol || !body.orderId) {
         res.status(404).json({
           success: false,
-          message: "assetId and orderId is required",
+          message: "assetSymbol and orderId is required",
         });
         return;
       }
