@@ -309,16 +309,27 @@ export class PerpTradeService {
   public async cancelOrder(
     ethereumWalletId: string,
     orderId: string,
-    assetId: string,
+    assetSymbol: string,
   ) {
     try {
-      const walletDetails = await prisma.wallet.findFirst({
-        where: { walletId: ethereumWalletId },
-        include: {
-          hyperLiquidDetails: true,
-        },
-      });
-      if (!walletDetails || !walletDetails.hyperLiquidDetails) {
+      const markerSymbol =
+        assetSymbol.split(":")[assetSymbol.split(":").length - 1];
+      const [walletDetails, assetDetails] = await Promise.all([
+        prisma.wallet.findFirst({
+          where: { walletId: ethereumWalletId },
+          include: {
+            hyperLiquidDetails: true,
+          },
+        }),
+        prisma.perpStocks.findFirst({
+          where: { marketSymbol: markerSymbol },
+        }),
+      ]);
+      if (
+        !walletDetails ||
+        !walletDetails.hyperLiquidDetails ||
+        !assetDetails
+      ) {
         return;
       }
       const apiSecret = decrypt(
@@ -329,8 +340,8 @@ export class PerpTradeService {
         transport: hyperliquidTransport,
         wallet,
       });
-      const cancelOrder = await client.cancelByCloid({
-        cancels: [{ asset: assetId, cloid: orderId }],
+      const cancelOrder = await client.cancel({
+        cancels: [{ a: Number(assetDetails.assetId), o: Number(orderId) }],
       });
       return cancelOrder;
     } catch (error) {

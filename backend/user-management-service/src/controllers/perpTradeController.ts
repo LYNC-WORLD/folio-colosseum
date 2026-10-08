@@ -195,7 +195,7 @@ export class PerpTradeController {
         return;
       }
       const body: cancelOrder = req.body;
-      if (!body.assetId || !body.orderId) {
+      if (!body.assetSymbol || !body.orderId) {
         res.status(404).json({
           success: false,
           message: "assetId and orderId is required",
@@ -205,7 +205,7 @@ export class PerpTradeController {
       const cancelOrder = await this.perpTradeService.cancelOrder(
         req.user.ethereumWalletId,
         body.orderId,
-        body.assetId,
+        body.assetSymbol,
       );
       res.status(200).json({
         success: true,
@@ -469,7 +469,7 @@ interface placeLimitOrder {
 }
 
 interface cancelOrder {
-  assetId: string;
+  assetSymbol: string;
   orderId: string;
 }
 
