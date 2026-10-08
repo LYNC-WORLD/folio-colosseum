@@ -608,7 +608,7 @@ export class PerpTradeService {
       );
 
       const orderDetails = await Promise.all(
-        orders.map((order) =>
+        stockOrder.map((order) =>
           hyperliquidInfoClient.orderStatus({
             user: ethereumAddress,
             oid: order.oid,
