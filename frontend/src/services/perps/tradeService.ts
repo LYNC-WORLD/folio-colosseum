@@ -268,6 +268,11 @@ export const tradeService = {
       "/api/perp-trade/place-tp-sl-orders",
       { method: "POST", token: idToken, body: payload },
     ),
+  getAllOrders: (idToken: string) =>
+    request<ApiResponse<OrderApi[]>>("/api/perp-trade/open-orders", {
+      method: "GET",
+      token: idToken,
+    }),
   cancelPerpOrder: (payload: CancelPerpOrderPayload, idToken: string) =>
     request<ApiResponse<unknown>>("/api/perp-trade/cancel-order", {
       method: "POST",

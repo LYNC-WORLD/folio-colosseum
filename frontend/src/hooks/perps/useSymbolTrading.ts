@@ -159,3 +159,16 @@ export const useOrdersBySymbol = (stock: string, idToken?: string | null) =>
     },
     toOrder,
   );
+
+export const useAllOrders = (idToken?: string | null) =>
+  useBySymbol(
+    "all",
+    idToken,
+    async (_s, t) => {
+      const rows = await unwrap(tradeService.getAllOrders(t));
+      return (rows ?? []).filter(
+        (r) => r.status === "order" && r.order?.status === "open",
+      );
+    },
+    toOrder,
+  );
