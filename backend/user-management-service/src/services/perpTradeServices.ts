@@ -341,7 +341,7 @@ export class PerpTradeService {
         wallet,
       });
       const cancelOrder = await client.cancel({
-        cancels: [{ a: Number(assetDetails.assetId), o: orderId }],
+        cancels: [{ a: Number(assetDetails.assetId), o: Number(orderId) }],
       });
       return cancelOrder;
     } catch (error) {
