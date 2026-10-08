@@ -59,8 +59,8 @@ import {
   useSocketStatus,
 } from "../hooks/perps";
 import {
-  useOrdersBySymbol,
-  usePositionsBySymbol,
+  useAllPositions,
+  useAllOrders,
   type SymOrder,
 } from "../hooks/perps/useSymbolTrading";
 import { TpSlSheet } from "../components/perps/TpSlSheet";
@@ -138,8 +138,8 @@ export function TradeScreen() {
   const session = usePerpsSession();
   const markets = useMarkets();
   const live = useLiveMarket(sym);
-  const posQ = usePositionsBySymbol(sym, session.idToken);
-  const ordQ = useOrdersBySymbol(sym, session.idToken);
+  const posQ = useAllPositions(session.idToken);
+  const ordQ = useAllOrders(session.idToken);
   const refreshTrading = () => {
     posQ.refetch();
     ordQ.refetch();
