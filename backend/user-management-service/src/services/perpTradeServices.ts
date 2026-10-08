@@ -564,20 +564,21 @@ export class PerpTradeService {
       };
     }
   }
+
   public async getOpenOrders(ethereumAddress: string) {
     try {
       const orders = await hyperliquidInfoClient.openOrders({
         user: ethereumAddress,
         dex: "xyz",
       });
-      let orderDetails: OrderStatusResponse[] = [];
-      orders.forEach(async (order) => {
-        const orderDetail = await hyperliquidInfoClient.orderStatus({
-          user: ethereumAddress,
-          oid: order.oid,
-        });
-        orderDetails.push(orderDetail);
-      });
+      const orderDetails = await Promise.all(
+        orders.map((order) =>
+          hyperliquidInfoClient.orderStatus({
+            user: ethereumAddress,
+            oid: order.oid,
+          }),
+        ),
+      );
       return orderDetails;
     } catch (error) {
       console.error(error);
@@ -595,14 +596,14 @@ export class PerpTradeService {
         (order) => order.coin.split(":").pop() === stock,
       );
 
-      let orderDetails: OrderStatusResponse[] = [];
-      stockOrder.forEach(async (order) => {
-        const orderDetail = await hyperliquidInfoClient.orderStatus({
-          user: ethereumAddress,
-          oid: order.oid,
-        });
-        orderDetails.push(orderDetail);
-      });
+      const orderDetails = await Promise.all(
+        orders.map((order) =>
+          hyperliquidInfoClient.orderStatus({
+            user: ethereumAddress,
+            oid: order.oid,
+          }),
+        ),
+      );
       return orderDetails;
     } catch (error) {
       console.error(error);
