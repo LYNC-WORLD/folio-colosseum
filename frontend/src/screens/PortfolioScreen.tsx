@@ -174,31 +174,54 @@ export function PortfolioScreen() {
     [tokens],
   );
 
-  const { points } = usePortfolioSeries(holdings, usdcValue, range.period);
-  const [scrubIdx, setScrubIdx] = useState<number | null>(null);
+  // Total value = wallet + perp equity. One source (walletBal.perpTotal) feeds
+  // the hero number, the chart and the delta so they can never disagree.
+  const perpTotal = walletBal.perpTotal;
+  const liveTarget = usdValue + perpTotal; // un-animated, used for delta math
+  const liveTotal = useCountUp(liveTarget);
 
-  // Total value = wallet + perp equity (same rule as the prototype's total).
-  // The chart series is wallet-only, so perp equity is added on top as a flat offset.
-  const liveTotal = useCountUp(usdValue + perp.equity);
-  const shownValue =
-    scrubIdx != null
-      ? (points[scrubIdx]?.v ?? usdValue) + perp.equity
-      : liveTotal;
-  const startV = points[0]?.v ?? usdValue;
-  const endV = scrubIdx != null ? (points[scrubIdx]?.v ?? usdValue) : usdValue;
+  const { points: rawPoints } = usePortfolioSeries(
+    holdings,
+    usdcValue,
+    range.period,
+  );
+
+  // Chart = wallet series + flat perp offset, last point pinned to the live total
+  const points = useMemo(() => {
+    if (!rawPoints.length) return rawPoints;
+    const pts = rawPoints.map((p) => ({ ...p, v: p.v + perpTotal }));
+    pts[pts.length - 1] = { ...pts[pts.length - 1], v: liveTarget };
+    return pts;
+  }, [rawPoints, perpTotal, liveTarget]);
+
+  const [scrubIdx, setScrubIdx] = useState<number | null>(null);
+  // the points array changes length with the range, so drop any stale scrub
+  useEffect(() => {
+    setScrubIdx(null);
+  }, [range.key]);
+
+  const safeIdx =
+    scrubIdx != null && scrubIdx >= 0 && scrubIdx < points.length
+      ? scrubIdx
+      : null;
+  const isLatest = safeIdx == null || safeIdx === points.length - 1;
+
+  // hero: animated live total at rest, exact point value while scrubbing
+  const shownValue = isLatest ? liveTotal : points[safeIdx!].v;
+  const startV = points[0]?.v ?? liveTarget;
+  const endV = isLatest ? liveTarget : points[safeIdx!].v;
   const delta = endV - startV;
-  const deltaLabel =
-    scrubIdx == null || scrubIdx === points.length - 1
-      ? range.label
-      : range.period === "1D"
-        ? new Date(points[scrubIdx].t * 1000).toLocaleTimeString("en-GB", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : new Date(points[scrubIdx].t * 1000).toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "short",
-          });
+  const deltaLabel = isLatest
+    ? range.label
+    : range.period === "1D"
+      ? new Date(points[safeIdx!].t * 1000).toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : new Date(points[safeIdx!].t * 1000).toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+        });
 
   const cash = useCountUp(usdcValue);
 
@@ -486,7 +509,7 @@ export function PortfolioScreen() {
 
           {/* hero number + ranges */}
           <Rise {...rise(4)} style={s.heroRow}>
-            <View style={{ flex: 1, gap: 8 }}>
+            <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 160, gap: 8 }}>
               <HeroMoney value={loading ? 0 : shownValue} />
               <Text style={s.delta}>
                 <Text style={{ color: delta >= 0 ? C.mint : C.loss }}>
@@ -541,7 +564,6 @@ export function PortfolioScreen() {
               <Text style={s.cashIcoText}>$</Text>
             </View>
             <View style={{ flex: 1, gap: 6, minWidth: 0 }}>
-              {/* label + Deposit + more */}
               <View style={s.cashTop}>
                 <Text style={s.cashLbl} numberOfLines={1}>
                   Cash in wallet
@@ -580,7 +602,6 @@ export function PortfolioScreen() {
                 </SqButton>
               </View>
 
-              {/* balance + refresh */}
               <View style={s.cashBal}>
                 <Text style={s.cash} numberOfLines={1}>
                   {loading ? "…" : money(cash)}
@@ -615,11 +636,10 @@ export function PortfolioScreen() {
               </View>
 
               <PerpSummaryLine
-                equity={perp.equity}
+                equity={walletBal.perpAvailable}
                 pnl={perp.pnl}
                 count={perp.positions.length}
               />
-              {/* perp account balance + Transfer (opens the drawer) */}
               <PressScale
                 scaleTo={0.97}
                 onPress={openTransfer}
@@ -1163,7 +1183,6 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     flexWrap: "wrap",
-    rowGap: 12,
     marginTop: 20,
     gap: 12,
   },

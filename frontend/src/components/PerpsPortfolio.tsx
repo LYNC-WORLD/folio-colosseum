@@ -32,8 +32,8 @@ export function PerpSummaryLine({
     <Text style={s.summary}>
       {"+ "}
       {usd(equity)} in perps
-      {" · "}
-      <Text style={{ color: tone(pnl) }}>{sMoney(pnl)}</Text>
+      {/* {" · "} */}
+      {/* <Text style={{ color: tone(pnl) }}>{sMoney(pnl)}</Text> */}
     </Text>
   );
 }
