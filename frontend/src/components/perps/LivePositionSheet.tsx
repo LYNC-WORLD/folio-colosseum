@@ -1,11 +1,12 @@
-// Position details + close, for live Hyperliquid positions (replaces the mock PositionSheet).
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { Body, Btn, H2, Kv, KvCard, Sheet, Tag } from "../PerpUi";
 import { fmtPx, sMoney, sPct, sideTxt, toast } from "../../data/perpsStore";
 import { C } from "../../theme";
 import { livePnl, liveRoe, type UiPosition } from "../../hooks/perps";
 import { errMsg } from "../../services/hyperliquid/format";
+import { hTap } from "../../lib/haptics";
+import Svg, { Path } from "react-native-svg";
 
 export function LivePositionSheet({
   position: p,
@@ -14,31 +15,30 @@ export function LivePositionSheet({
   onClose,
   onClosePosition,
   onMoveToSpot,
+  onEditTpSl,
 }: {
   position: UiPosition;
   mark: number;
   label: string;
   onClose: () => void;
-  onClosePosition: (fraction: number) => Promise<unknown>;
+  onClosePosition: () => Promise<unknown>;
   onMoveToSpot?: () => void;
+  onEditTpSl?: () => void;
 }) {
-  const [busy, setBusy] = useState<null | number>(null);
+  const [busy, setBusy] = useState(false);
   const pnl = livePnl(p, mark);
   const roe = liveRoe(p, mark);
 
-  const close = async (fraction: number) => {
-    setBusy(fraction);
+  const close = async () => {
+    setBusy(true);
     try {
-      await onClosePosition(fraction);
-      toast(
-        fraction === 1 ? "Position closed" : "Half closed",
-        `${label.toUpperCase()} · ${sMoney(pnl * fraction)}`,
-      );
+      await onClosePosition();
+      toast("Position closed", `${label.toUpperCase()} · ${sMoney(pnl)}`);
       onClose();
     } catch (e) {
       toast("Couldn't close", errMsg(e).toUpperCase());
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
@@ -61,6 +61,38 @@ export function LivePositionSheet({
           label={`${sideTxt(p.side)} ${p.lev}x`}
           tone={p.side > 0 ? "long" : "short"}
         />
+        {onEditTpSl ? (
+          <Pressable
+            onPress={() => {
+              hTap();
+              onEditTpSl();
+            }}
+            hitSlop={8}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#1A1F27",
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit take profit and stop loss for ${label}`}
+          >
+            <Svg
+              width={15}
+              height={15}
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke={C.ink3}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <Path d="M13.5 3.5 16.5 6.5 7 16H4v-3L13.5 3.5Z" />
+            </Svg>
+          </Pressable>
+        ) : null}
       </View>
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10 }}>
         <Text
@@ -87,16 +119,9 @@ export function LivePositionSheet({
       </Body>
       <Btn
         kind={p.side > 0 ? "short" : "long"}
-        label={busy === 1 ? "Closing…" : "Close position"}
-        disabled={busy != null}
-        onPress={() => close(1)}
-      />
-      <Btn
-        kind="ghost"
-        small
-        label={busy === 0.5 ? "Closing…" : "Close half"}
-        disabled={busy != null}
-        onPress={() => close(0.5)}
+        label={busy ? "Closing…" : "Close position"}
+        disabled={busy}
+        onPress={close}
       />
     </Sheet>
   );
