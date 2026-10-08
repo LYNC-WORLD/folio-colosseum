@@ -30,24 +30,50 @@ const toPosition = (p: PositionApi): SymPosition => {
   };
 };
 
-export type SymOrder = UiOrder;
 
 const n = (v?: string | null) => (v == null ? null : parseFloat(v));
 
 
 
-const toOrder = (o: OrderApi): SymOrder => ({
-  id: o.oid,
-  oid: o.oid,
-  coin: o.coin,
-  sym: o.stockSymbol,
-  side: o.isBuy ? 1 : -1,
-  kind: o.orderType === "stop" ? "stop" : "limit", // resting orders are never "market"
-  px: parseFloat(o.price),
-  size: parseFloat(o.size),
-  reduceOnly: o.reduceOnly ?? false,
-  placedAt: o.timestamp ?? Date.now(),
-});
+export type OrderRole = "tp" | "sl" | "stop" | "limit";
+
+export type SymOrder = UiOrder & {
+  role: OrderRole;
+  orderType: string; // raw label, e.g. "Take Profit Market"
+  isTrigger: boolean;
+  triggerText: string; // "Price above 296.4"
+  isPositionTpsl: boolean;
+};
+
+const toOrder = (r: OrderApi): SymOrder => {
+  const o = r.order.order;
+  const ot = o.orderType.toLowerCase();
+  const role: OrderRole = ot.includes("take profit")
+    ? "tp"
+    : o.isTrigger && ot.includes("stop") && o.reduceOnly
+      ? "sl"
+      : o.isTrigger
+        ? "stop"
+        : "limit";
+
+  return {
+    id: o.oid,
+    oid: o.oid,
+    coin: o.coin,
+    sym: o.coin.includes(":") ? o.coin.split(":")[1] : o.coin,
+    side: o.side === "B" ? 1 : -1,
+    kind: o.isTrigger ? "stop" : "limit",
+    px: parseFloat(o.isTrigger ? o.triggerPx : o.limitPx),
+    size: parseFloat(o.sz),
+    reduceOnly: o.reduceOnly,
+    placedAt: o.timestamp,
+    role,
+    orderType: o.orderType,
+    isTrigger: o.isTrigger,
+    triggerText: o.isTrigger ? o.triggerCondition : "",
+    isPositionTpsl: o.isPositionTpsl,
+  };
+};
 
 /** Shared fetch + poll logic. `loading` is true only until the first response. */
 function useBySymbol<A, T>(
@@ -125,6 +151,11 @@ export const useOrdersBySymbol = (stock: string, idToken?: string | null) =>
   useBySymbol(
     stock,
     idToken,
-    (s, t) => unwrap(tradeService.getOrdersBySymbol(s, t)),
+    async (s, t) => {
+      const rows = await unwrap(tradeService.getOrdersBySymbol(s, t));
+      return (rows ?? []).filter(
+        (r) => r.status === "order" && r.order?.status === "open",
+      );
+    },
     toOrder,
   );

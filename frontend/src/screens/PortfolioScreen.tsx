@@ -301,13 +301,17 @@ export function PortfolioScreen() {
       params: { id },
       initial: false,
     });
-  // Trade lives in HomeStack
-  // const openTrade = (symbol?: string) =>
-  //   nav.navigate("Home", {
-  //     screen: "Trade",
-  //     params: symbol ? { symbol } : undefined,
-  //     initial: false,
-  //   });
+  const openTrade = (symbol?: string) =>
+    nav.navigate("Trade", symbol ? { symbol } : undefined);
+
+  // PerpPositionList may hand back a position or a symbol; accept both
+  const openPerp = (
+    arg?: string | { sym?: string; symbol?: string; coin?: string },
+  ) => {
+    const raw =
+      typeof arg === "string" ? arg : (arg?.sym ?? arg?.symbol ?? arg?.coin);
+    openTrade(raw?.includes(":") ? raw.split(":")[1] : raw);
+  };
   const toAccount = () => nav.navigate("Profile");
   const toOrders = () =>
     (nav as any).navigate("Profile", {
@@ -722,8 +726,8 @@ export function PortfolioScreen() {
                 <PerpPositionList
                   positions={allPos.data}
                   category={perpCat}
-                  onOpen={() => {}}
-                  onOpenTrade={() => {}}
+                  onOpen={openPerp}
+                  onOpenTrade={openPerp}
                 />
               )
             ) : tab === "open" && cat === "index" ? (

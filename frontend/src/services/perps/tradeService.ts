@@ -75,6 +75,15 @@ export interface PlaceOrderPayload {
   cloid: `0x${string}`;
 }
 
+export interface PlaceTpSlPayload {
+  stockSymbol: string;
+  orderSize?: number; // omit = whole position
+  tpPrice?: number;
+  slPrice?: number;
+  tpPercent?: number;
+  slPercent?: number;
+}
+
 export interface OrderResult {
   status: "filled" | "resting" | "error";
   oid?: number;
@@ -98,6 +107,39 @@ export interface AgentStatus {
   agentAddress: `0x${string}` | null;
   agentName: string | null;
   approved: boolean;
+}
+
+export interface OpenOrderInner {
+  coin: string; // "xyz:NVDA"
+  side: "A" | "B"; // A = ask (sell), B = bid (buy)
+  limitPx: string;
+  sz: string; // "0.0" can mean "whole position" for positionTpsl orders
+  oid: number;
+  timestamp: number; // ms
+  triggerCondition: string; // "Price above 296.4" or "N/A"
+  isTrigger: boolean;
+  triggerPx: string;
+  children: unknown[];
+  isPositionTpsl: boolean;
+  reduceOnly: boolean;
+  orderType: string; // "Limit" | "Stop Market" | "Stop Limit" | "Take Profit Market" | "Take Profit Limit" | ...
+  origSz: string;
+  tif: string | null;
+  cloid: string | null;
+}
+
+export interface OrderApi {
+  status: string; // "order"
+  order: {
+    order: OpenOrderInner;
+    status: string; // "open"
+    statusTimestamp: number;
+  };
+}
+
+export interface CancelPerpOrderPayload {
+  assetSymbol: string;
+  orderId: string;
 }
 
 export const tradeService = {
@@ -155,6 +197,7 @@ export const tradeService = {
     `/api/perp-trade/positions-by-symbol/${encodeURIComponent(stock)}`,
     { method: "GET", token: idToken },
   ),
+
   closePosition: (payload: { stockSymbol: string }, idToken: string) =>
   request<ApiResponse<{ status: string }>>(
     "/api/perp-trade/close-position",
@@ -166,6 +209,18 @@ export const tradeService = {
       `/api/perp-trade/orders-by-symbol/${encodeURIComponent(stock)}`,
       { method: "GET", token: idToken },
     ),
+
+    placeTpSlOrders: (payload: PlaceTpSlPayload, idToken: string) =>
+  request<ApiResponse<{ status: string }>>(
+    "/api/perp-trade/place-tp-sl-orders",
+    { method: "POST", token: idToken, body: payload },
+  ),
+  cancelPerpOrder: (payload: CancelPerpOrderPayload, idToken: string) =>
+  request<ApiResponse<unknown>>("/api/perp-trade/cancel-order", {
+    method: "POST",
+    token: idToken,
+    body: payload,
+  }),
 };
 
 /** Throws on success:false so hooks can just await. */

@@ -1,11 +1,12 @@
-// Position details + close, for live Hyperliquid positions (replaces the mock PositionSheet).
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { Body, Btn, H2, Kv, KvCard, Sheet, Tag } from "../PerpUi";
 import { fmtPx, sMoney, sPct, sideTxt, toast } from "../../data/perpsStore";
 import { C } from "../../theme";
 import { livePnl, liveRoe, type UiPosition } from "../../hooks/perps";
 import { errMsg } from "../../services/hyperliquid/format";
+import { hTap } from "../../lib/haptics";
+import Svg, { Path } from "react-native-svg";
 
 export function LivePositionSheet({
   position: p,
@@ -14,6 +15,7 @@ export function LivePositionSheet({
   onClose,
   onClosePosition,
   onMoveToSpot,
+  onEditTpSl,
 }: {
   position: UiPosition;
   mark: number;
@@ -21,6 +23,7 @@ export function LivePositionSheet({
   onClose: () => void;
   onClosePosition: () => Promise<unknown>;
   onMoveToSpot?: () => void;
+  onEditTpSl?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const pnl = livePnl(p, mark);
@@ -58,6 +61,38 @@ export function LivePositionSheet({
           label={`${sideTxt(p.side)} ${p.lev}x`}
           tone={p.side > 0 ? "long" : "short"}
         />
+        {onEditTpSl ? (
+          <Pressable
+            onPress={() => {
+              hTap();
+              onEditTpSl();
+            }}
+            hitSlop={8}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#1A1F27",
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit take profit and stop loss for ${label}`}
+          >
+            <Svg
+              width={15}
+              height={15}
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke={C.ink3}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <Path d="M13.5 3.5 16.5 6.5 7 16H4v-3L13.5 3.5Z" />
+            </Svg>
+          </Pressable>
+        ) : null}
       </View>
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10 }}>
         <Text
