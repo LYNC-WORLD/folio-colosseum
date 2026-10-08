@@ -25,9 +25,10 @@ import Animated, {
 import Svg, { Path, Rect } from "react-native-svg";
 import { C, FONT } from "../theme";
 import { fmtPx, toast } from "../data/perpsStore";
-import { moveMoney, useBalances } from "../hooks/useBalances";
+import { useWalletBalance } from "../hooks/useWalletBalance";
 import { hTap } from "../lib/haptics";
 import { Btn, CARD, Check, H2, Body, Kv, KvCard, Lbl, Sheet } from "./PerpUi";
+import { moveMoney } from "../hooks/useBalances";
 
 const clean = (t: string) => {
   const x = t.replace(/[^0-9.]/g, "");
@@ -37,6 +38,7 @@ const clean = (t: string) => {
 const floor2 = (n: number) => Math.floor(n * 100) / 100;
 const fmtIn = (n: number) => (n ? String(n) : "");
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const MIN_AMOUNT = 20;
 
 const WalletIcon = memo(function WalletIcon() {
   return (
@@ -115,30 +117,37 @@ export function TransferSheet({
   amt: amt0,
   onClose,
   onMoved,
+  onDeposit,
 }: {
   dir?: "in" | "out";
   amt?: number;
   onClose: () => void;
   onMoved?: () => void;
+  onDeposit: (amt: number) => Promise<void>;
 }) {
-  const { spot, perp } = useBalances();
+  const wallet = useWalletBalance();
+  const spot = wallet.wallet?.usdc.balance ?? 0;
+  const perp = wallet.perpAvailable;
   const [dir, setDir] = useState<"in" | "out">(dir0);
   const src0 = dir0 === "in" ? spot : perp;
+  const defaultAmt = Math.floor(
+    Math.min(src0, dir0 === "in" ? Math.max(50, src0 * 0.2) : src0),
+  );
   const [amt, setAmt] = useState<number>(
-    amt0 ??
-      Math.floor(
-        Math.min(src0, dir0 === "in" ? Math.max(50, src0 * 0.2) : src0),
-      ),
+    amt0 ?? (src0 < MIN_AMOUNT ? src0 : Math.max(MIN_AMOUNT, defaultAmt)),
   );
   const [txt, setTxt] = useState(fmtIn(amt));
-  const [phase, setPhase] = useState<"form" | "busy" | "done">("form");
+  const [phase, setPhase] = useState<"form" | "busy" | "submitted" | "done">(
+    "form",
+  );
   const [snap, setSnap] = useState<Snap | null>(null);
   const [err, setErr] = useState("");
 
   const inb = dir === "in",
     src = inb ? spot : perp,
     dst = inb ? perp : spot;
-  const ok = amt > 0 && amt <= src + 1e-9,
+  const under = amt > 0 && amt < MIN_AMOUNT;
+  const ok = amt >= MIN_AMOUNT && amt <= src + 1e-9,
     mv = ok ? amt : 0,
     over = amt > src + 1e-9;
 
@@ -198,15 +207,28 @@ export function TransferSheet({
     Keyboard.dismiss();
     setErr("");
     setPhase("busy");
-    // balances after the move, captured now (the live balances change once it lands)
-    const sn: Snap = {
-      dir,
-      amt,
-      spot: inb ? spot - amt : spot + amt,
-      perp: inb ? perp + amt : perp - amt,
-    };
+
+    if (inb) {
+      try {
+        await onDeposit(amt);
+        if (!alive.current) return;
+        // Don't auto-close: the deposit is accepted but not yet confirmed.
+        // Show a dismissible "this can take a few minutes" screen — the top
+        // banner/toast in TradeScreen keeps tracking it until it's done.
+        setPhase("submitted");
+      } catch (e) {
+        if (!alive.current) return;
+        setErr(
+          e instanceof Error ? e.message : "Something went wrong. Try again.",
+        );
+        setPhase("form");
+      }
+      return;
+    }
+
+    const sn: Snap = { dir, amt, spot: spot + amt, perp: perp - amt };
     try {
-      await wait(900); // mock latency: delete this line when moveMoney is a real network call
+      await wait(900);
       const res = await Promise.resolve(moveMoney(dir, amt));
       if (res === false) throw new Error("The transfer didn't go through.");
       if (!alive.current) return;
@@ -222,7 +244,6 @@ export function TransferSheet({
     }
   };
 
-  // dismissing: blocked while moving, and a finished transfer still toasts
   const dismiss = () => {
     if (phase === "busy") return;
     if (phase === "done" && snap) return finish(snap);
@@ -243,8 +264,19 @@ export function TransferSheet({
             DON'T CLOSE THE APP
           </Text>
         </View>
+      ) : phase === "submitted" ? (
+        // ---------------------------------------------------------- submitted, not yet confirmed
+        <View style={[s.center, { gap: 14, paddingTop: 6 }]}>
+          <ActivityIndicator color={C.mint} size="large" />
+          <H2 style={{ textAlign: "center" }}>Transfer submitted</H2>
+          <Body style={{ textAlign: "center", fontSize: 13 }}>
+            Moving {fmtPx(amt)} to your perp account. This can take up to 5
+            minutes — you can close this now and we'll let you know once it's
+            done.
+          </Body>
+          <Btn label="Close" onPress={onClose} />
+        </View>
       ) : phase === "done" && snap ? (
-        // ---------------------------------------------------------- success
         <>
           <View style={[s.center, { gap: 14, paddingTop: 6 }]}>
             <Check />
@@ -345,7 +377,7 @@ export function TransferSheet({
                 </Text>
               </View>
             </View>
-            <View style={[s.field, over && { borderColor: C.loss }]}>
+            <View style={[s.field, (over || under) && { borderColor: C.loss }]}>
               <Text style={s.cur}>$</Text>
               <TextInput
                 value={txt}
@@ -382,7 +414,9 @@ export function TransferSheet({
             label={
               over
                 ? `More than you have in your ${inb ? "spot wallet" : "perp account"}`
-                : `Move ${fmtPx(amt)} ${inb ? "to perp" : "to spot"}`
+                : under
+                  ? `Minimum transfer is ${fmtPx(MIN_AMOUNT)}`
+                  : `Move ${fmtPx(amt)} ${inb ? "to perp" : "to spot"}`
             }
             onPress={submit}
           />

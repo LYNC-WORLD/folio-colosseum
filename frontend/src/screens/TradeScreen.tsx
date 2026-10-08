@@ -57,18 +57,18 @@ import {
   useMarkets,
   usePerpsSession,
   useSocketStatus,
-  useTradeActions,
 } from "../hooks/perps";
 import {
-  useOrdersBySymbol,
-  usePositionsBySymbol,
+  useAllPositions,
+  useAllOrders,
   type SymOrder,
-  type SymPosition,
 } from "../hooks/perps/useSymbolTrading";
+import { TpSlSheet } from "../components/perps/TpSlSheet";
 import { tradeService, unwrap } from "../services/perps/tradeService";
-import { useBalances } from "../hooks/useBalances";
-import { errMsg } from "../services/hyperliquid/format";
+import { useWalletBalance } from "../hooks/useWalletBalance";
 import { DEFAULT_PERP_MARKETS } from "../data/perpMarketsDefault";
+import { useSpotToPerpDeposit } from "../hooks/useSpotToPerpDeposit";
+import { LiveOrderSheet } from "../components/perps/LiveOrderSheet";
 
 type PTab = "pos" | "ord" | "book" | "info";
 type TransferOpts = { dir?: "in" | "out"; amt?: number; then?: () => void };
@@ -79,12 +79,30 @@ type SheetState =
   | { t: "unlock"; side: 1 | -1 }
   | { t: "ticket"; side: 1 | -1 }
   | { t: "position"; id: string }
+  | { t: "order"; id: number }
+  | { t: "tpsl"; id: string }
   | { t: "transfer"; dir: "in" | "out"; amt?: number; then?: () => void };
 
+const MAX_LEV = 10;
 const DEFAULT_LEV = 10;
+
 const tone = (n: number) => (n >= 0 ? C.mint : C.loss);
 
-/** Mock metadata (name, category, logo) if this symbol exists in data/perps; never throws. */
+const ROLE_LABEL: Record<SymOrder["role"], string> = {
+  tp: "TAKE PROFIT",
+  sl: "STOP LOSS",
+  stop: "STOP",
+  limit: "LIMIT",
+};
+const orderTone = (o: SymOrder): "long" | "short" =>
+  o.role === "tp"
+    ? "long"
+    : o.role === "sl"
+      ? "short"
+      : o.side > 0
+        ? "long"
+        : "short";
+
 function metaOf(sym: string) {
   try {
     return marketOf(sym) ?? null;
@@ -120,17 +138,38 @@ export function TradeScreen() {
   const session = usePerpsSession();
   const markets = useMarkets();
   const live = useLiveMarket(sym);
-  const posQ = usePositionsBySymbol(sym, session.idToken);
-  const ordQ = useOrdersBySymbol(sym, session.idToken);
+  const posQ = useAllPositions(session.idToken);
+  const ordQ = useAllOrders(session.idToken);
   const refreshTrading = () => {
     posQ.refetch();
     ordQ.refetch();
   };
-  const actions = useTradeActions(session.idToken);
   const socket = useSocketStatus();
-  const bal = useBalances();
+  const walletBal = useWalletBalance();
+  const bal = {
+    perp: walletBal.perpAvailable,
+    spot: walletBal.wallet?.usdc.balance ?? 0,
+  };
 
-  // ---- first-trade quiz flag (replaces the wallet-based onboarding check)
+  const {
+    deposit,
+    phase: depositPhase,
+    amount: depositAmount,
+    error: depositError,
+    reset: resetDeposit,
+  } = useSpotToPerpDeposit();
+
+  useEffect(() => {
+    if (depositPhase === "done") {
+      toast(`Moved ${fmtPx(depositAmount)} to perp`, "TRANSFER CONFIRMED");
+      resetDeposit();
+    } else if (depositPhase === "error" && depositError) {
+      toast("Transfer issue", depositError.toUpperCase());
+      resetDeposit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depositPhase]);
+
   const [quizSeen, setQuizSeen] = useState(false);
   useEffect(() => {
     AsyncStorage.getItem(QUIZ_SEEN_KEY)
@@ -140,7 +179,7 @@ export function TradeScreen() {
 
   const [tab, setTab] = useState<PTab>("pos");
   const [sheet, setSheet] = useState<SheetState>(null);
-  const [locked, setLocked] = useState(false); // freezes scroll while the chart crosshair is held
+  const [locked, setLocked] = useState(false);
   const [chartY, setChartY] = useState(0);
   const [, tick] = useState(0);
   useEffect(() => {
@@ -176,7 +215,6 @@ export function TradeScreen() {
   const markOf = (coin: string, fallback: number) =>
     coin === live.coin ? live.mark : (markets.byCoin[coin]?.mid ?? fallback);
 
-  // No wallet / session gate: quiz the first time, ticket every time after.
   const openTicket = (side: 1 | -1) => {
     if (!listed)
       return toast(
@@ -204,6 +242,7 @@ export function TradeScreen() {
   };
 
   const fr = live.fundingPct;
+  const maxLev = listed ? Math.min(MAX_LEV, live.maxLeverage) : MAX_LEV;
   const stats: [string, string, "up" | "down" | null][] = [
     ["MARK", fmtPx(live.mark), null],
     ["ORACLE", fmtPx(live.oracle), null],
@@ -217,36 +256,35 @@ export function TradeScreen() {
     ["OPEN INTEREST", `$${(live.oiUsd / 1e6).toFixed(1)}M`, null],
   ];
 
-  const positions = posQ.data;
+  const positions = posQ.data.map((p) => ({
+    ...p,
+    tp: ordQ.data.find((o) => o.coin === p.coin && o.role === "tp")?.px ?? null,
+    sl: ordQ.data.find((o) => o.coin === p.coin && o.role === "sl")?.px ?? null,
+  }));
+
   const sheetPos =
     sheet?.t === "position"
-      ? posQ.data.find((p) => p.id === sheet.id)
+      ? positions.find((p) => p.id === sheet.id)
       : undefined;
 
-  const [cancelling, setCancelling] = useState<number | null>(null);
-  const cancel = async (o: SymOrder) => {
-    setCancelling(o.oid);
-    try {
-      await unwrap(
-        tradeService.cancelOrder(
-          { coin: o.coin, oid: o.oid },
-          session.idToken ?? "",
-        ),
-      );
-      toast(
-        "Order cancelled",
-        `${labelOf(o.sym).toUpperCase()} · ${fmtPx(o.px)}`,
-      );
-      ordQ.refetch();
-    } catch (e) {
-      toast("Couldn't cancel", errMsg(e).toUpperCase());
-    } finally {
-      setCancelling(null);
-    }
+  const sheetOrd =
+    sheet?.t === "order" ? ordQ.data.find((o) => o.id === sheet.id) : undefined;
+
+  const sheetTpSl =
+    sheet?.t === "tpsl" ? positions.find((p) => p.id === sheet.id) : undefined;
+
+  const cancelOrder = async (o: SymOrder) => {
+    if (!session.idToken) throw new Error("Sign in first");
+    await unwrap(
+      tradeService.cancelPerpOrder(
+        { assetSymbol: o.coin, orderId: String(o.oid) },
+        session.idToken,
+      ),
+    );
+    refreshTrading();
   };
-  const levLabel = listed
-    ? Math.min(DEFAULT_LEV, live.maxLeverage)
-    : DEFAULT_LEV;
+
+  const levLabel = Math.min(DEFAULT_LEV, maxLev);
 
   const selectedMarket = DEFAULT_PERP_MARKETS.find(
     (market) => market.marketSymbol === label,
@@ -254,6 +292,16 @@ export function TradeScreen() {
 
   return (
     <SafeAreaView style={tradeStyles.safe} edges={["top"]}>
+      {depositPhase === "depositing" || depositPhase === "confirming" ? (
+        <View style={[tradeStyles.depositBanner, { top: insets.top + 6 }]}>
+          <ActivityIndicator size="small" color={C.mint} />
+          <Text style={tradeStyles.depositBannerT}>
+            {depositPhase === "depositing"
+              ? `Sending ${fmtPx(depositAmount)} to perp…`
+              : `Confirming transfer of ${fmtPx(depositAmount)}…`}
+          </Text>
+        </View>
+      ) : null}
       <ScrollView
         ref={scrollRef}
         scrollEnabled={!locked}
@@ -305,7 +353,7 @@ export function TradeScreen() {
               </View>
               <Text style={tradeStyles.sub} numberOfLines={1}>
                 {name}
-                {listed ? ` · up to ${live.maxLeverage}x` : ""}
+                {listed ? ` · up to ${maxLev}x` : ""}
               </Text>
             </View>
           </Pressable>
@@ -521,6 +569,30 @@ export function TradeScreen() {
                         {sPct(roe)}
                       </Text>
                     </View>
+
+                    <Pressable
+                      onPress={() => {
+                        hTap();
+                        setSheet({ t: "tpsl", id: p.id });
+                      }}
+                      hitSlop={8}
+                      style={tradeStyles.editBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Edit take profit and stop loss for ${labelOf(p.sym)}`}
+                    >
+                      <Svg
+                        width={15}
+                        height={15}
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        stroke={C.ink3}
+                        strokeWidth={1.8}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <Path d="M13.5 3.5 16.5 6.5 7 16H4v-3L13.5 3.5Z" />
+                      </Svg>
+                    </Pressable>
                   </Pressable>
                 );
               })
@@ -552,43 +624,51 @@ export function TradeScreen() {
                 />
               </View>
             ) : ordQ.data.length ? (
-              ordQ.data.map((o) => (
-                <View key={o.id} style={tradeStyles.pRow}>
-                  <View style={tradeStyles.logo}>
-                    <Text style={tradeStyles.logoT}>{logoTxt(o.sym)}</Text>
-                  </View>
-                  <View style={{ flex: 1, gap: 5, minWidth: 0 }}>
-                    <View style={[tradeStyles.rowC, { gap: 8 }]}>
-                      <Text style={tradeStyles.ttl}>{labelOf(o.sym)}</Text>
-                      <Tag
-                        label={`${o.kind.toUpperCase()} ${sideTxt(o.side)}`}
-                        tone={o.side > 0 ? "long" : "short"}
-                      />
-                    </View>
-                    <Text style={tradeStyles.entry} numberOfLines={1}>
-                      at {fmtPx(o.px)} · {fmtPx(o.px * o.size)} size
-                    </Text>
-                  </View>
+              ordQ.data.map((o) => {
+                const mark = markOf(o.coin, o.px);
+                const dist = mark ? ((o.px - mark) / mark) * 100 : 0;
+                const t = orderTone(o);
+                return (
                   <Pressable
+                    key={o.id}
+                    style={tradeStyles.pRow}
                     onPress={() => {
                       hTap();
-                      cancel(o);
+                      setSheet({ t: "order", id: o.id });
                     }}
-                    disabled={cancelling === o.oid}
-                    style={[
-                      tradeStyles.cancel,
-                      cancelling === o.oid && { opacity: 0.5 },
-                    ]}
                     accessibilityRole="button"
+                    accessibilityLabel={`${ROLE_LABEL[o.role].toLowerCase()} order for ${labelOf(o.sym)}, tap for details`}
                   >
-                    {cancelling === o.oid ? (
-                      <ActivityIndicator size="small" color={C.loss} />
-                    ) : (
-                      <Text style={tradeStyles.cancelT}>Cancel</Text>
-                    )}
+                    <View style={tradeStyles.logo}>
+                      <Text style={tradeStyles.logoT}>{logoTxt(o.sym)}</Text>
+                    </View>
+                    <View style={{ flex: 1, gap: 5, minWidth: 0 }}>
+                      <View style={[tradeStyles.rowC, { gap: 8 }]}>
+                        <Text style={tradeStyles.ttl}>{labelOf(o.sym)}</Text>
+                        <Tag label={ROLE_LABEL[o.role]} tone={t} />
+                      </View>
+                      <Text style={tradeStyles.entry} numberOfLines={1}>
+                        {o.isTrigger
+                          ? o.triggerText
+                          : `${o.side > 0 ? "Buy" : "Sell"} limit`}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end", gap: 4 }}>
+                      <Text
+                        style={[
+                          tradeStyles.pnl,
+                          { color: t === "long" ? C.mint : C.loss },
+                        ]}
+                      >
+                        {fmtPx(o.px)}
+                      </Text>
+                      <Text style={[tradeStyles.roe, { color: C.ink3 }]}>
+                        {sPct(dist)}
+                      </Text>
+                    </View>
                   </Pressable>
-                </View>
-              ))
+                );
+              })
             ) : (
               <View style={tradeStyles.empty}>
                 <Text style={tradeStyles.ttl}>No open orders</Text>
@@ -612,7 +692,7 @@ export function TradeScreen() {
                 [
                   ["UNDERLYING", category === "index" ? name + " index" : name],
                   ["VENUE", "Hyperliquid · " + live.coin],
-                  ["MAX LEVERAGE", live.maxLeverage + "x"],
+                  ["MAX LEVERAGE", maxLev + "x"],
                   [
                     "FUNDING",
                     `Every hour · ${fr >= 0 ? "+" : "−"}${Math.abs(fr).toFixed(4)}%`,
@@ -720,6 +800,7 @@ export function TradeScreen() {
       {sheet?.t === "transfer" ? (
         <TransferSheet
           dir={sheet.dir}
+          onDeposit={deposit}
           amt={sheet.amt}
           onClose={() => setSheet(null)}
           onMoved={() => {
@@ -729,18 +810,32 @@ export function TradeScreen() {
           }}
         />
       ) : null}
+
+      {sheetTpSl ? (
+        <TpSlSheet
+          position={sheetTpSl}
+          mark={markOf(sheetTpSl.coin, sheetTpSl.entry)}
+          label={labelOf(sheetTpSl.sym)}
+          idToken={session.idToken}
+          onClose={() => setSheet(null)}
+          onSaved={refreshTrading}
+        />
+      ) : null}
+
       {sheetPos ? (
         <LivePositionSheet
           position={sheetPos}
           mark={markOf(sheetPos.coin, sheetPos.entry)}
           label={labelOf(sheetPos.sym)}
           onClose={() => setSheet(null)}
-          onClosePosition={(f) =>
-            actions.closePosition(
-              sheetPos,
-              markOf(sheetPos.coin, sheetPos.entry),
-              f,
-            )
+          onEditTpSl={() => setSheet({ t: "tpsl", id: sheetPos.id })}
+          onClosePosition={() =>
+            unwrap(
+              tradeService.closePosition(
+                { stockSymbol: sheetPos.sym },
+                session.idToken ?? "",
+              ),
+            ).then(() => refreshTrading())
           }
           onMoveToSpot={() =>
             openTransfer({
@@ -748,6 +843,18 @@ export function TradeScreen() {
               amt: Math.floor(bal.perp * 100) / 100,
             })
           }
+        />
+      ) : null}
+
+      {sheetOrd ? (
+        <LiveOrderSheet
+          order={sheetOrd}
+          mark={markOf(sheetOrd.coin, sheetOrd.px)}
+          label={labelOf(sheetOrd.sym)}
+          roleLabel={ROLE_LABEL[sheetOrd.role]}
+          tone={orderTone(sheetOrd)}
+          onClose={() => setSheet(null)}
+          onCancelOrder={() => cancelOrder(sheetOrd)}
         />
       ) : null}
     </SafeAreaView>
@@ -785,6 +892,15 @@ export const tradeStyles = StyleSheet.create({
     fontSize: 21,
     letterSpacing: -0.7,
     color: C.ink1,
+  },
+  editBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1A1F27",
+    marginLeft: 6,
   },
   sub: { fontFamily: FONT.sans600, fontSize: 12.5, color: C.ink3 },
   spot: {
@@ -861,6 +977,28 @@ export const tradeStyles = StyleSheet.create({
     fontSize: 9.5,
     letterSpacing: 1.2,
     color: C.ink2,
+  },
+  depositBanner: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    zIndex: 60,
+    elevation: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: C.raised,
+    borderWidth: 1,
+    borderColor: "#262C36",
+  },
+  depositBannerT: {
+    fontFamily: FONT.sans600,
+    fontSize: 12.5,
+    color: C.ink1,
+    flexShrink: 1,
   },
   tabs: {
     flexDirection: "row",

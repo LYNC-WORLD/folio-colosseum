@@ -382,16 +382,24 @@ export const levTone = (l: number) =>
 export function LeverageSlider({
   value,
   onChange,
+  max = MAXLEV,
 }: {
   value: number;
   onChange: (v: number) => void;
+  max?: number;
 }) {
   const [w, setW] = useState(0);
   const start = useRef(value),
     cur = useRef(value),
-    width = useRef(0);
+    width = useRef(0),
+    maxRef = useRef(max);
   cur.current = value;
   width.current = w;
+  maxRef.current = max;
+
+  // span of the track in leverage steps (never 0, so max=1 doesn't divide by zero)
+  const span = (m: number) => Math.max(1, m - 1);
+
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -400,11 +408,21 @@ export function LeverageSlider({
       onPanResponderGrant: (e) => {
         if (width.current > 0) {
           // jump to where you touched
-          const v = Math.round(
-            1 +
-              (Math.max(0, Math.min(width.current, e.nativeEvent.locationX)) /
-                width.current) *
-                (MAXLEV - 1),
+          const m = maxRef.current;
+          const v = Math.max(
+            1,
+            Math.min(
+              m,
+              Math.round(
+                1 +
+                  (Math.max(
+                    0,
+                    Math.min(width.current, e.nativeEvent.locationX),
+                  ) /
+                    width.current) *
+                    span(m),
+              ),
+            ),
           );
           start.current = v;
           if (v !== cur.current) onChange(v);
@@ -412,22 +430,26 @@ export function LeverageSlider({
       },
       onPanResponderMove: (_, g) => {
         if (!width.current) return;
+        const m = maxRef.current;
         const v = Math.round(
           Math.max(
             1,
-            Math.min(
-              MAXLEV,
-              start.current + (g.dx / width.current) * (MAXLEV - 1),
-            ),
+            Math.min(m, start.current + (g.dx / width.current) * span(m)),
           ),
         );
         if (v !== cur.current) onChange(v);
       },
     }),
   ).current;
-  const pct = (value - 1) / (MAXLEV - 1),
+
+  const pct = Math.min(1, Math.max(0, (value - 1) / span(max))),
     col = levTone(value),
     TH = 26;
+
+  // preset marks: only those within the cap, and always end on the cap itself
+  const marks = [1, 5, 10, 25, 50].filter((v) => v <= max);
+  if (marks[marks.length - 1] !== max) marks.push(max);
+
   return (
     <View style={{ gap: 2 }}>
       <View
@@ -436,7 +458,7 @@ export function LeverageSlider({
         {...pan.panHandlers}
         accessibilityRole="adjustable"
         accessibilityLabel="Leverage"
-        accessibilityValue={{ min: 1, max: MAXLEV, now: value }}
+        accessibilityValue={{ min: 1, max, now: value }}
       >
         <View
           pointerEvents="none"
@@ -472,7 +494,7 @@ export function LeverageSlider({
           marginTop: -2,
         }}
       >
-        {[1, 5, 10, 25, 50].map((v) => (
+        {marks.map((v) => (
           <Pressable
             key={v}
             hitSlop={{ top: 8, bottom: 8 }}

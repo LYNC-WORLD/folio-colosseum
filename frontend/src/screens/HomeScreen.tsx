@@ -82,7 +82,7 @@ export function HomeScreen() {
   const splashDone = useSplashDone();
   const bottom = useTabBarSpace();
 
-  const perps = usePerpMarkets(["NVDA", "SP500"]);
+  const perps = usePerpMarkets(["NVDA", "ORCL", "TSLA"]);
 
   const openPerp = (m: PerpMarket) => {
     nav.getParent<BottomTabNavigationProp<TabParamList>>()?.navigate("Trade", {

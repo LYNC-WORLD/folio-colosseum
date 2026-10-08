@@ -3,7 +3,10 @@ import { StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ASSET_DEFS, useOnboarding } from "../../context";
 import { Button, OptionCard, Rise } from "../../components/ui";
-import { AFTER_HEADER, OnboardingScaffold } from "../../components/onboarding/OnboardingScaffold";
+import {
+  AFTER_HEADER,
+  OnboardingScaffold,
+} from "../../components/onboarding/OnboardingScaffold";
 import type { OnboardingStackParamList } from "../../navigation";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "WhatToOwn">;
@@ -14,7 +17,7 @@ export function WhatToOwnScreen({ navigation }: Props) {
   return (
     <OnboardingScaffold
       step={1}
-      label="QUESTION 1 OF 4"
+      label="QUESTION 1 OF 2"
       title={"What do you\nwant to own?"}
       body="Pick as many as you like. You can change this later."
       footer={

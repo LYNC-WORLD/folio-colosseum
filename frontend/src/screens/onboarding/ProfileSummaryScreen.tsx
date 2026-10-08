@@ -1,9 +1,10 @@
 // Result — prototype #s-result
-// Submit logic is unchanged: same endpoint, same payload keys.
+// Same endpoint, same payload keys. question1 / question2 are no longer
+// asked, so they are sent as NOT_SENT ("data not sent").
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useAuth, useOnboarding } from "../../context";
+import { NOT_SENT, useAuth, useOnboarding } from "../../context";
 import { saveOnboardingProfile } from "../../lib";
 import { submitLoginForm } from "../../services/onboarding";
 import { hError, hSuccess } from "../../lib/haptics";
@@ -20,8 +21,7 @@ import type { OnboardingStackParamList } from "../../navigation";
 type Props = NativeStackScreenProps<OnboardingStackParamList, "ProfileSummary">;
 
 export function ProfileSummaryScreen({ navigation, route }: Props) {
-  const { computeProfile, picked, resolvedAmount, risk, horizon } =
-    useOnboarding();
+  const { computeProfile, picked, resolvedAmount } = useOnboarding();
 
   const profile = computeProfile();
   const onComplete = route.params?.onComplete;
@@ -44,16 +44,11 @@ export function ProfileSummaryScreen({ navigation, route }: Props) {
       const payload = {
         interestedStocks,
         amountToPutIn: resolvedAmount,
-        question1: risk,
-        question2: horizon,
+        question1: NOT_SENT,
+        question2: NOT_SENT,
       };
-      // console.log("====================================");
-      // console.log(payload);
-      // console.log("====================================");
-      const data = await submitLoginForm(payload, idToken!);
-      // console.log("====================================");
-      // console.log("hellos", data);
-      // console.log("====================================");
+
+      await submitLoginForm(payload, idToken!);
       saveOnboardingProfile(profile);
       hSuccess();
       onComplete?.();
@@ -69,8 +64,6 @@ export function ProfileSummaryScreen({ navigation, route }: Props) {
   const rows: [string, string][] = [
     ["OWNS", profile.owns.join(" · ")],
     ["STARTS WITH", profile.capitalLabel],
-    ["DRAWDOWN", profile.riskSummary],
-    ["HORIZON", profile.horizonLabel],
   ];
 
   return (

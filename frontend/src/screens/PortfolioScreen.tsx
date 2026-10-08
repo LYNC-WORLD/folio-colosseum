@@ -16,16 +16,14 @@ import { useNavigation, useScrollToTop } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { useAuth, type OnboardingProfile } from "../context";
 import { useWallet } from "../context/WalletContext";
-import { useLeaderboard } from "../context/LeaderboardContext";
 import { useIndexFunds, useStocks } from "../hooks";
 import { useRecurringBuys } from "../hooks/useTrade";
 import { useUserTransactions } from "../hooks/useUserRecords";
 import { usePortfolioSeries } from "../hooks/usePortfolioSeries";
 import { useCountUp } from "../hooks/useCountUp";
-import { useBalances } from "../hooks/useBalances";
-import { useAccount } from "../hooks/perps/useAccount";
-import { toTrades, usePortfolioPnl } from "../hooks/usePortfolioPnl";
-import type { Address } from "../services/hyperliquid/types";
+import { useWalletBalance } from "../hooks/useWalletBalance";
+import { useSpotToPerpDeposit } from "../hooks/useSpotToPerpDeposit";
+import { toast as perpToast } from "../data/perpsStore";
 import { getOnboardingProfile } from "../lib";
 import type { TabParamList } from "../navigation/RootTabs";
 import { useTabBarSpace } from "../navigation/TabBar";
@@ -96,11 +94,6 @@ const PERP_CATS: [PerpCat, string][] = [
   ["commodities", "Commodities"],
 ];
 
-const num = (v: unknown) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-
 export function PortfolioScreen() {
   const nav = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
@@ -109,9 +102,20 @@ export function PortfolioScreen() {
   const sheet = useSheet();
   const toast = useToast();
   const following = useFollowing();
-  const perp = usePerpPositions(); // still mock: drives the Perps list rows only
-  const bal = useBalances(); // { spot, perp }
-  const [xfer, setXfer] = useState(false); // Transfer drawer (spot <-> perp)
+  const perp = usePerpPositions();
+  const walletBal = useWalletBalance();
+  const bal = {
+    perp: walletBal.perpAvailable,
+    spot: walletBal.wallet?.usdc.balance ?? 0,
+  };
+  const {
+    deposit,
+    phase: depositPhase,
+    amount: depositAmount,
+    error: depositError,
+    reset: resetDeposit,
+  } = useSpotToPerpDeposit();
+  const [xfer, setXfer] = useState(false);
   const [xferDir, setXferDir] = useState<"in" | "out">("in");
 
   const scrollRef = useRef<ScrollView>(null);
@@ -140,39 +144,6 @@ export function PortfolioScreen() {
   const pre = useStocks("pre-ipo");
   const idx = useIndexFunds();
   const fundLots = useFundLots();
-
-  // ---------- perp account + PnL ----------
-  // TODO: set this to the Hyperliquid address you trade perps with (e.g. from usePerpsSession).
-  // While it is null, the leaderboard /me numbers are used instead.
-  const perpAddress: Address | null = null;
-  const acct = useAccount(perpAddress);
-  const { me } = useLeaderboard();
-
-  const perpEquity = perpAddress
-    ? acct.accountValue
-    : me
-      ? num(me.accountValue)
-      : perp.equity;
-  const perpNetDeposits =
-    me && Number.isFinite(Number(me.netDepositsUsdc))
-      ? Number(me.netDepositsUsdc)
-      : null;
-  const perpPositionsPnl = perpAddress
-    ? acct.positions.reduce((t, p) => t + p.pnl, 0)
-    : perp.pnl;
-
-  const trades = useMemo(() => toTrades(txs.data?.data), [txs.data]);
-  const pnl = usePortfolioPnl({
-    tokens,
-    trades,
-    fundLots,
-    walletAddress,
-    perp: {
-      accountValue: perpEquity,
-      netDeposits: perpNetDeposits,
-      positionsPnl: perpPositionsPnl,
-    },
-  });
 
   const [profile, setProfile] = useState<OnboardingProfile | null>(null);
   useEffect(() => {
@@ -203,40 +174,54 @@ export function PortfolioScreen() {
     [tokens],
   );
 
-  const { points } = usePortfolioSeries(holdings, usdcValue, range.period);
+  // Total value = wallet + perp equity. One source (walletBal.perpTotal) feeds
+  // the hero number, the chart and the delta so they can never disagree.
+  const perpTotal = walletBal.perpTotal;
+  const liveTarget = usdValue + perpTotal; // un-animated, used for delta math
+  const liveTotal = useCountUp(liveTarget);
+
+  const { points: rawPoints } = usePortfolioSeries(
+    holdings,
+    usdcValue,
+    range.period,
+  );
+
+  // Chart = wallet series + flat perp offset, last point pinned to the live total
+  const points = useMemo(() => {
+    if (!rawPoints.length) return rawPoints;
+    const pts = rawPoints.map((p) => ({ ...p, v: p.v + perpTotal }));
+    pts[pts.length - 1] = { ...pts[pts.length - 1], v: liveTarget };
+    return pts;
+  }, [rawPoints, perpTotal, liveTarget]);
+
   const [scrubIdx, setScrubIdx] = useState<number | null>(null);
+  // the points array changes length with the range, so drop any stale scrub
+  useEffect(() => {
+    setScrubIdx(null);
+  }, [range.key]);
 
-  // Total value = wallet + perp equity (same rule as the prototype's total).
-  // The chart series is wallet-only, so perp equity is added on top as a flat offset.
-  const liveTotal = useCountUp(usdValue + perpEquity);
-  const shownValue =
-    scrubIdx != null
-      ? (points[scrubIdx]?.v ?? usdValue) + perpEquity
-      : liveTotal;
-  const startV = points[0]?.v ?? usdValue;
-  const endV = scrubIdx != null ? (points[scrubIdx]?.v ?? usdValue) : usdValue;
+  const safeIdx =
+    scrubIdx != null && scrubIdx >= 0 && scrubIdx < points.length
+      ? scrubIdx
+      : null;
+  const isLatest = safeIdx == null || safeIdx === points.length - 1;
+
+  // hero: animated live total at rest, exact point value while scrubbing
+  const shownValue = isLatest ? liveTotal : points[safeIdx!].v;
+  const startV = points[0]?.v ?? liveTarget;
+  const endV = isLatest ? liveTarget : points[safeIdx!].v;
   const delta = endV - startV;
-  const deltaLabel =
-    scrubIdx == null || scrubIdx === points.length - 1
-      ? range.label
-      : range.period === "1D"
-        ? new Date(points[scrubIdx].t * 1000).toLocaleTimeString("en-GB", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : new Date(points[scrubIdx].t * 1000).toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "short",
-          });
-
-  // All-time (not scrubbing) shows real total PnL: spot + realized + perps.
-  // Shorter ranges keep the wallet-only chart delta (there is no perp history series).
-  const allTime = range.key === "All" && scrubIdx == null;
-  const heroDelta = allTime ? pnl.total : delta;
-  const heroLabel = allTime
-    ? `all-time P&L${pnl.untracked > 0 ? " · partial" : ""}`
-    : deltaLabel;
-  const heroPct = allTime && pnl.totalPct != null ? pnl.totalPct : null;
+  const deltaLabel = isLatest
+    ? range.label
+    : range.period === "1D"
+      ? new Date(points[safeIdx!].t * 1000).toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : new Date(points[safeIdx!].t * 1000).toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+        });
 
   const cash = useCountUp(usdcValue);
 
@@ -251,6 +236,18 @@ export function PortfolioScreen() {
       m.set(s.tokenAddress, dayChange(s.price, s.marketOpenPrice));
     return m;
   }, [us.stocks, pre.stocks]);
+
+  useEffect(() => {
+    if (depositPhase === "done") {
+      perpToast(`Moved ${money(depositAmount)} to perp`, "TRANSFER CONFIRMED");
+      refresh(); // this screen's own cash/positions numbers, not just TradeScreen's
+      resetDeposit();
+    } else if (depositPhase === "error" && depositError) {
+      perpToast("Transfer issue", depositError.toUpperCase());
+      resetDeposit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depositPhase]);
 
   const positions = useMemo(
     () =>
@@ -327,13 +324,17 @@ export function PortfolioScreen() {
       params: { id },
       initial: false,
     });
-  // Trade lives in HomeStack
-  // const openTrade = (symbol?: string) =>
-  //   nav.navigate("Home", {
-  //     screen: "Trade",
-  //     params: symbol ? { symbol } : undefined,
-  //     initial: false,
-  //   });
+  const openTrade = (symbol?: string) =>
+    nav.navigate("Trade", symbol ? { symbol } : undefined);
+
+  // PerpPositionList may hand back a position or a symbol; accept both
+  const openPerp = (
+    arg?: string | { sym?: string; symbol?: string; coin?: string },
+  ) => {
+    const raw =
+      typeof arg === "string" ? arg : (arg?.sym ?? arg?.symbol ?? arg?.coin);
+    openTrade(raw?.includes(":") ? raw.split(":")[1] : raw);
+  };
   const toAccount = () => nav.navigate("Profile");
   const toOrders = () =>
     (nav as any).navigate("Profile", {
@@ -370,7 +371,6 @@ export function PortfolioScreen() {
         spot={bal.spot}
         perp={bal.perp}
         onMoveToSpot={openTransferOut}
-        // onSend={async (amount, to) => { ...real transfer...; return true; }}
         onDone={() => {
           sheet.close();
           refresh();
@@ -393,7 +393,7 @@ export function PortfolioScreen() {
           value: p.value,
           change: p.change,
         }))}
-        perp={{ positions: perp.positions, pnl: pnl.perpPnl }}
+        perp={{ positions: perp.positions, pnl: perp.pnl }}
       />,
       { label: "Share" },
     );
@@ -442,7 +442,6 @@ export function PortfolioScreen() {
               refresh();
               reloadRecurring();
               txs.refetch();
-              acct.refresh();
             }}
             tintColor={C.mint}
             colors={[C.mint]}
@@ -510,17 +509,14 @@ export function PortfolioScreen() {
 
           {/* hero number + ranges */}
           <Rise {...rise(4)} style={s.heroRow}>
-            <View style={{ flex: 1, gap: 8 }}>
+            <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 160, gap: 8 }}>
               <HeroMoney value={loading ? 0 : shownValue} />
               <Text style={s.delta}>
-                <Text style={{ color: heroDelta >= 0 ? C.mint : C.loss }}>
-                  {heroDelta >= 0 ? "+" : "−"}
-                  {money(Math.abs(heroDelta))}
-                  {heroPct != null
-                    ? ` (${heroPct >= 0 ? "+" : "−"}${Math.abs(heroPct).toFixed(1)}%)`
-                    : ""}
+                <Text style={{ color: delta >= 0 ? C.mint : C.loss }}>
+                  {delta >= 0 ? "+" : "−"}
+                  {money(Math.abs(delta))}
                 </Text>{" "}
-                <Text style={s.deltaLbl}>{heroLabel}</Text>
+                <Text style={s.deltaLbl}>{deltaLabel}</Text>
               </Text>
             </View>
             <View style={s.rg} accessibilityRole="tablist">
@@ -568,7 +564,6 @@ export function PortfolioScreen() {
               <Text style={s.cashIcoText}>$</Text>
             </View>
             <View style={{ flex: 1, gap: 6, minWidth: 0 }}>
-              {/* label + Deposit + more */}
               <View style={s.cashTop}>
                 <Text style={s.cashLbl} numberOfLines={1}>
                   Cash in wallet
@@ -607,7 +602,6 @@ export function PortfolioScreen() {
                 </SqButton>
               </View>
 
-              {/* balance + refresh */}
               <View style={s.cashBal}>
                 <Text style={s.cash} numberOfLines={1}>
                   {loading ? "…" : money(cash)}
@@ -642,11 +636,10 @@ export function PortfolioScreen() {
               </View>
 
               <PerpSummaryLine
-                equity={perpEquity}
-                pnl={pnl.perpPnl}
+                equity={walletBal.perpAvailable}
+                pnl={perp.pnl}
                 count={perp.positions.length}
               />
-              {/* perp account balance + Transfer (opens the drawer) */}
               <PressScale
                 scaleTo={0.97}
                 onPress={openTransfer}
@@ -666,8 +659,8 @@ export function PortfolioScreen() {
               {tab === "perp" ? (
                 <PerpsHeader
                   count={perp.positions.length}
-                  margin={perp.margin}
-                  pnl={pnl.perpPnl}
+                  margin={perpMargin}
+                  pnl={perpPnl}
                 />
               ) : (
                 <View style={{ gap: 3 }}>
@@ -753,8 +746,8 @@ export function PortfolioScreen() {
                 <PerpPositionList
                   positions={allPos.data}
                   category={perpCat}
-                  onOpen={() => {}}
-                  onOpenTrade={() => {}}
+                  onOpen={openPerp}
+                  onOpenTrade={openPerp}
                 />
               )
             ) : tab === "open" && cat === "index" ? (
@@ -831,72 +824,57 @@ export function PortfolioScreen() {
                     : "You hold nothing in this category yet."}
                 </Text>
               ) : (
-                shownPositions.map((p, i) => {
-                  const tp = pnl.byMint.get(p.mint); // undefined = no cost history
-                  return (
-                    <Rise key={p.mint} delay={i * 45} duration={400}>
-                      <PressScale
-                        scaleTo={0.985}
-                        onPress={() => {
-                          hTap();
-                          openAsset(p.symbol, p.stockType);
-                        }}
-                        style={s.posRow}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${p.symbol}, ${money(p.value)}`}
-                      >
-                        <AssetAvatar
-                          symbol={p.symbol}
-                          imageUrl={p.imageUrl}
-                          size={48}
-                          radius={999}
-                        />
-                        <View style={{ flex: 1, gap: 4 }}>
+                shownPositions.map((p, i) => (
+                  <Rise key={p.mint} delay={i * 45} duration={400}>
+                    <PressScale
+                      scaleTo={0.985}
+                      onPress={() => {
+                        hTap();
+                        openAsset(p.symbol, p.stockType);
+                      }}
+                      style={s.posRow}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${p.symbol}, ${money(p.value)}`}
+                    >
+                      <AssetAvatar
+                        symbol={p.symbol}
+                        imageUrl={p.imageUrl}
+                        size={48}
+                        radius={999}
+                      />
+                      <View style={{ flex: 1, gap: 4 }}>
+                        <Text
+                          style={[TYPE.ttl, { fontSize: 16 }]}
+                          numberOfLines={1}
+                        >
+                          {p.symbol}
+                        </Text>
+                        <Text style={s.qty}>
+                          {p.balance.toLocaleString("en-US", {
+                            maximumFractionDigits: 4,
+                          })}{" "}
+                          {p.symbol}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: "flex-end", gap: 4 }}>
+                        <Text style={s.val}>{money(p.value)}</Text>
+                        {p.change != null ? (
                           <Text
-                            style={[TYPE.ttl, { fontSize: 16 }]}
-                            numberOfLines={1}
+                            style={[
+                              s.chg,
+                              { color: p.change >= 0 ? C.mint : C.loss },
+                            ]}
                           >
-                            {p.symbol}
-                          </Text>
-                          <Text style={s.qty}>
-                            {p.balance.toLocaleString("en-US", {
-                              maximumFractionDigits: 4,
-                            })}{" "}
-                            {p.symbol}
-                          </Text>
-                        </View>
-                        <View style={{ alignItems: "flex-end", gap: 4 }}>
-                          <Text style={s.val}>{money(p.value)}</Text>
-                          {p.change != null ? (
-                            <Text
-                              style={[
-                                s.chg,
-                                { color: p.change >= 0 ? C.mint : C.loss },
-                              ]}
-                            >
-                              <Text style={s.tri}>
-                                {p.change >= 0 ? "▲ " : "▼ "}
-                              </Text>
-                              {Math.abs(p.change).toFixed(2)}%
+                            <Text style={s.tri}>
+                              {p.change >= 0 ? "▲ " : "▼ "}
                             </Text>
-                          ) : null}
-                          {tp ? (
-                            <Text
-                              style={[
-                                s.chg,
-                                { color: tp.pnl >= 0 ? C.mint : C.loss },
-                              ]}
-                            >
-                              {tp.pnl >= 0 ? "+" : "−"}
-                              {money(Math.abs(tp.pnl))}
-                              {tp.pct != null ? ` · ${pct(tp.pct)}` : ""}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </PressScale>
-                    </Rise>
-                  );
-                })
+                            {Math.abs(p.change).toFixed(2)}%
+                          </Text>
+                        ) : null}
+                      </View>
+                    </PressScale>
+                  </Rise>
+                ))
               )
             ) : cat === "index" ? (
               <Text style={s.empty}>
@@ -987,6 +965,7 @@ export function PortfolioScreen() {
       {xfer ? (
         <TransferSheet
           dir={xferDir}
+          onDeposit={deposit}
           onClose={() => setXfer(false)}
           onMoved={() => {
             setXfer(false);
@@ -1098,7 +1077,7 @@ function CashMenu({
     [
       "addr",
       "Copy wallet address",
-      `${shortAddr(address)} · self-custody`,
+      `${shortAddr(address!)} · self-custody`,
       onCopy,
     ],
     ["act", "Activity", "Every buy, sale and order", onActivity],
@@ -1204,7 +1183,6 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     flexWrap: "wrap",
-    rowGap: 12,
     marginTop: 20,
     gap: 12,
   },
@@ -1353,7 +1331,6 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    paddingVertical: 6,
   },
   qty: { fontFamily: FONT.mono400, fontSize: 12, color: C.ink3 },
   val: {

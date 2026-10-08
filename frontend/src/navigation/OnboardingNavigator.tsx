@@ -2,9 +2,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { OnboardingProvider } from "../context";
 import { C } from "../theme";
 import {
-  HoldingPeriodScreen,
   ProfileSummaryScreen,
-  RiskBehaviorScreen,
   StartingSizeScreen,
   WhatToOwnScreen,
 } from "../screens/onboarding";
@@ -12,8 +10,6 @@ import {
 export type OnboardingStackParamList = {
   WhatToOwn: undefined;
   StartingSize: undefined;
-  RiskBehaviour: undefined;
-  HoldingPeriod: undefined;
   ProfileSummary: { onComplete: () => void } | undefined;
 };
 
@@ -35,8 +31,6 @@ export function OnboardingNavigator({
       >
         <Stack.Screen name="WhatToOwn" component={WhatToOwnScreen} />
         <Stack.Screen name="StartingSize" component={StartingSizeScreen} />
-        <Stack.Screen name="RiskBehaviour" component={RiskBehaviorScreen} />
-        <Stack.Screen name="HoldingPeriod" component={HoldingPeriodScreen} />
         <Stack.Screen
           name="ProfileSummary"
           component={ProfileSummaryScreen}
