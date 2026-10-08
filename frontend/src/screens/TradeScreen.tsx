@@ -179,7 +179,7 @@ export function TradeScreen() {
 
   const [tab, setTab] = useState<PTab>("pos");
   const [sheet, setSheet] = useState<SheetState>(null);
-  const [locked, setLocked] = useState(false); // freezes scroll while the chart crosshair is held
+  const [locked, setLocked] = useState(false);
   const [chartY, setChartY] = useState(0);
   const [, tick] = useState(0);
   useEffect(() => {
