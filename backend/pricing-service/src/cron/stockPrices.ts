@@ -1,12 +1,19 @@
 import cron from "node-cron";
 import { updateStockPrices } from "../services/stockPrice.service";
 
+let running = false;
+
 export function startStockPriceCron() {
-  // Every minute
   cron.schedule("*/5 * * * *", async () => {
+    if (running) return;
+    running = true;
     console.log("Running stock price update... ", Date.now());
 
-    await updateStockPrices();
+    try {
+      await updateStockPrices();
+    } finally {
+      running = false;
+    }
   });
 
   console.log("Stock price cron started");

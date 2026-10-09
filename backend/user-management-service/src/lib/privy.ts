@@ -78,14 +78,15 @@ export async function createEVMWallet(
 export async function getTransectionResults(
   walletId: string,
   transectionId: string,
+  timeoutMs = 60_000,
 ) {
+  const deadline = Date.now() + timeoutMs;
   while (true) {
     const data = await privy.wallets().actions.get(transectionId, {
       wallet_id: walletId,
     });
-    if (data.status == "pending") {
-      await sleep(1000);
-    } else return data.status;
+    if (data.status !== "pending" || Date.now() >= deadline) return data.status;
+    await sleep(1000);
   }
 }
 export async function sendSOl(walletId: string, solAmount: string, depositAddress: string){

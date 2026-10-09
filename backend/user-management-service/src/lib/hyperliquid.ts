@@ -24,6 +24,8 @@ const HYPERLIQUID_DEPOSIT_URL =
 
 const SOL_DECIMALS = 9;
 const SOL_TRANSFER_FEE_BUFFER = 0.002;
+const USOL_PAIR = "USOL/USDC";
+const MIN_SPOT_ORDER_USD = 10;
 
 export async function getDepositAddress(ethAddress: string) {
   try {
@@ -62,44 +64,53 @@ export async function getHyperliquidSpotBalances(walletAddress: string) {
   }
 }
 
-export async function sellSolForUsdc(solAmount: string, privateKey: string) {
-  const wallet = privateKeyToAccount(privateKey as `0x${string}`);
+export async function getUsolMarket(): Promise<UsolMarket> {
   const converter = await SymbolConverter.create({
     transport: hyperliquidTransport,
   });
+  const assetId = converter.getAssetId(USOL_PAIR);
+  const pairId = converter.getSpotPairId(USOL_PAIR);
+  const szDecimals = converter.getSzDecimals(USOL_PAIR);
+  if (assetId === undefined || !pairId || szDecimals === undefined) {
+    throw new Error(`${USOL_PAIR} market not found`);
+  }
+  const mids = await hyperliquidInfoClient.allMids();
+  const mid = Number(mids[pairId]);
+  if (!(mid > 0)) throw new Error(`${USOL_PAIR} has no mid price`);
+  return { assetId, szDecimals, mid };
+}
+
+export async function sellSolForUsdc(
+  solAmount: number,
+  privateKey: string,
+  market: UsolMarket,
+) {
   const exchange = new ExchangeClient({
     transport: hyperliquidTransport,
-    wallet,
+    wallet: privateKeyToAccount(privateKey as `0x${string}`),
   });
-
-  const mids = await hyperliquidInfoClient.allMids();
-  const mid = parseFloat(mids["SOL"]);
-
-  const price = mid * 0.99;
-
-  const szDecimals = converter.getSzDecimals("SOL")!;
 
   const result = await exchange.order({
     orders: [
       {
-        a: 10156,
+        a: market.assetId,
         b: false,
-        p: formatPrice(price, szDecimals),
+        p: formatPrice(market.mid * 0.99, market.szDecimals, "spot"),
         r: false,
-        s: formatSize(solAmount, szDecimals),
-        t: {
-          limit: {
-            tif: "Gtc",
-          },
-        },
+        s: formatSize(solAmount, market.szDecimals),
+        t: { limit: { tif: "Ioc" } },
       },
     ],
     grouping: "na",
   });
 
-  console.log("Order result:", result);
+  const status = result.response.data.statuses[0];
+  return typeof status === "object" && "filled" in status;
+}
 
-  return result;
+async function isExchangeOk(response: Response) {
+  const body = await response.json().catch(() => undefined);
+  return response.ok && body?.status === "ok";
 }
 
 export async function createAgentWallet(walletId: string) {
@@ -166,7 +177,7 @@ export async function createAgentWallet(walletId: string) {
     body: JSON.stringify(body),
   });
   return {
-    result: response,
+    ok: await isExchangeOk(response),
     apiKey: wallet.address,
     apiSecret: wallet.privateKey,
   };
@@ -179,17 +190,13 @@ export async function getBestPriceFromOrderBook(
   const book = await hyperliquidInfoClient.l2Book({
     coin: `xyz:${marketSymbol}`,
   });
-  if (!book) return;
-  const bids = book.levels[0];
-  const asks = book.levels[1];
-  console.log(
-    "orderBook: ",
-    isBuy ? Number(asks[0].px) * 1.1 : Number(bids[0].px) * 0.9,
-  );
+  const best = book?.levels[isBuy ? 1 : 0][0];
+  if (!best) return;
+  const orderBookPrice = Number(best.px);
 
   return {
-    orderBookPrice: isBuy ? Number(asks[0].px) : Number(bids[0].px),
-    limitPrice: isBuy ? Number(asks[0].px) * 1.1 : Number(bids[0].px) * 0.9,
+    orderBookPrice,
+    limitPrice: orderBookPrice * (isBuy ? 1.1 : 0.9),
   };
 }
 
@@ -203,7 +210,6 @@ export async function depositToHyperliquid(
 ) {
 
   try {
-    // check balance
     const usdcBalance = await getUSDCBalance(solanaAddress);
     if (usdcBalance < Number(depositAmount)) {
       return { success: false, message: "not enough balance" };
@@ -217,7 +223,6 @@ export async function depositToHyperliquid(
       };
     }
 
-    // convert to sol
     const swapResult = await swap(
       solanaWalletId,
       solanaAddress,
@@ -235,18 +240,34 @@ export async function depositToHyperliquid(
       return { success: false, message: "usdc to sol swap failed" };
     }
 
-    // send sol to hyperliquid
-    const sentSOl = await sendSOl(
-      solanaWalletId,
-      sendAmount.toString(),
-      depositAddress,
-    );
-    const sentSOlConfirmation = await getTransectionResults(
-      solanaWalletId,
-      sentSOl.id,
-    );
-    if (sentSOlConfirmation != "succeeded") {
-      return { success: false, message: "sol transfer to hyperliquid failed" };
+    let sendStatus: string;
+    try {
+      const sentSOl = await sendSOl(
+        solanaWalletId,
+        sendAmount.toString(),
+        depositAddress,
+      );
+      sendStatus = await getTransectionResults(solanaWalletId, sentSOl.id).catch(
+        () => "pending",
+      );
+    } catch (error) {
+      console.error("sol transfer to hyperliquid failed: ", error);
+      sendStatus = "failed";
+    }
+    if (sendStatus === "failed" || sendStatus === "rejected") {
+      const refund = await swap(
+        solanaWalletId,
+        solanaAddress,
+        WSOL_MINT,
+        USDC_MINT,
+        swapResult.outputAmount,
+      );
+      return {
+        success: false,
+        message: refund.succeeded
+          ? "sol transfer to hyperliquid failed, swapped back to usdc"
+          : "sol transfer to hyperliquid failed, funds left as sol",
+      };
     }
     await prisma.depositRequest.create({
       data: {
@@ -263,27 +284,21 @@ export async function depositToHyperliquid(
   }
 }
 
-export async function checkDepositUSOL(ethereumAddress: string) {
-  // verify sol in spot account
-  let spotBalance = await getHyperliquidSpotBalances(ethereumAddress);
+export async function checkDepositUSOL(
+  ethereumAddress: string,
+  market: UsolMarket,
+) {
+  const spotBalance = await getHyperliquidSpotBalances(ethereumAddress);
   const solana = spotBalance.find((item) => item.coin === "USOL");
-  
-  if (Number(solana?.total ?? 0) >= 0) {
-    return true;
-  }
-  return false;
+  const available = Number(solana?.total ?? 0) - Number(solana?.hold ?? 0);
+  return available * market.mid >= MIN_SPOT_ORDER_USD ? available : 0;
 }
 
 export async function convertUSOL(
-  ethereumAddress: string,
   ethereumWalletId: string,
+  usolAmount: number,
+  market: UsolMarket,
 ): Promise<boolean> {
-  let spotBalance = await getHyperliquidSpotBalances(ethereumAddress);
-  const solana = spotBalance.find((item) => item.coin === "USOL");
-  if (Number(solana?.total ?? 0) <= 0) {
-    return false;
-  }
-  // convert sol to usdc
   const walletDetails = await prisma.wallet.findFirst({
     where: { walletId: ethereumWalletId },
     include: {
@@ -294,7 +309,7 @@ export async function convertUSOL(
   let agentSecret;
   if (!walletDetails?.hyperLiquidDetails) {
     const agent = await createAgentWallet(ethereumWalletId);
-    if (!agent.result.ok) {
+    if (!agent.ok) {
       return false;
     }
     agentSecret = agent.apiSecret;
@@ -310,22 +325,14 @@ export async function convertUSOL(
     const encryptedPrivateKey = walletDetails.hyperLiquidDetails.agentApiSecret;
     agentSecret = decrypt(encryptedPrivateKey);
   }
-  const sellSOL = await sellSolForUsdc(
-    (solana?.total ?? 0).toString(),
-    agentSecret,
-  );
-  if (sellSOL.status != "ok") {
-    return false;
-  }
-  spotBalance = await getHyperliquidSpotBalances(ethereumAddress);
-  const usdc = spotBalance.find((item) => item.coin === "USDC");
-  if (Number(usdc?.total ?? 0) <= 0) {
-    return false;
-  }
-  return true;
+  return sellSolForUsdc(usolAmount, agentSecret, market);
 }
 
 export async function makeUnifiedAccount(walletId: string, walletAddress: string) {
+  const current = await hyperliquidInfoClient.userAbstraction({
+    user: walletAddress as `0x${string}`,
+  });
+  if (current === "unifiedAccount" || current === "portfolioMargin") return true;
   const nonce = Date.now();
   const signature = await privy
     .wallets()
@@ -396,9 +403,12 @@ export async function makeUnifiedAccount(walletId: string, walletAddress: string
     body: JSON.stringify(body),
   });
 
-  return {
-    result: response.statusText,
-  };
+  return isExchangeOk(response);
+}
+interface UsolMarket {
+  assetId: number;
+  szDecimals: number;
+  mid: number;
 }
 interface depositAddressResponce {
   address?: string;

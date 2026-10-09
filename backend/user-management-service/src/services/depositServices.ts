@@ -10,7 +10,7 @@ export class DepositService {
     ethereumAddress: string,
     ethereumWalletId: string,
   ) {
-    const success = await depositToHyperliquid(
+    const result = await depositToHyperliquid(
       userId,
       depositAmount,
       solanaAddress,
@@ -18,19 +18,21 @@ export class DepositService {
       ethereumAddress,
       ethereumWalletId,
     );
-    const unifiedAccount = await makeUnifiedAccount(
-      ethereumWalletId,
-      ethereumAddress,
-    );
-    return success;
-    try {
-    } catch (error) {
-      console.error(error);
+    if (result.success) {
+      const unified = await makeUnifiedAccount(
+        ethereumWalletId,
+        ethereumAddress,
+      ).catch((error) => {
+        console.error("makeUnifiedAccount error: ", error);
+        return false;
+      });
+      if (!unified) console.error(`unified account not set for ${ethereumAddress}`);
     }
+    return result;
   }
 
   public async checkDepositRequest(userId: string) {
-    const recentRequest = await prisma.depositRequest.findFirst({
+    return prisma.depositRequest.findFirst({
       where: {
         userId: userId,
       },
@@ -38,6 +40,5 @@ export class DepositService {
         createdAt: "desc",
       },
     });
-    return recentRequest?.conversionCompleted;
   }
 }
