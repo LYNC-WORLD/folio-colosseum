@@ -293,7 +293,7 @@ export class TradeController {
       if (!responce) {
         res.status(500).json({
           success: false,
-          messgae: "request failed",
+          message: "request failed",
         });
         return;
       }
@@ -347,7 +347,7 @@ export class TradeController {
       if (!responce) {
         res.status(500).json({
           success: false,
-          messgae: "request failed",
+          message: "request failed",
         });
         return;
       }
@@ -397,7 +397,7 @@ export class TradeController {
       if (!responce) {
         res.status(500).json({
           success: false,
-          messgae: "request failed",
+          message: "request failed",
         });
         return;
       }

@@ -1,4 +1,4 @@
-import express from "express";
+import express, { ErrorRequestHandler } from "express";
 import { env } from "./config/env";
 import { startRecurringBuyCron } from "./cron/recurringBuy";
 import { startPerpLeaderboardCron } from "./cron/perpLeaderboard";
@@ -41,6 +41,20 @@ app.use("/api/perp-trade", perpTradeRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/deposit", depositRoute);
+
+app.use((_req, res) => {
+  res.status(404).json({ success: false, message: "Route not found" });
+});
+
+const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+  const status = error.status ?? 500;
+  if (status >= 500) console.error(error);
+  res.status(status).json({
+    success: false,
+    message: status < 500 ? "Invalid request" : "Internal server error",
+  });
+};
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

@@ -33,7 +33,8 @@ export class DepositController {
         });
         return;
       }
-      if (Number(body.depositAmount) < 20) {
+      const amount = Number(body.depositAmount);
+      if (!Number.isFinite(amount) || amount < 20) {
         res.status(400).json({
           success: false,
           message: "minimum deposit amount is $20",
@@ -42,7 +43,7 @@ export class DepositController {
       }
       const depositRequest = await this.depositService.createDepositRequest(
         req.user.id,
-        body.depositAmount,
+        amount.toString(),
         req.user.solanaWalletAddress,
         req.user.solanaWalletId,
         req.user.ethereumWalletAddress,
@@ -54,7 +55,7 @@ export class DepositController {
       });
       return;
     } catch (error) {
-      console.log("login error: ", error);
+      console.log("deposit error: ", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -84,12 +85,17 @@ export class DepositController {
         req.user.id,
       );
       res.status(200).json({
-        success: depositRequest,
+        success: depositRequest?.conversionCompleted ?? false,
         message: "Deposit status",
+        data: depositRequest && {
+          status: depositRequest.conversionCompleted ? "completed" : "pending",
+          depositAmount: depositRequest.depositAmount,
+          createdAt: depositRequest.createdAt,
+        },
       });
       return;
     } catch (error) {
-      console.log("login error: ", error);
+      console.log("deposit status error: ", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",

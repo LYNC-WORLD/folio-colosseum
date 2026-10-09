@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
-import { PerpTradeService } from "../services/perpTradeServices";
+import { PerpTradeService, TpSlInterface } from "../services/perpTradeServices";
 
 export class PerpTradeController {
   private perpTradeService: PerpTradeService;
@@ -18,82 +18,23 @@ export class PerpTradeController {
         });
         return;
       }
-      const body: placeMarketOrder = req.body;
-      if (
-        !body.dollarSize ||
-        body.isBuy == undefined ||
-        !body.leverage ||
-        !body.stockSymbol
-      ) {
-        res.status(400).json({
-          success: false,
-          message: "dollarSize, isBuy, stockSymbol and leverage is required",
-        });
-        return;
-      }
-      if (
-        (body.slPrice && body.slPercent) ||
-        (body.tpPercent && body.tpPrice)
-      ) {
-        res.status(400).json({
-          success: false,
-          message: "Provide one, either percent or price",
-        });
-        return;
-      }
-      if (body.leverage > 10) {
-        res.status(400).json({
-          success: false,
-          message: "leverage greated then max limit",
-        });
-        return;
-      }
-      const result = await prisma.perpStocks.findFirst({
-        select: {
-          assetId: true,
-          szDecimals: true,
-        },
-        where: {
-          marketSymbol: body.stockSymbol,
-        },
-      });
-      if (!result?.assetId || !result?.szDecimals) {
-        res.status(500).json({
-          success: false,
-          message: "Error fetching perp stock details",
-        });
+      const order = await parseOrder(req.body, false);
+      if (order.error !== undefined) {
+        res.status(order.status).json({ success: false, message: order.error });
         return;
       }
       const responce = await this.perpTradeService.placeMarketOrder(
         req.user.ethereumWalletId,
-        body.stockSymbol,
-        Number(result?.assetId),
-        body.dollarSize,
-        body.leverage,
-        body.margin,
-        result?.szDecimals,
-        body.isBuy,
-        {
-          SlPercentage: body.slPercent,
-          SlPrice: body.slPrice,
-          TpPercentage: body.tpPercent,
-          TpPrice: body.tpPrice,
-        },
+        order.stockSymbol,
+        order.assetId,
+        order.dollarSize,
+        order.leverage,
+        order.margin,
+        order.szDecimals,
+        order.isBuy,
+        order.tpsl,
       );
-      if (responce?.success) {
-        res.status(200).json({
-          success: true,
-          message: responce.message,
-          data: responce.response,
-        });
-        return;
-      } else {
-        res.status(500).json({
-          success: false,
-          message: responce!.message ?? "",
-        });
-        return;
-      }
+      sendResult(res, responce, "Order not placed");
     } catch (error) {
       console.log(error);
       res.status(500).json({
@@ -112,69 +53,24 @@ export class PerpTradeController {
         });
         return;
       }
-      const body: placeLimitOrder = req.body;
-      if (
-        !body.dollarSize ||
-        body.isBuy == undefined ||
-        !body.leverage ||
-        !body.stockSymbol ||
-        !body.limitPrice
-      ) {
-        res.status(400).json({
-          success: false,
-          message:
-            "dollarSize, isBuy, stockSymbol, limitPrice and leverage is required",
-        });
-        return;
-      }
-      if (body.leverage > 10) {
-        res.status(400).json({
-          success: false,
-          message: "leverage greated then max limit",
-        });
-        return;
-      }
-      const result = await prisma.perpStocks.findFirst({
-        select: {
-          assetId: true,
-          szDecimals: true,
-        },
-        where: {
-          marketSymbol: body.stockSymbol,
-        },
-      });
-      if (!result?.assetId || !result?.szDecimals) {
-        res.status(500).json({
-          success: false,
-          message: "Error fetching perp stock details",
-        });
+      const order = await parseOrder(req.body, true);
+      if (order.error !== undefined) {
+        res.status(order.status).json({ success: false, message: order.error });
         return;
       }
       const responce = await this.perpTradeService.placeLimitOrder(
         req.user.ethereumWalletId,
-        body.stockSymbol,
-        Number(result?.assetId),
-        body.dollarSize,
-        body.limitPrice,
-        body.leverage,
-        body.margin,
-        result?.szDecimals,
-        body.isBuy,
+        order.stockSymbol,
+        order.assetId,
+        order.dollarSize,
+        order.limitPrice,
+        order.leverage,
+        order.margin,
+        order.szDecimals,
+        order.isBuy,
+        order.tpsl,
       );
-      if (responce?.success) {
-        res.status(200).json({
-          success: true,
-          message: responce.message,
-          data: responce.response,
-        });
-        return;
-      } else {
-        res.status(500).json({
-          success: false,
-          message: responce!.message ?? "",
-        });
-        return;
-      }
+      sendResult(res, responce, "Order not placed");
     } catch (error) {
       console.log(error);
       res.status(500).json({
@@ -194,8 +90,8 @@ export class PerpTradeController {
         return;
       }
       const body: cancelOrder = req.body;
-      if (!body.assetSymbol || !body.orderId) {
-        res.status(404).json({
+      if (!body.assetSymbol || !Number.isInteger(Number(body.orderId))) {
+        res.status(400).json({
           success: false,
           message: "assetSymbol and orderId is required",
         });
@@ -206,10 +102,10 @@ export class PerpTradeController {
         body.orderId,
         body.assetSymbol,
       );
-      res.status(200).json({
-        success: true,
-        message: "cancelOrder",
-        data: cancelOrder,
+      res.status(cancelOrder.success ? 200 : 400).json({
+        success: cancelOrder.success,
+        message: cancelOrder.message,
+        data: cancelOrder.response,
       });
     } catch (error) {
       console.log(error);
@@ -236,21 +132,21 @@ export class PerpTradeController {
       }
       const body: closePosition = req.body;
       if (!body.stockSymbol) {
-        res.status(404).json({
+        res.status(400).json({
           success: false,
           message: "stockSymbol is required",
         });
         return;
       }
-      const cancelOrder = await this.perpTradeService.closePosition(
+      const closePosition = await this.perpTradeService.closePosition(
         req.user.ethereumWalletId,
         req.user.ethereumWalletAddress,
         body.stockSymbol,
       );
-      res.status(200).json({
-        success: true,
-        message: "cancelOrder",
-        data: cancelOrder,
+      res.status(closePosition ? (closePosition.success ? 200 : 400) : 500).json({
+        success: closePosition?.success ?? false,
+        message: closePosition?.message ?? "Position not closed",
+        data: closePosition,
       });
     } catch (error) {
       console.log(error);
@@ -285,35 +181,31 @@ export class PerpTradeController {
         !body.tpPercent &&
         !body.slPercent
       ) {
-        res.status(404).json({
+        res.status(400).json({
           success: false,
           message: "tpsl Order details required",
         });
         return;
       }
-      if (!body.stockSymbol) {
-        res.status(404).json({
+      const tpsl = parseTpSl(body);
+      if (!body.stockSymbol || !tpsl || (body.orderSize && !isPositive(Number(body.orderSize)))) {
+        res.status(400).json({
           success: false,
-          message: "stockSymbol, orderSize is required",
+          message: "stockSymbol is required; orderSize and tp/sl values must be positive, either percent or price",
         });
         return;
       }
-      const cancelOrder = await this.perpTradeService.placeTPSL(
+      const tpslOrder = await this.perpTradeService.placeTPSL(
         req.user.ethereumWalletId,
         req.user.ethereumWalletAddress,
         body.stockSymbol,
-        body.orderSize,
-        {
-          TpPrice: body.tpPrice,
-          SlPrice: body.slPrice,
-          TpPercentage: body.tpPercent,
-          SlPercentage: body.slPercent,
-        },
+        body.orderSize || undefined,
+        tpsl,
       );
-      res.status(200).json({
-        success: true,
-        message: "cancelOrder",
-        data: cancelOrder,
+      res.status(tpslOrder.success ? 200 : 400).json({
+        success: tpslOrder.success,
+        message: tpslOrder.message,
+        data: tpslOrder,
       });
     } catch (error) {
       console.log(error);
@@ -442,29 +334,92 @@ export class PerpTradeController {
   };
 }
 
-interface placeMarketOrder {
-  stockSymbol: string;
-  dollarSize: number;
-  leverage: number;
-  isBuy: boolean;
-  margin: "ISOLATED" | "CROSS";
-  tpPrice: number | undefined;
-  slPrice: number | undefined;
-  tpPercent: number | undefined;
-  slPercent: number | undefined;
+const isPositive = (value: number) => Number.isFinite(value) && value > 0;
+const optionalNumber = (value: unknown) => (value ? Number(value) : undefined);
+
+function parseTpSl(body: TpSlFields): TpSlInterface | undefined {
+  const tpsl = {
+    TpPrice: optionalNumber(body.tpPrice),
+    SlPrice: optionalNumber(body.slPrice),
+    TpPercentage: optionalNumber(body.tpPercent),
+    SlPercentage: optionalNumber(body.slPercent),
+  };
+  const values = Object.values(tpsl).filter((value) => value !== undefined);
+  if (!values.every(isPositive)) return;
+  if ((tpsl.TpPrice && tpsl.TpPercentage) || (tpsl.SlPrice && tpsl.SlPercentage)) return;
+  return tpsl;
 }
 
-interface placeLimitOrder {
+async function parseOrder(body: OrderBody, needsLimitPrice: boolean) {
+  const dollarSize = Number(body.dollarSize);
+  const leverage = Number(body.leverage);
+  const limitPrice = Number(body.limitPrice);
+  const margin = body.margin ?? "ISOLATED";
+  if (
+    !body.stockSymbol ||
+    typeof body.isBuy !== "boolean" ||
+    !isPositive(dollarSize) ||
+    !Number.isInteger(leverage) ||
+    leverage < 1 ||
+    (needsLimitPrice && !isPositive(limitPrice)) ||
+    (margin !== "CROSS" && margin !== "ISOLATED")
+  ) {
+    return {
+      status: 400,
+      error: `dollarSize, isBuy, stockSymbol${needsLimitPrice ? ", limitPrice" : ""} and leverage is required; margin must be CROSS or ISOLATED`,
+    };
+  }
+  const tpsl = parseTpSl(body);
+  if (!tpsl) {
+    return { status: 400, error: "tp/sl must be positive, either percent or price" };
+  }
+  const stock = await prisma.perpStocks.findFirst({
+    select: { assetId: true, szDecimals: true, maxLeverage: true },
+    where: { marketSymbol: body.stockSymbol },
+  });
+  if (!stock) return { status: 404, error: "Perp stock not found" };
+  if (leverage > stock.maxLeverage) {
+    return { status: 400, error: `leverage greater than max limit ${stock.maxLeverage}` };
+  }
+  return {
+    stockSymbol: body.stockSymbol,
+    assetId: Number(stock.assetId),
+    szDecimals: stock.szDecimals,
+    dollarSize,
+    leverage,
+    limitPrice,
+    margin,
+    isBuy: body.isBuy,
+    tpsl,
+  };
+}
+
+function sendResult(
+  res: Response,
+  result: { success: boolean; message: string; response?: unknown } | undefined,
+  fallbackMessage: string,
+) {
+  res.status(result ? (result.success ? 200 : 400) : 500).json({
+    success: result?.success ?? false,
+    message: result?.message ?? fallbackMessage,
+    data: result?.response,
+  });
+}
+
+interface TpSlFields {
+  tpPrice?: number | string;
+  slPrice?: number | string;
+  tpPercent?: number | string;
+  slPercent?: number | string;
+}
+
+interface OrderBody extends TpSlFields {
   stockSymbol: string;
-  dollarSize: number;
-  leverage: number;
+  dollarSize: number | string;
+  leverage: number | string;
   isBuy: boolean;
-  limitPrice: number;
-  margin: "ISOLATED" | "CROSS";
-  tpPrice: number | undefined;
-  slPrice: number | undefined;
-  tpPercent: number | undefined;
-  slPercent: number | undefined;
+  limitPrice?: number | string;
+  margin?: "ISOLATED" | "CROSS";
 }
 
 interface cancelOrder {
@@ -476,11 +431,7 @@ interface closePosition {
   stockSymbol: string;
 }
 
-interface TpSlOrder {
+interface TpSlOrder extends TpSlFields {
   stockSymbol: string;
   orderSize: string | undefined;
-  tpPrice: number | undefined;
-  slPrice: number | undefined;
-  tpPercent: number | undefined;
-  slPercent: number | undefined;
 }
