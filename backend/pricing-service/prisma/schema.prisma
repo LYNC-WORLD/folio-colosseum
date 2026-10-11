@@ -52,6 +52,7 @@ model User {
     indexFundsHoldings      IndexFundsHolding[]
     perpLeaderboardSnapshot PerpLeaderboardSnapshot?
     depositRequests         DepositRequest[]
+    withdrawRequests        WithdrawRequest[]
 
     @@index([userId])
 }
@@ -199,6 +200,20 @@ model DepositRequest {
     walletId            String
     depositAmount       String
     depositCompleted    Boolean  @default(false)
+    conversionCompleted Boolean  @default(false)
+    createdAt           DateTime @default(now())
+    updatesAt           DateTime @updatedAt
+
+    user User @relation(fields: [userId], references: [id])
+}
+
+model WithdrawRequest {
+    id                  String   @id @default(cuid())
+    userId              String
+    solanaWalletAddress String
+    solanaWalletId      String
+    withdrawAmount      String
+    withdrawCompleted   Boolean  @default(false)
     conversionCompleted Boolean  @default(false)
     createdAt           DateTime @default(now())
     updatesAt           DateTime @updatedAt

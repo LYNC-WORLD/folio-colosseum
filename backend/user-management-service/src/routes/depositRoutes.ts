@@ -10,4 +10,8 @@ router.post("/spot-to-perp", authMiddleware, depositController.createDepositRequ
 
 router.get("/check-deposit-status", authMiddleware, depositController.checkDepositStatus);
 
+router.post("/perp-to-spot", authMiddleware, depositController.createWithdrawRequest);
+
+router.get("/check-withdraw-status", authMiddleware, depositController.checkWithdrawStatus);
+
 export { router as depositRoute };

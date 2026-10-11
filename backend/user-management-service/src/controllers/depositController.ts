@@ -102,6 +102,97 @@ export class DepositController {
       });
     }
   };
+
+  public createWithdrawRequest = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      if (
+        !req.user ||
+        !req.user.solanaWalletId ||
+        !req.user.ethereumWalletId ||
+        !req.user.solanaWalletAddress ||
+        !req.user.ethereumWalletAddress
+      ) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const body: DepositRequestBody = req.body;
+
+      if (!body.depositAmount) {
+        res.status(400).json({
+          success: false,
+          message: "Deposit amount required",
+        });
+        return;
+      }
+      if (Number(body.depositAmount) < 20) {
+        res.status(400).json({
+          success: false,
+          message: "minimum deposit amount is $20",
+        });
+        return;
+      }
+      const depositRequest = await this.depositService.createWithdrawlRequest(
+        req.user.id,
+        body.depositAmount,
+        req.user.ethereumWalletId,
+        req.user.ethereumWalletAddress,
+        req.user.solanaWalletId,
+        req.user.solanaWalletAddress,
+      );
+      res.status(depositRequest.success ? 200 : 400).json({
+        success: depositRequest.success,
+        message: depositRequest.message,
+      });
+      return;
+    } catch (error) {
+      console.log("login error: ", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
+
+  public checkWithdrawStatus = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      if (
+        !req.user ||
+        !req.user.solanaWalletId ||
+        !req.user.ethereumWalletId ||
+        !req.user.solanaWalletAddress ||
+        !req.user.ethereumWalletAddress
+      ) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+      const depositRequest = await this.depositService.checkWithdrawRequest(
+        req.user.id,
+      );
+      res.status(200).json({
+        success: depositRequest,
+        message: "withdraw status",
+      });
+      return;
+    } catch (error) {
+      console.log("login error: ", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  };
 }
 
 interface DepositRequestBody {

@@ -86,3 +86,12 @@ export async function getUSDCBalance(walletAddress: string) {
 
   return balance;
 }
+
+export async function getSolBalance(walletAddress: string) {
+  const owner = new PublicKey(walletAddress);
+
+  const lamports = await solana.getBalance(owner);
+
+  const solBalance = lamports / LAMPORTS_PER_SOL;
+  return solBalance;
+}
