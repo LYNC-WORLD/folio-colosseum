@@ -1,4 +1,4 @@
-import { ExchangeClient, OrderStatusResponse } from "@nktkas/hyperliquid";
+import { ExchangeClient } from "@nktkas/hyperliquid";
 import { prisma } from "../lib/prisma";
 import { decrypt } from "../utils/encryption";
 import {
@@ -22,29 +22,13 @@ export class PerpTradeService {
     tpsl?: TpSlInterface,
   ) {
     try {
-      let grouping: "na" | "normalTpsl" | "positionTpsl" = "na";
-      const walletDetails = await prisma.wallet.findFirst({
-        where: { walletId: ethereumWalletId },
-        include: {
-          hyperLiquidDetails: true,
-        },
-      });
-      if (!walletDetails || !walletDetails.hyperLiquidDetails) {
+      const client = await exchangeClientFor(ethereumWalletId);
+      if (!client) {
         return {
           success: false,
           message: "Hyperliquid details not found",
         };
       }
-      const apiSecret = decrypt(
-        walletDetails.hyperLiquidDetails.agentApiSecret,
-      );
-      const wallet = privateKeyToAccount(apiSecret as `0x${string}`);
-      // Hyperliquid client
-      const client = new ExchangeClient({
-        transport: hyperliquidTransport,
-        wallet,
-      });
-      // update leverage
       const leverageUpdated = await client.updateLeverage({
         asset: assetId,
         isCross: marginMode == "CROSS",
@@ -56,89 +40,36 @@ export class PerpTradeService {
           message: "Error updating leverage",
         };
       }
-      // get latest price
       const priceData = await getBestPriceFromOrderBook(assetSymbol, isBuy);
       if (!priceData)
         return { success: false, message: "Error getting latest price" };
-      // Calculate size
       const size = (dollarSize * leverage) / Number(priceData.orderBookPrice);
-      let batchOrder: any[] = [
-        {
-          a: assetId,
-          b: isBuy,
-          p: formatPrice(priceData.limitPrice, sizeDecimal),
-          s: formatSize(size, sizeDecimal),
-          r: false,
-          t: { limit: { tif: "Ioc" } },
-        },
-      ];
-      // TP SL Order creation
-      if (tpsl) {
-        if (tpsl.TpPrice || tpsl.TpPercentage) {
-          const tpTriggerPrice =
-            tpsl.TpPrice ??
-            (priceData.orderBookPrice *
-              (100 +
-                ((isBuy ? 1 : -1) * (tpsl.TpPercentage ?? 0)) / leverage)) /
-              100;
-          const tpOrderPrice =
-            (priceData.orderBookPrice *
-              (100 +
-                ((isBuy ? -1 : 1) * (tpsl.TpPercentage ?? 0)) / leverage)) /
-            100;
-          batchOrder.push({
-            a: assetId,
-            b: !isBuy,
-            p: formatPrice(tpOrderPrice, sizeDecimal),
-            s: formatSize(size, sizeDecimal),
-            r: true,
-            t: {
-              trigger: {
-                isMarket: true,
-                triggerPx: formatPrice(tpTriggerPrice, sizeDecimal),
-                tpsl: "tp",
-              },
-            },
-          });
-          grouping = "normalTpsl";
-        }
-        if (tpsl.SlPrice || tpsl.SlPercentage) {
-          const slTriggerPrice =
-            tpsl.SlPrice ??
-            (priceData.orderBookPrice *
-              (100 +
-                ((isBuy ? -1 : 1) * (tpsl.SlPercentage ?? 0)) / leverage)) /
-              100;
-          const slOrderPrice =
-            (priceData.orderBookPrice *
-              (100 +
-                ((isBuy ? 1 : -1) * (tpsl.SlPercentage ?? 0)) / leverage)) /
-            100;
-          batchOrder.push({
-            a: assetId,
-            b: !isBuy,
-            p: formatPrice(slOrderPrice, sizeDecimal),
-            s: formatSize(size, sizeDecimal),
-            r: true,
-            t: {
-              trigger: {
-                isMarket: true,
-                triggerPx: formatPrice(slTriggerPrice, sizeDecimal),
-                tpsl: "sl",
-              },
-            },
-          });
-          grouping = "normalTpsl";
-        }
-      }
-      // Placing batch order
-      console.log(JSON.stringify(batchOrder));
-
+      const tpslOrders = tpsl
+        ? buildTpSlOrders(
+            assetId,
+            isBuy,
+            size,
+            sizeDecimal,
+            leverage,
+            priceData.orderBookPrice,
+            priceData.orderBookPrice,
+            tpsl,
+          )
+        : [];
       const marketOrder = await client.order({
-        orders: batchOrder,
-        grouping: grouping,
+        orders: [
+          {
+            a: assetId,
+            b: isBuy,
+            p: formatPrice(priceData.limitPrice, sizeDecimal),
+            s: formatSize(size, sizeDecimal),
+            r: false,
+            t: { limit: { tif: "Ioc" } },
+          },
+          ...tpslOrders,
+        ],
+        grouping: tpslOrders.length ? "normalTpsl" : "na",
       });
-      // Checking if market order got filled
       const firstOrder = marketOrder.response.data.statuses[0];
       if (typeof firstOrder === "object" && "filled" in firstOrder) {
         return {
@@ -172,29 +103,13 @@ export class PerpTradeService {
     tpsl?: TpSlInterface,
   ) {
     try {
-      let grouping: "na" | "normalTpsl" | "positionTpsl" = "na";
-      const walletDetails = await prisma.wallet.findFirst({
-        where: { walletId: ethereumWalletId },
-        include: {
-          hyperLiquidDetails: true,
-        },
-      });
-      if (!walletDetails || !walletDetails.hyperLiquidDetails) {
+      const client = await exchangeClientFor(ethereumWalletId);
+      if (!client) {
         return {
           success: false,
           message: "Hyperliquid details not found",
         };
       }
-      const apiSecret = decrypt(
-        walletDetails.hyperLiquidDetails.agentApiSecret,
-      );
-      const wallet = privateKeyToAccount(apiSecret as `0x${string}`);
-      // Hyperliquid client
-      const client = new ExchangeClient({
-        transport: hyperliquidTransport,
-        wallet,
-      });
-      // update leverage
       const leverageUpdated = await client.updateLeverage({
         asset: assetId,
         isCross: marginMode == "CROSS",
@@ -206,7 +121,6 @@ export class PerpTradeService {
           message: "Error updating leverage",
         };
       }
-      // get latest price
       const priceData = await getBestPriceFromOrderBook(assetSymbol, isBuy);
       if (!priceData)
         return { success: false, message: "Error getting latest price" };
@@ -220,80 +134,32 @@ export class PerpTradeService {
         };
       }
       const size = (dollarSize * leverage) / Number(limitPrice);
-      let batchOrder: any[] = [
-        {
-          a: assetId,
-          b: isBuy,
-          p: formatPrice(limitPrice, sizeDecimal),
-          s: formatSize(size, sizeDecimal),
-          r: false,
-          t: { limit: { tif: "Gtc" } },
-        },
-      ];
-      if (tpsl) {
-        if (tpsl.TpPrice || tpsl.TpPercentage) {
-          const tpTriggerPrice =
-            tpsl.TpPrice ??
-            (limitPrice *
-              (100 +
-                ((isBuy ? 1 : -1) * (tpsl.TpPercentage ?? 0)) / leverage)) /
-              100;
-          const tpOrderPrice =
-            (limitPrice *
-              (100 +
-                ((isBuy ? -1 : 1) * (tpsl.TpPercentage ?? 0)) / leverage)) /
-            100;
-          batchOrder.push({
-            a: assetId,
-            b: !isBuy,
-            p: formatPrice(tpOrderPrice, sizeDecimal),
-            s: formatSize(size, sizeDecimal),
-            r: true,
-            t: {
-              trigger: {
-                isMarket: true,
-                triggerPx: formatPrice(tpTriggerPrice, sizeDecimal),
-                tpsl: "tp",
-              },
-            },
-          });
-          grouping = "normalTpsl";
-        }
-        if (tpsl.SlPrice || tpsl.SlPercentage) {
-          const slTriggerPrice =
-            tpsl.SlPrice ??
-            (limitPrice *
-              (100 +
-                ((isBuy ? -1 : 1) * (tpsl.SlPercentage ?? 0)) / leverage)) /
-              100;
-          const slOrderPrice =
-            (limitPrice *
-              (100 +
-                ((isBuy ? 1 : -1) * (tpsl.SlPercentage ?? 0)) / leverage)) /
-            100;
-          batchOrder.push({
-            a: assetId,
-            b: !isBuy,
-            p: formatPrice(slOrderPrice, sizeDecimal),
-            s: formatSize(size, sizeDecimal),
-            r: true,
-            t: {
-              trigger: {
-                isMarket: true,
-                triggerPx: formatPrice(slTriggerPrice, sizeDecimal),
-                tpsl: "sl",
-              },
-            },
-          });
-          grouping = "normalTpsl";
-        }
-      }
-      console.log(JSON.stringify(batchOrder));
+      const tpslOrders = tpsl
+        ? buildTpSlOrders(
+            assetId,
+            isBuy,
+            size,
+            sizeDecimal,
+            leverage,
+            limitPrice,
+            limitPrice,
+            tpsl,
+          )
+        : [];
       const limitOrder = await client.order({
-        orders: batchOrder,
-        grouping: grouping,
+        orders: [
+          {
+            a: assetId,
+            b: isBuy,
+            p: formatPrice(limitPrice, sizeDecimal),
+            s: formatSize(size, sizeDecimal),
+            r: false,
+            t: { limit: { tif: "Gtc" } },
+          },
+          ...tpslOrders,
+        ],
+        grouping: tpslOrders.length ? "normalTpsl" : "na",
       });
-      console.log(JSON.stringify(limitOrder));
 
       return {
         success: limitOrder.status == "ok",
@@ -301,7 +167,7 @@ export class PerpTradeService {
         response: limitOrder.response,
       };
     } catch (error) {
-      console.error(JSON.stringify(error));
+      console.error(error);
       return;
     }
   }
@@ -312,41 +178,27 @@ export class PerpTradeService {
     assetSymbol: string,
   ) {
     try {
-      const markerSymbol =
-        assetSymbol.split(":")[assetSymbol.split(":").length - 1];
-      const [walletDetails, assetDetails] = await Promise.all([
-        prisma.wallet.findFirst({
-          where: { walletId: ethereumWalletId },
-          include: {
-            hyperLiquidDetails: true,
-          },
-        }),
+      const markerSymbol = assetSymbol.split(":").pop();
+      const [client, assetDetails] = await Promise.all([
+        exchangeClientFor(ethereumWalletId),
         prisma.perpStocks.findFirst({
           where: { marketSymbol: markerSymbol },
         }),
       ]);
-      if (
-        !walletDetails ||
-        !walletDetails.hyperLiquidDetails ||
-        !assetDetails
-      ) {
-        return;
+      if (!client || !assetDetails) {
+        return { success: false, message: "cant fetch details" };
       }
-      const apiSecret = decrypt(
-        walletDetails.hyperLiquidDetails.agentApiSecret,
-      );
-      const wallet = privateKeyToAccount(apiSecret as `0x${string}`);
-      const client = new ExchangeClient({
-        transport: hyperliquidTransport,
-        wallet,
-      });
       const cancelOrder = await client.cancel({
         cancels: [{ a: Number(assetDetails.assetId), o: Number(orderId) }],
       });
-      return cancelOrder;
+      return {
+        success: true,
+        message: "Order cancelled",
+        response: cancelOrder,
+      };
     } catch (error) {
       console.error(error);
-      return;
+      return { success: false, message: "Order not cancelled" };
     }
   }
 
@@ -356,43 +208,23 @@ export class PerpTradeService {
     stockSymbol: string,
   ) {
     try {
-      const [stockDetails, openPosition, walletDetails] = await Promise.all([
+      const [stockDetails, openPosition, client] = await Promise.all([
         prisma.perpStocks.findFirst({
           where: {
             marketSymbol: stockSymbol,
           },
         }),
         this.getPositionBySymbol(ethereumAddress, stockSymbol),
-        prisma.wallet.findFirst({
-          where: {
-            walletId: walletId,
-          },
-          include: {
-            hyperLiquidDetails: true,
-          },
-        }),
+        exchangeClientFor(walletId),
       ]);
-      if (
-        !stockDetails ||
-        !openPosition ||
-        !walletDetails ||
-        !walletDetails.hyperLiquidDetails
-      )
-        return;
+      if (!stockDetails || !openPosition || !client)
+        return { success: false, message: "no open position" };
       const assetId = stockDetails.assetId;
-      const isBuy = Number(openPosition.position.szi) < 0 ? true : false;
+      const isBuy = Number(openPosition.position.szi) < 0;
       const size = Math.abs(Number(openPosition.position.szi));
       const priceData = await getBestPriceFromOrderBook(stockSymbol, isBuy);
-      if (!priceData) return;
-      const apiSecret = decrypt(
-        walletDetails.hyperLiquidDetails.agentApiSecret,
-      );
-      const wallet = privateKeyToAccount(apiSecret as `0x${string}`);
-
-      const client = new ExchangeClient({
-        transport: hyperliquidTransport,
-        wallet,
-      });
+      if (!priceData)
+        return { success: false, message: "can not fetch orderbook" };
 
       const closePosition = await client.order({
         orders: [
@@ -400,7 +232,7 @@ export class PerpTradeService {
             a: assetId,
             b: isBuy,
             p: formatPrice(priceData.limitPrice, stockDetails.szDecimals),
-            r: false,
+            r: true,
             s: formatSize(size, stockDetails.szDecimals),
             t: {
               limit: {
@@ -439,49 +271,22 @@ export class PerpTradeService {
     tpsl: TpSlInterface,
   ) {
     try {
-      const [stockDetails, openPosition, walletDetails] = await Promise.all([
+      const [stockDetails, openPosition, client] = await Promise.all([
         prisma.perpStocks.findFirst({
           where: {
             marketSymbol: stockSymbol,
           },
         }),
         this.getPositionBySymbol(ethereumAddress, stockSymbol),
-        prisma.wallet.findFirst({
-          where: {
-            walletId: walletId,
-          },
-          include: {
-            hyperLiquidDetails: true,
-          },
-        }),
+        exchangeClientFor(walletId),
       ]);
-      if (
-        !stockDetails ||
-        !openPosition ||
-        !walletDetails ||
-        !walletDetails.hyperLiquidDetails
-      )
+      if (!stockDetails || !openPosition || !client)
         return { success: false, message: "cant fetch details" };
-      const assetId = stockDetails.assetId;
-      const isBuy = Number(openPosition.position.szi) > 0 ? true : false;
+      const isBuy = Number(openPosition.position.szi) > 0;
       const size = orderSize ?? Math.abs(Number(openPosition.position.szi));
-      const leverage = openPosition.position.leverage.value;
-      const sizeDecimal = stockDetails.szDecimals;
-      const averageFillPrice = Number(openPosition.position.entryPx);
       const priceData = await getBestPriceFromOrderBook(stockSymbol, isBuy);
-      let grouping: "na" | "normalTpsl" | "positionTpsl" = "na";
       if (!priceData)
-        return { success: false, messages: "can not fetch orderbook" };
-      const apiSecret = decrypt(
-        walletDetails.hyperLiquidDetails.agentApiSecret,
-      );
-      const wallet = privateKeyToAccount(apiSecret as `0x${string}`);
-
-      const client = new ExchangeClient({
-        transport: hyperliquidTransport,
-        wallet,
-      });
-      let batchOrder: any[] = [];
+        return { success: false, message: "can not fetch orderbook" };
       if (
         tpsl.TpPrice &&
         (isBuy
@@ -504,67 +309,23 @@ export class PerpTradeService {
           message: "invalid SL details (order will  be filled immediately)",
         };
       }
-      if (tpsl.TpPrice || tpsl.TpPercentage) {
-        const tpTriggerPrice =
-          tpsl.TpPrice ??
-          (averageFillPrice *
-            (100 + ((isBuy ? 1 : -1) * (tpsl.TpPercentage ?? 0)) / leverage)) /
-            100;
-        const tpOrderPrice =
-          (priceData.orderBookPrice *
-            (100 + ((isBuy ? -1 : 1) * (tpsl.TpPercentage ?? 0)) / leverage)) /
-          100;
-        batchOrder.push({
-          a: assetId,
-          b: !isBuy,
-          p: formatPrice(tpOrderPrice, sizeDecimal),
-          s: formatSize(size, sizeDecimal),
-          r: true,
-          t: {
-            trigger: {
-              isMarket: true,
-              triggerPx: formatPrice(tpTriggerPrice, sizeDecimal),
-              tpsl: "tp",
-            },
-          },
-        });
-      }
-      if (tpsl.SlPrice || tpsl.SlPercentage) {
-        const slTriggerPrice =
-          tpsl.SlPrice ??
-          (averageFillPrice *
-            (100 + ((isBuy ? -1 : 1) * (tpsl.SlPercentage ?? 0)) / leverage)) /
-            100;
-        const slOrderPrice =
-          (priceData.orderBookPrice *
-            (100 + ((isBuy ? 1 : -1) * (tpsl.SlPercentage ?? 0)) / leverage)) /
-          100;
-        batchOrder.push({
-          a: assetId,
-          b: !isBuy,
-          p: formatPrice(slOrderPrice, sizeDecimal),
-          s: formatSize(size, sizeDecimal),
-          r: true,
-          t: {
-            trigger: {
-              isMarket: true,
-              triggerPx: formatPrice(slTriggerPrice, sizeDecimal),
-              tpsl: "sl",
-            },
-          },
-        });
-      }
-      if (batchOrder.length == 2) {
-        grouping = "na";
-      }
       const tpslOrders = await client.order({
-        orders: batchOrder,
-        grouping: grouping,
+        orders: buildTpSlOrders(
+          stockDetails.assetId,
+          isBuy,
+          size,
+          stockDetails.szDecimals,
+          openPosition.position.leverage.value,
+          Number(openPosition.position.entryPx),
+          priceData.orderBookPrice,
+          tpsl,
+        ),
+        grouping: orderSize ? "na" : "positionTpsl",
       });
 
       return {
         success: true,
-        message: "Order places",
+        message: "Order placed",
         data: tpslOrders.response.data.statuses,
       };
     } catch (error) {
@@ -655,6 +416,71 @@ export class PerpTradeService {
       return;
     }
   }
+}
+
+async function exchangeClientFor(ethereumWalletId: string) {
+  const details = await prisma.hyperLiquidDetails.findUnique({
+    where: { walletId: ethereumWalletId },
+  });
+  if (!details) return;
+  const wallet = privateKeyToAccount(
+    decrypt(details.agentApiSecret) as `0x${string}`,
+  );
+  return new ExchangeClient({ transport: hyperliquidTransport, wallet });
+}
+
+function buildTpSlOrders(
+  assetId: number | string,
+  isBuy: boolean,
+  size: number | string,
+  sizeDecimal: number,
+  leverage: number,
+  triggerBasePrice: number,
+  orderBasePrice: number,
+  tpsl: TpSlInterface,
+) {
+  const side = isBuy ? 1 : -1;
+  const movedPrice = (base: number, percent: number | undefined, sign: number) =>
+    (base * (100 + (sign * (percent ?? 0)) / leverage)) / 100;
+  const triggerOrder = (
+    triggerPx: number,
+    orderPx: number,
+    kind: "tp" | "sl",
+  ) => ({
+    a: assetId,
+    b: !isBuy,
+    p: formatPrice(orderPx, sizeDecimal),
+    s: formatSize(size, sizeDecimal),
+    r: true,
+    t: {
+      trigger: {
+        isMarket: true,
+        triggerPx: formatPrice(triggerPx, sizeDecimal),
+        tpsl: kind,
+      },
+    },
+  });
+
+  const orders = [];
+  if (tpsl.TpPrice || tpsl.TpPercentage) {
+    orders.push(
+      triggerOrder(
+        tpsl.TpPrice ?? movedPrice(triggerBasePrice, tpsl.TpPercentage, side),
+        movedPrice(orderBasePrice, tpsl.TpPercentage, -side),
+        "tp",
+      ),
+    );
+  }
+  if (tpsl.SlPrice || tpsl.SlPercentage) {
+    orders.push(
+      triggerOrder(
+        tpsl.SlPrice ?? movedPrice(triggerBasePrice, tpsl.SlPercentage, -side),
+        movedPrice(orderBasePrice, tpsl.SlPercentage, side),
+        "sl",
+      ),
+    );
+  }
+  return orders;
 }
 
 export interface TpSlInterface {
