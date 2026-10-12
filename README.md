@@ -56,20 +56,21 @@ The first-run flow asks four questions, which build the user's investor profile:
 │  Folio mobile app   │ ──────────────────────▶ │  user-management-service     │
 │  (Expo/React Native)│ ◀── JWT + wallet addr ─ │  (Express + Prisma)          │
 └─────────┬───────────┘                         │                              │
-          │  quote / buy / sell / recurring /   │  • Privy: user + wallets     │
+          │  quote / buy / sell / recurring /   │  • Privy: Solana + EVM       │
           │  open / close perp                  │  • Jupiter: USDC ⇄ asset     │
           └───────────────────────────────────▶ │  • Hyperliquid: perp orders  │
                                                 │  • Portfolio, trades, index  │
                                                 │    funds, recurring buys     │
                                                 └───────┬──────────────┬───────┘
-                                       signed swap tx   │              │  signed order
+                                       signed swap tx   │              │  agent-signed order
                                                         ▼              ▼
                                   ┌──────────────────────────┐  ┌──────────────────────┐
-                                  │      Solana mainnet      │  │     Hyperliquid      │
+                                  │      Solana mainnet      │◀▶│     Hyperliquid      │
                                   │  Jupiter aggregator      │  │  Perpetuals on       │
                                   │  xStocks (US equities)   │  │  stocks, commodities │
                                   │  PreStocks (pre-IPO)     │  │  and indices         │
                                   └──────────────────────────┘  └──────────────────────┘
+                                                            ◀▶ SOL bridge via Hyperunit
                                                 ▲
 ┌─────────────────────┐   prices every 5 min / daily open
 │  pricing-service    │ ── xStocks API + PreStocks API ──┘
@@ -77,12 +78,14 @@ The first-run flow asks four questions, which build the user's investor profile:
 └─────────────────────┘
 ```
 
-- **Wallet per user:** At sign-up, the backend creates a Privy user linked to the Google account and provisions a dedicated **Solana wallet** for that user, Assets settle into that wallet, never into a pooled Folio account.
+- **Wallets per user:** At sign-up, the backend creates a Privy user linked to the Google account and provisions a dedicated **Solana wallet** (spot) and an **Ethereum wallet** (Hyperliquid account) for that user. Assets settle into the user's own wallets, never into a pooled Folio account.
 - **Routing, not issuing.** Folio doesn't issue any exposure itself. It aggregates liquidity venues and routes each order:
   - **US stocks**: tokenized equities from **xStocks** (SPL / Token-2022 tokens on Solana).
   - **Pre-IPO**: tokenized exposure to private companies from **PreStocks**.
   - Spot trades execute as **USDC ⇄ asset swaps routed through Jupiter**, which finds the best price across Solana liquidity. The resulting tokens land in the user's wallet.
-  - **Perps**: orders go to **Hyperliquid**. Users move funds from their spot balance into a separate perp account, so leveraged positions never touch their spot holdings.
+  - **Perps**: orders go to **Hyperliquid**, with cross or isolated margin. The perp account is separate from spot, so leveraged positions never touch spot holdings.
+- **Funding the perp account.** A deposit swaps USDC to SOL on Jupiter, bridges the SOL to the user's Hyperliquid address through 
+- **Agent wallets.** Perp orders are signed by a per-user Hyperliquid agent (API) wallet, whose key is encrypted at rest with `ENCRYPTION_KEY`.
 - **Index funds** are baskets of tokenized constituents. Buying a fund executes a Jupiter swap for each constituent in proportion.
 - **Recurring buys** are stored as schedules and executed by the same routing layer at the chosen frequency.
 - **Verifiable by design.** Balances are read directly from chain (SOL, SPL, and Token-2022 accounts), so positions, the social feed, and the leaderboard reflect real on-chain activity.
@@ -113,17 +116,18 @@ The first-run flow asks four questions, which build the user's investor profile:
 - PostgreSQL
 - A [Privy](https://privy.io) app with server wallets enabled and an authorization key
 - A Solana mainnet RPC URL
+- A [Jupiter](https://dev.jup.ag) API key
 - Google OAuth client IDs (web and iOS)
 - Xcode and/or Android Studio to run the app
 
 ### 1. Backend: user-management-service
 
 ```bash
-cd user-management-service
+cd backend/user-management-service
 npm install
 ```
 
-Create `user-management-service/.env`:
+Create `backend/user-management-service/.env`:
 
 ```env
 DATABASE_URL=postgresql://user:password@localhost:5432/folio
@@ -134,7 +138,11 @@ PRIVY_APP_SECRET=...
 PRIVY_AUTH_KEY=...
 PRIVY_AUTH_ADDRESS=...
 GOOGLE_CLIENT_ID=...
+JUPITER_API_KEY=...
+ENCRYPTION_KEY=...   # exactly 32 characters; encrypts Hyperliquid agent keys
 ```
+
+Every variable above is required. The service refuses to start if one is missing.
 
 ```bash
 npx prisma migrate deploy
@@ -145,27 +153,30 @@ npm run dev
 ### 2. Backend: pricing-service
 
 ```bash
-cd pricing-service
+cd backend/pricing-service
 npm install
 echo "DATABASE_URL=postgresql://user:password@localhost:5432/folio" > .env
 npx prisma generate
 npm run dev
 ```
 
-You can also run both services with Docker:
+You can also run both services with Docker from `backend/`:
 
 ```bash
+cd backend
 docker compose up --build
 ```
+
+Compose exposes the user-management service on port **5010**, so set `PORT=5010` in its `.env` when running this way.
 
 ### 3. Mobile app
 
 ```bash
-cd app
+cd frontend
 npm install
 ```
 
-Create `app/.env`:
+Create `frontend/.env`:
 
 ```env
 EXPO_PUBLIC_API_URL=http://<your-local-ip>:5000/api
