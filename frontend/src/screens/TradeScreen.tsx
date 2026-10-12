@@ -69,6 +69,7 @@ import { useWalletBalance } from "../hooks/useWalletBalance";
 import { DEFAULT_PERP_MARKETS } from "../data/perpMarketsDefault";
 import { useSpotToPerpDeposit } from "../hooks/useSpotToPerpDeposit";
 import { LiveOrderSheet } from "../components/perps/LiveOrderSheet";
+import { usePerpToSpotDeposit } from "../hooks/perps/usePerpToSpotDeposit";
 
 type PTab = "pos" | "ord" | "book" | "info";
 type TransferOpts = { dir?: "in" | "out"; amt?: number; then?: () => void };
@@ -158,6 +159,25 @@ export function TradeScreen() {
     error: depositError,
     reset: resetDeposit,
   } = useSpotToPerpDeposit();
+
+  const {
+    withdraw,
+    phase: withdrawPhase,
+    amount: withdrawAmount,
+    error: withdrawError,
+    reset: resetWithdraw,
+  } = usePerpToSpotDeposit();
+
+  useEffect(() => {
+    if (withdrawPhase === "done") {
+      toast(`Moved ${fmtPx(withdrawAmount)} to spot`, "TRANSFER CONFIRMED");
+      resetWithdraw();
+    } else if (withdrawPhase === "error" && withdrawError) {
+      toast("Transfer issue", withdrawError.toUpperCase());
+      resetWithdraw();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withdrawPhase]);
 
   useEffect(() => {
     if (depositPhase === "done") {
@@ -299,6 +319,15 @@ export function TradeScreen() {
             {depositPhase === "depositing"
               ? `Sending ${fmtPx(depositAmount)} to perp…`
               : `Confirming transfer of ${fmtPx(depositAmount)}…`}
+          </Text>
+        </View>
+      ) : withdrawPhase === "depositing" || withdrawPhase === "confirming" ? (
+        <View style={[tradeStyles.depositBanner, { top: insets.top + 6 }]}>
+          <ActivityIndicator size="small" color={C.mint} />
+          <Text style={tradeStyles.depositBannerT}>
+            {withdrawPhase === "depositing"
+              ? `Sending ${fmtPx(withdrawAmount)} to spot…`
+              : `Confirming transfer of ${fmtPx(withdrawAmount)}…`}
           </Text>
         </View>
       ) : null}
@@ -801,7 +830,18 @@ export function TradeScreen() {
         <TransferSheet
           dir={sheet.dir}
           onDeposit={deposit}
+          onWithdraw={withdraw}
           amt={sheet.amt}
+          depositStatus={{
+            phase: depositPhase,
+            amount: depositAmount,
+            error: depositError,
+          }}
+          withdrawStatus={{
+            phase: withdrawPhase,
+            amount: withdrawAmount,
+            error: withdrawError,
+          }}
           onClose={() => setSheet(null)}
           onMoved={() => {
             const then = sheet.then;

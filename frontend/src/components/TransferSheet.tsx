@@ -1,11 +1,11 @@
 // src/components/TransferSheet.tsx — "Move money": spot wallet <-> perp account.
 //
-// form  -> from/to cards (tap the swap button to switch direction), amount, confirm
-// busy  -> full "Moving money" screen inside the sheet while the transfer runs
-// done  -> check + new balances, then the sheet closes and a toast confirms it
-//
-// The toast is fired AFTER the sheet closes: a Modal covers the screen, so a toast
-// fired while it is open would sit hidden behind it.
+// form      -> from/to cards (tap the swap button to switch direction), amount, confirm
+// busy      -> brief "submitting" beat while the initiate call is in flight
+// submitted -> live status screen: spinner while confirming, then flips to a
+//              success or error screen the moment the polling hook (in TradeScreen)
+//              reports "done" or "error" — captured via a ref so it can't be missed
+//              even though TradeScreen resets its hook state right after toasting.
 import { memo, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -24,11 +24,16 @@ import Animated, {
 } from "react-native-reanimated";
 import Svg, { Path, Rect } from "react-native-svg";
 import { C, FONT } from "../theme";
-import { fmtPx, toast } from "../data/perpsStore";
+import { fmtPx } from "../data/perpsStore";
 import { useWalletBalance } from "../hooks/useWalletBalance";
 import { hTap } from "../lib/haptics";
-import { Btn, CARD, Check, H2, Body, Kv, KvCard, Lbl, Sheet } from "./PerpUi";
-import { moveMoney } from "../hooks/useBalances";
+import { Btn, CARD, Check, H2, Body, Lbl, Sheet } from "./PerpUi";
+
+export type TransferStatus = {
+  phase: "idle" | "depositing" | "confirming" | "done" | "error";
+  amount: number;
+  error: string | null;
+};
 
 const clean = (t: string) => {
   const x = t.replace(/[^0-9.]/g, "");
@@ -37,7 +42,6 @@ const clean = (t: string) => {
 };
 const floor2 = (n: number) => Math.floor(n * 100) / 100;
 const fmtIn = (n: number) => (n ? String(n) : "");
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const MIN_AMOUNT = 20;
 
 const WalletIcon = memo(function WalletIcon() {
@@ -110,20 +114,24 @@ const Card = memo(function Card({
   );
 });
 
-type Snap = { dir: "in" | "out"; amt: number; spot: number; perp: number };
-
 export function TransferSheet({
   dir: dir0 = "in",
   amt: amt0,
   onClose,
   onMoved,
   onDeposit,
+  onWithdraw,
+  depositStatus,
+  withdrawStatus,
 }: {
   dir?: "in" | "out";
   amt?: number;
   onClose: () => void;
   onMoved?: () => void;
   onDeposit: (amt: number) => Promise<void>;
+  onWithdraw: (amt: number) => Promise<void>;
+  depositStatus?: TransferStatus;
+  withdrawStatus?: TransferStatus;
 }) {
   const wallet = useWalletBalance();
   const spot = wallet.wallet?.usdc.balance ?? 0;
@@ -137,10 +145,7 @@ export function TransferSheet({
     amt0 ?? (src0 < MIN_AMOUNT ? src0 : Math.max(MIN_AMOUNT, defaultAmt)),
   );
   const [txt, setTxt] = useState(fmtIn(amt));
-  const [phase, setPhase] = useState<"form" | "busy" | "submitted" | "done">(
-    "form",
-  );
-  const [snap, setSnap] = useState<Snap | null>(null);
+  const [phase, setPhase] = useState<"form" | "busy" | "submitted">("form");
   const [err, setErr] = useState("");
 
   const inb = dir === "in",
@@ -151,7 +156,26 @@ export function TransferSheet({
     mv = ok ? amt : 0,
     over = amt > src + 1e-9;
 
-  // ---- direction switch (spot <-> perp)
+  // Whichever direction was actually submitted drives which hook's status we watch.
+  const active = inb ? depositStatus : withdrawStatus;
+
+  // Latch the outcome the instant it appears, DURING RENDER — not in an effect.
+  // TradeScreen's own effect resets the hook's phase back to "idle" right after
+  // toasting, and that reset can land before a child effect would run, so an
+  // effect-based capture here could miss the "done"/"error" value entirely.
+  // Capturing in render is synchronous with the prop arriving, so it can't be missed.
+  const resultRef = useRef<
+    { kind: "done"; amount: number } | { kind: "error"; message: string } | null
+  >(null);
+  if (phase === "submitted" && !resultRef.current) {
+    if (active?.phase === "done") {
+      resultRef.current = { kind: "done", amount: active.amount };
+    } else if (active?.phase === "error" && active.error) {
+      resultRef.current = { kind: "error", message: active.error };
+    }
+  }
+  const result = phase === "submitted" ? resultRef.current : null;
+
   const rot = useSharedValue(dir0 === "out" ? 1 : 0); // counts half-turns
   const swapStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rot.value * 180}deg` }],
@@ -163,42 +187,29 @@ export function TransferSheet({
     setTxt(fmtIn(n));
   };
   const flip = () => {
-    // 1) animate right away, on the UI thread (not after React re-renders)
     rot.value = withTiming(rot.value + 1, {
       duration: 240,
       easing: Easing.out(Easing.cubic),
     });
-    // 2) swap the data
     const next = inb ? "out" : "in",
       nsrc = next === "in" ? spot : perp;
     setDir(next);
     setErr("");
-    if (amt > nsrc) set(floor2(nsrc)); // keep the amount valid for the new source
-    // 3) haptic last so it never delays the first frame
+    if (amt > nsrc) set(floor2(nsrc));
     hTap();
   };
 
-  // ---- finish: close the sheet, THEN toast (the toast lives behind a Modal otherwise)
   const alive = useRef(true);
-  const finished = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
       alive.current = false;
-      if (timer.current) clearTimeout(timer.current);
     },
     [],
   );
-  const finish = (sn: Snap) => {
-    if (finished.current) return;
-    finished.current = true;
-    if (timer.current) clearTimeout(timer.current);
-    toast(
-      `Moved ${fmtPx(sn.amt)} ${sn.dir === "in" ? "to perp" : "to spot"}`,
-      `SPOT ${fmtPx(sn.spot)} · PERP ${fmtPx(sn.perp)}`,
-    );
-    if (onMoved) onMoved();
-    else onClose();
+
+  const goForm = () => {
+    resultRef.current = null;
+    setPhase("form");
   };
 
   const submit = async () => {
@@ -206,35 +217,17 @@ export function TransferSheet({
     hTap();
     Keyboard.dismiss();
     setErr("");
+    resultRef.current = null;
     setPhase("busy");
-
-    if (inb) {
-      try {
-        await onDeposit(amt);
-        if (!alive.current) return;
-        // Don't auto-close: the deposit is accepted but not yet confirmed.
-        // Show a dismissible "this can take a few minutes" screen — the top
-        // banner/toast in TradeScreen keeps tracking it until it's done.
-        setPhase("submitted");
-      } catch (e) {
-        if (!alive.current) return;
-        setErr(
-          e instanceof Error ? e.message : "Something went wrong. Try again.",
-        );
-        setPhase("form");
-      }
-      return;
-    }
-
-    const sn: Snap = { dir, amt, spot: spot + amt, perp: perp - amt };
     try {
-      await wait(900);
-      const res = await Promise.resolve(moveMoney(dir, amt));
-      if (res === false) throw new Error("The transfer didn't go through.");
+      if (inb) await onDeposit(amt);
+      else await onWithdraw(amt);
       if (!alive.current) return;
-      setSnap(sn);
-      setPhase("done");
-      timer.current = setTimeout(() => finish(sn), 1300);
+      // Don't auto-close: the transfer is accepted but not yet confirmed.
+      // This screen now watches depositStatus/withdrawStatus itself and will
+      // flip to a success or error view the moment the backend confirms —
+      // it no longer depends on the top banner/toast to tell the story.
+      setPhase("submitted");
     } catch (e) {
       if (!alive.current) return;
       setErr(
@@ -246,56 +239,57 @@ export function TransferSheet({
 
   const dismiss = () => {
     if (phase === "busy") return;
-    if (phase === "done" && snap) return finish(snap);
     onClose();
   };
 
   return (
     <Sheet onClose={dismiss}>
       {phase === "busy" ? (
-        // ---------------------------------------------------------- processing
+        // ---------------------------------------------------------- submitting
         <View style={s.center}>
           <H2 style={{ fontSize: 19 }}>Moving money</H2>
           <ActivityIndicator color={C.mint} size="large" />
           <Text style={s.mono}>
             {fmtPx(amt)} · {inb ? "SPOT → PERP" : "PERP → SPOT"}
           </Text>
-          <Text style={[s.mono, { fontSize: 9, marginTop: -8 }]}>
-            DON'T CLOSE THE APP
-          </Text>
         </View>
       ) : phase === "submitted" ? (
-        // ---------------------------------------------------------- submitted, not yet confirmed
-        <View style={[s.center, { gap: 14, paddingTop: 6 }]}>
-          <ActivityIndicator color={C.mint} size="large" />
-          <H2 style={{ textAlign: "center" }}>Transfer submitted</H2>
-          <Body style={{ textAlign: "center", fontSize: 13 }}>
-            Moving {fmtPx(amt)} to your perp account. This can take up to 5
-            minutes — you can close this now and we'll let you know once it's
-            done.
-          </Body>
-          <Btn label="Close" onPress={onClose} />
-        </View>
-      ) : phase === "done" && snap ? (
-        <>
+        result?.kind === "done" ? (
+          // ---------------------------------------------------------- confirmed
           <View style={[s.center, { gap: 14, paddingTop: 6 }]}>
             <Check />
             <H2 style={{ textAlign: "center" }}>
-              Moved {fmtPx(snap.amt)}{" "}
-              {snap.dir === "in" ? "to perp" : "to spot"}
+              Moved {fmtPx(result.amount)} {inb ? "to perp" : "to spot"}
             </H2>
             <Body style={{ textAlign: "center", fontSize: 13 }}>
-              {snap.dir === "in"
+              {inb
                 ? "It's in your perp account, ready to use as margin."
                 : "It's back in your spot wallet."}
             </Body>
+            <Btn label="Done" onPress={onClose} />
           </View>
-          <KvCard>
-            <Kv k="SPOT WALLET" v={fmtPx(snap.spot)} />
-            <Kv k="PERP ACCOUNT" v={fmtPx(snap.perp)} last />
-          </KvCard>
-          <Btn label="Done" onPress={() => finish(snap)} />
-        </>
+        ) : result?.kind === "error" ? (
+          // ---------------------------------------------------------- failed after submit
+          <View style={[s.center, { gap: 14, paddingTop: 6 }]}>
+            <View style={s.coach}>
+              <Text style={s.coachH}>TRANSFER FAILED</Text>
+              <Text style={s.coachT}>{result.message}</Text>
+            </View>
+            <Btn label="Close" onPress={onClose} />
+          </View>
+        ) : (
+          // ---------------------------------------------------------- submitted, not yet confirmed
+          <View style={[s.center, { gap: 14, paddingTop: 6 }]}>
+            <ActivityIndicator color={C.mint} size="large" />
+            <H2 style={{ textAlign: "center" }}>Transfer submitted</H2>
+            <Body style={{ textAlign: "center", fontSize: 13 }}>
+              Moving {fmtPx(amt)} to your {inb ? "perp account" : "spot wallet"}
+              . This can take up to 5 minutes — you can close this now and we'll
+              let you know once it's done.
+            </Body>
+            <Btn label="Close" onPress={onClose} />
+          </View>
+        )
       ) : (
         // ---------------------------------------------------------- form
         <>
@@ -304,7 +298,6 @@ export function TransferSheet({
             <H2>Move money</H2>
           </View>
 
-          {/* from / to + swap button, centered on the seam between the cards */}
           <View
             style={{ gap: 6 }}
             onLayout={(e) => setBoxH(e.nativeEvent.layout.height)}
@@ -486,7 +479,6 @@ const s = StyleSheet.create({
     backgroundColor: C.raised,
     borderWidth: 4,
     borderColor: C.raised,
-    // ring so it reads as a button sitting between the two cards
     shadowColor: "#000",
     shadowOpacity: 0.4,
     shadowRadius: 6,

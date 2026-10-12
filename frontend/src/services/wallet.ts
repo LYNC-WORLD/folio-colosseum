@@ -14,6 +14,12 @@ export const depositSpotToPerp = (depositAmount: string, token: string) =>
     method: "POST",
     body: { depositAmount },
   });
+  export const depositPerpToSpot = (depositAmount: string, token: string) =>
+  request<DepositSpotToPerpResponse>("/api/deposit/perp-to-spot", {
+    token,
+    method: "POST",
+    body: { depositAmount },
+  });
 
 export const checkDepositStatus = (token: string) =>
   request<DepositStatusResponse>("/api/deposit/check-deposit-status", {
