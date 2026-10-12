@@ -44,7 +44,7 @@ export function TypingDots() {
   return (
     <View
       style={{ flexDirection: "row", gap: 4, alignItems: "center", height: 20 }}
-      accessibilityLabel="Analyst is typing"
+      accessibilityLabel="Folio AI is typing"
     >
       <Dot delay={0} />
       <Dot delay={160} />

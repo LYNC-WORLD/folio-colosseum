@@ -1,12 +1,4 @@
-// src/components/Perpchart.tsx
-// Chart stage: timeframes, chart type, indicators, full screen, price axis, last-price tag,
-// your entry / liquidation / TP / SL / order lines, and a press-and-hold crosshair.
-// Candles come from Hyperliquid (REST history + live candle WebSocket).
-//
-// Not ported (needs gesture-handler work): pan/pinch zoom and dragging TP/SL lines.
-// TP/SL are edited from the position sheet instead.
-
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -17,7 +9,13 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
 import Svg, {
+  ClipPath,
   Defs,
   G,
   Line,
@@ -63,6 +61,16 @@ const MONO = FONT.mono400;
 type Ind = Record<IndKey, boolean>;
 const NONE_P: UiPosition[] = [];
 const NONE_O: UiOrder[] = [];
+
+// ---- viewport: how wide one candle is, and how many candles we are scrolled back
+const BW0 = 7; // default candle slot width (px)
+const BW_MIN = 2; // most zoomed out
+const BW_MAX = 30; // most zoomed in
+const RP = 35; // empty space to the right of the newest candle (px)
+const MIN_BARS = 8; // never scroll the last few candles off screen
+type Vp = { bw: number; off: number };
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const f1 = (v: number) => v.toFixed(1);
 
 const ICON: Record<ChartType, { d: string; fill?: boolean; soft?: boolean }[]> =
   {
@@ -134,6 +142,7 @@ function ChartBody({
   type,
   ind,
   height,
+  fs,
   onScrollLock,
   positions,
   orders,
@@ -143,6 +152,7 @@ function ChartBody({
   type: ChartType;
   ind: Ind;
   height: number;
+  fs: boolean;
   onScrollLock?: (l: boolean) => void;
   positions: UiPosition[];
   orders: UiOrder[];
@@ -152,12 +162,18 @@ function ChartBody({
   const { bars: base, loading, error } = useCandles(sym, tf);
   const [W, setW] = useState(0);
   const [cross, setCross] = useState<{ x: number; y: number } | null>(null);
-  const hold = useRef<{
-    t: ReturnType<typeof setTimeout> | null;
-    on: boolean;
-    x: number;
-    y: number;
-  }>({ t: null, on: false, x: 0, y: 0 });
+  const [vp, setVp] = useState<Vp>({ bw: BW0, off: 0 });
+
+  // latest geometry / callbacks for the gesture handlers (they are created once)
+  const geo = useRef({ n: 0, PW: 0 });
+  const lockRef = useRef(onScrollLock);
+  lockRef.current = onScrollLock;
+  const fling = useRef<number | null>(null);
+  const stopFling = useCallback(() => {
+    if (fling.current != null) cancelAnimationFrame(fling.current);
+    fling.current = null;
+  }, []);
+  useEffect(() => stopFling, [stopFling]);
 
   // keep the last candle glued to the live mark price
   const bars = useMemo(() => {
@@ -170,6 +186,143 @@ function ChartBody({
     b[b.length - 1] = l;
     return b;
   }, [base, mark]);
+  const view: Bar[] = useMemo(
+    () => (type === "ha" ? haOf(bars) : bars),
+    [bars, type],
+  );
+
+  // new market or timeframe -> snap back to the latest candle (zoom level is kept)
+  useEffect(() => {
+    stopFling();
+    setVp((v) => (v.off === 0 ? v : { ...v, off: 0 }));
+  }, [sym, tf, stopFling]);
+
+  // while you are looking at history, a new candle must not shift the view
+  const lastT = bars.length ? bars[bars.length - 1].t : 0;
+  const prevT = useRef(0);
+  useEffect(() => {
+    if (prevT.current && lastT > prevT.current)
+      setVp((v) => (v.off > 0 ? { ...v, off: v.off + 1 } : v));
+    prevT.current = lastT;
+  }, [lastT]);
+
+  // ---- gestures
+  const gesture = useMemo(() => {
+    const fit = (bw: number, off: number): Vp => ({
+      bw: clamp(bw, BW_MIN, BW_MAX),
+      off: clamp(off, 0, Math.max(0, geo.current.n - MIN_BARS)),
+    });
+    // parent ScrollView lock, counted so overlapping gestures do not unlock each other
+    let held = 0;
+    const session = () => {
+      let on = false;
+      return {
+        start() {
+          if (on) return;
+          on = true;
+          if (held++ === 0) lockRef.current?.(true);
+        },
+        end() {
+          if (!on) return;
+          on = false;
+          held = Math.max(0, held - 1);
+          if (held === 0) lockRef.current?.(false);
+        },
+      };
+    };
+
+    // --- drag to scroll. Uses the finger position inside the chart (e.x) rather than
+    // translationX so it also works when the full-screen stage is rotated 90 degrees.
+    const ps = session();
+    let lastX = 0,
+      lastAt = 0,
+      vel = 0; // px per second
+    const pan = (
+      fs
+        ? Gesture.Pan().minDistance(6)
+        : // inline: only grab horizontal drags, leave vertical ones to the page scroll
+          Gesture.Pan().activeOffsetX([-8, 8]).failOffsetY([-14, 14])
+    )
+      .runOnJS(true)
+      .maxPointers(1)
+      .onBegin(() => stopFling())
+      .onStart((e) => {
+        lastX = e.x;
+        lastAt = Date.now();
+        vel = 0;
+        ps.start();
+      })
+      .onUpdate((e) => {
+        const now = Date.now(),
+          dx = e.x - lastX,
+          dt = Math.max(1, now - lastAt);
+        lastX = e.x;
+        lastAt = now;
+        vel = vel * 0.6 + (dx / dt) * 1000 * 0.4;
+        setVp((v) => fit(v.bw, v.off + dx / v.bw));
+      })
+      .onEnd(() => {
+        // inertia: keep gliding after a quick flick
+        if (Date.now() - lastAt > 80 || Math.abs(vel) < 150) return;
+        let v0 = vel,
+          t = Date.now();
+        const tick = () => {
+          const now = Date.now(),
+            dt = (now - t) / 1000;
+          t = now;
+          v0 *= Math.exp(-4 * dt);
+          if (Math.abs(v0) < 25) {
+            fling.current = null;
+            return;
+          }
+          setVp((v) => fit(v.bw, v.off + (v0 * dt) / v.bw));
+          fling.current = requestAnimationFrame(tick);
+        };
+        fling.current = requestAnimationFrame(tick);
+      })
+      .onFinalize(() => ps.end());
+
+    // --- pinch to zoom, keeping the candle under your fingers in place
+    const zs = session();
+    let lastScale = 1;
+    const pinch = Gesture.Pinch()
+      .runOnJS(true)
+      .onStart(() => {
+        stopFling();
+        lastScale = 1;
+        zs.start();
+      })
+      .onUpdate((e) => {
+        const k = e.scale / (lastScale || 1);
+        lastScale = e.scale;
+        const A = geo.current.PW - RP - e.focalX;
+        setVp((v) => {
+          const bw = clamp(v.bw * k, BW_MIN, BW_MAX);
+          return fit(bw, v.off + A / v.bw - A / bw);
+        });
+      })
+      .onFinalize(() => zs.end());
+
+    // --- press and hold for the crosshair
+    const cs = session();
+    const crossG = Gesture.Pan()
+      .runOnJS(true)
+      .maxPointers(1)
+      .activateAfterLongPress(220)
+      .onStart((e) => {
+        stopFling();
+        cs.start();
+        hTap();
+        setCross({ x: e.x, y: e.y });
+      })
+      .onUpdate((e) => setCross({ x: e.x, y: e.y }))
+      .onFinalize(() => {
+        cs.end();
+        setCross(null);
+      });
+
+    return Gesture.Race(crossG, Gesture.Simultaneous(pan, pinch));
+  }, [fs, stopFling]);
 
   const myPos = positions.filter((p) => p.sym === sym);
   const myOrd = orders.filter((o) => o.sym === sym);
@@ -203,7 +356,11 @@ function ChartBody({
         {loading ? (
           <ActivityIndicator color={C.ink3} />
         ) : (
-          <Text style={s.ohlcT}>{error ? "Chart couldn't load. " + error : "No trades in this timeframe yet."}</Text>
+          <Text style={s.ohlcT}>
+            {error
+              ? "Chart couldn't load. " + error
+              : "No trades in this timeframe yet."}
+          </Text>
         )}
       </View>
     );
@@ -213,14 +370,19 @@ function ChartBody({
     TH = 20,
     RS = ind.rsi ? 72 : 0;
   const PW = W - AX,
-    MH = height - TH - RS,
-    bw = 7,
-    rp = bw * 5;
-  const n = bars.length;
-  const view: Bar[] = type === "ha" ? haOf(bars) : bars;
-  const i1 = n - 1,
-    i0 = Math.max(0, i1 - Math.floor((PW - rp) / bw));
-  const xi = (i: number) => PW - rp - (n - 1 - i) * bw;
+    MH = height - TH - RS;
+  const n = bars.length,
+    iN = n - 1;
+  const bw = vp.bw;
+  const off = clamp(vp.off, 0, Math.max(0, n - MIN_BARS));
+  geo.current.n = n;
+  geo.current.PW = PW;
+
+  // `anchor` is the (fractional) candle index sitting at the right edge of the plot
+  const anchor = iN - off;
+  const xi = (i: number) => PW - RP - (anchor - i) * bw;
+  const i1 = Math.min(iN, Math.floor(anchor + RP / bw));
+  const i0 = Math.max(0, Math.min(i1, Math.ceil(anchor - (PW - RP) / bw) - 1));
 
   const lineOnly = type === "line" || type === "area";
   let hi = -Infinity,
@@ -258,17 +420,21 @@ function ChartBody({
   const y = (p: number) => top + ((hi - p) / (hi - lo)) * (bot - top);
   const py = (Y: number) => hi - ((Y - top) / (bot - top)) * (hi - lo);
 
-  const last = view[i1],
+  // the newest candle (may be off screen when you have scrolled back)
+  const last = view[iN],
     lastUp = last.c >= last.o;
+  const lastY = y(last.c),
+    lastIn = lastY >= 0 && lastY <= MH,
+    tagY = clamp(lastY, 10, MH - 10);
   const fp = (p: number) => (p >= 1000 ? fmtNum(p) : p.toFixed(2));
 
   // crosshair index
   const ci = cross
-    ? Math.max(i0, Math.min(i1, Math.round(n - 1 - (PW - rp - cross.x) / bw)))
+    ? clamp(Math.round(anchor - (PW - RP - cross.x) / bw), i0, i1)
     : null;
   const shown = ci != null ? view[ci] : last;
   const prevC = (
-    ci != null ? view[Math.max(0, ci - 1)] : view[Math.max(0, i1 - 1)]
+    ci != null ? view[Math.max(0, ci - 1)] : view[Math.max(0, iN - 1)]
   ).c;
 
   const pathOf = (arr: (number | null)[] | null) => {
@@ -281,16 +447,59 @@ function ChartBody({
         pen = false;
         continue;
       }
-      d += (pen ? "L" : "M") + xi(i).toFixed(1) + " " + y(v).toFixed(1);
+      d += (pen ? "L" : "M") + f1(xi(i)) + " " + f1(y(v));
       pen = true;
     }
     return d;
   };
 
+  // candles / bars / volume as a handful of big paths (much cheaper to redraw while panning)
+  let wickUp = "",
+    wickDn = "",
+    bodyUp = "",
+    bodyDn = "",
+    volUp = "",
+    volDn = "";
+  const half = Math.max(0.5, bw * 0.35);
+  if (!lineOnly || ind.vol) {
+    const tick = Math.max(1.5, bw * 0.43);
+    for (let i = i0; i <= i1; i++) {
+      const b = view[i],
+        x = xi(i),
+        up = b.c >= b.o;
+      if (type === "bars") {
+        const d = `M${f1(x)} ${f1(y(b.h))}V${f1(y(b.l))}M${f1(x - tick)} ${f1(y(b.o))}H${f1(x)}M${f1(x)} ${f1(y(b.c))}H${f1(x + tick)}`;
+        if (up) wickUp += d;
+        else wickDn += d;
+      } else if (!lineOnly) {
+        const yo = y(b.o),
+          yc = y(b.c),
+          h = Math.max(1, Math.abs(yo - yc));
+        const w = `M${f1(x)} ${f1(y(b.h))}V${f1(y(b.l))}`;
+        const r = `M${f1(x - half)} ${f1(Math.min(yo, yc))}h${f1(half * 2)}v${f1(h)}h${f1(-half * 2)}Z`;
+        if (up) {
+          wickUp += w;
+          bodyUp += r;
+        } else {
+          wickDn += w;
+          bodyDn += r;
+        }
+      }
+      if (ind.vol) {
+        const h = (b.v / (vmax || 1)) * MH * 0.15;
+        const r = `M${f1(x - half)} ${f1(MH - h)}h${f1(half * 2)}v${f1(h)}h${f1(-half * 2)}Z`;
+        if (up) volUp += r;
+        else volDn += r;
+      }
+    }
+  }
+
   const step = niceStep((hi - lo) / 5);
   const busy = [
-    y(last.c),
-    ...myPos.flatMap((q) => (q.liq != null ? [y(q.entry), y(q.liq)] : [y(q.entry)])),
+    tagY,
+    ...myPos.flatMap((q) =>
+      q.liq != null ? [y(q.entry), y(q.liq)] : [y(q.entry)],
+    ),
     ...myOrd.map((o) => y(o.px)),
   ];
   const grid: number[] = [];
@@ -312,8 +521,13 @@ function ChartBody({
       String(d.getMinutes()).padStart(2, "0")
     );
   };
+  // one label roughly every 64px, pinned to fixed candles so they slide with the chart
+  const every = Math.max(1, Math.ceil(64 / bw));
   const timeTicks: number[] = [];
-  for (let i = i1; i >= i0; i -= 10) timeTicks.push(i);
+  for (let i = iN - Math.ceil((iN - i1) / every) * every; i >= i0; i -= every) {
+    const x = xi(i);
+    if (x > 24 && x < PW - 4) timeTicks.push(i);
+  }
 
   // ---- overlay line helper (dashed line + left chip + axis tag)
   const lineChip = (
@@ -373,462 +587,430 @@ function ChartBody({
     );
   };
 
-  const touch = (e: any) => ({
-    x: e.nativeEvent.locationX as number,
-    y: e.nativeEvent.locationY as number,
-  });
-  const clearHold = () => {
-    const h = hold.current;
-    if (h.t) clearTimeout(h.t);
-    h.t = null;
-    if (h.on) {
-      h.on = false;
-      onScrollLock?.(false);
-    }
-    setCross(null);
-  };
-
   const legend: [string, string, string][] = [];
-  if (ind.ma && I.ma?.[i1] != null)
-    legend.push(["MA 20", "#E8A33D", fp(I.ma[ci ?? i1] ?? I.ma[i1]!)]);
-  if (ind.ema && I.ema?.[i1] != null)
-    legend.push(["EMA 50", "#6FA8F5", fp(I.ema[ci ?? i1] ?? I.ema[i1]!)]);
+  if (ind.ma && I.ma?.[iN] != null)
+    legend.push(["MA 20", "#E8A33D", fp(I.ma[ci ?? iN] ?? I.ma[iN]!)]);
+  if (ind.ema && I.ema?.[iN] != null)
+    legend.push(["EMA 50", "#6FA8F5", fp(I.ema[ci ?? iN] ?? I.ema[iN]!)]);
   if (ind.vwap && I.vwap)
-    legend.push(["VWAP", "#F07F9B", fp(I.vwap[ci ?? i1])]);
+    legend.push(["VWAP", "#F07F9B", fp(I.vwap[ci ?? iN])]);
 
   const chg = (shown.c / prevC - 1) * 100;
-  const rsiVal = I.rsi?.[ci ?? i1];
+  const rsiVal = I.rsi?.[ci ?? iN];
 
   return (
-    <View
-      style={{
-        height,
-        borderTopWidth: 1,
-        borderBottomWidth: 1,
-        borderColor: C.hair,
-      }}
-      onLayout={(e) => setW(e.nativeEvent.layout.width)}
-      onTouchStart={(e) => {
-        const p = touch(e),
-          h = hold.current;
-        h.x = p.x;
-        h.y = p.y;
-        h.t = setTimeout(() => {
-          h.on = true;
-          onScrollLock?.(true);
-          hTap();
-          setCross({ x: h.x, y: h.y });
-        }, 220);
-      }}
-      onTouchMove={(e) => {
-        const p = touch(e),
-          h = hold.current;
-        if (h.on) setCross(p);
-        else if (h.t && (Math.abs(p.x - h.x) > 8 || Math.abs(p.y - h.y) > 8)) {
-          clearTimeout(h.t);
-          h.t = null;
-        }
-      }}
-      onTouchEnd={clearHold}
-      onTouchCancel={clearHold}
-    >
-      {W > 0 ? (
-        <Svg pointerEvents="none" width={W} height={height}>
-          <Defs>
-            <LinearGradient id="pcArea" x1="0" y1="0" x2="0" y2="1">
-              <Stop
-                offset="0"
-                stopColor={lastUp ? UP : DN}
-                stopOpacity={0.28}
-              />
-              <Stop offset="1" stopColor={lastUp ? UP : DN} stopOpacity={0} />
-            </LinearGradient>
-          </Defs>
-
-          {/* grid + price axis */}
-          {grid.map((p) => {
-            const Y = Math.round(y(p)) + 0.5,
-              hide = busy.some((b) => Math.abs(b - Y) < 11);
-            return (
-              <G key={p}>
-                <Line
-                  x1={0}
-                  x2={PW}
-                  y1={Y}
-                  y2={Y}
-                  stroke="#161A21"
-                  strokeWidth={1}
+    <GestureDetector gesture={gesture}>
+      <View
+        collapsable={false}
+        style={{
+          height,
+          borderTopWidth: 1,
+          borderBottomWidth: 1,
+          borderColor: C.hair,
+        }}
+        onLayout={(e) => setW(e.nativeEvent.layout.width)}
+      >
+        {W > 0 ? (
+          <Svg pointerEvents="none" width={W} height={height}>
+            <Defs>
+              <LinearGradient id="pcArea" x1="0" y1="0" x2="0" y2="1">
+                <Stop
+                  offset="0"
+                  stopColor={lastUp ? UP : DN}
+                  stopOpacity={0.28}
                 />
-                {!hide ? (
-                  <SvgText
-                    x={PW + 6}
-                    y={Y}
-                    fill={AXIS}
-                    fontSize={10}
-                    fontFamily={MONO}
-                    alignmentBaseline="middle"
-                  >
-                    {fp(p)}
-                  </SvgText>
-                ) : null}
-              </G>
-            );
-          })}
+                <Stop offset="1" stopColor={lastUp ? UP : DN} stopOpacity={0} />
+              </LinearGradient>
+              {/* keeps candles from drawing over the price axis while scrolling */}
+              <ClipPath id="pcClip">
+                <Rect x={0} y={0} width={Math.max(0, PW)} height={height} />
+              </ClipPath>
+            </Defs>
 
-          {/* volume */}
-          {ind.vol
-            ? view.slice(i0, i1 + 1).map((b, k) => {
-                const h = (b.v / (vmax || 1)) * MH * 0.15;
-                return (
-                  <Rect
-                    key={"v" + k}
-                    x={xi(i0 + k) - bw * 0.35}
-                    y={MH - h}
-                    width={bw * 0.7}
-                    height={h}
-                    fill={b.c >= b.o ? UP : DN}
-                    opacity={0.32}
-                  />
-                );
-              })
-            : null}
-
-          {/* Bollinger / MA / EMA / VWAP */}
-          {ind.bb ? (
-            <>
-              <Path
-                d={pathOf(I.bb!.map((v) => (v ? v[0] : null)))}
-                stroke="#C79BF0"
-                strokeWidth={1}
-                fill="none"
-                opacity={0.8}
-              />
-              <Path
-                d={pathOf(I.bb!.map((v) => (v ? v[1] : null)))}
-                stroke="#C79BF0"
-                strokeWidth={1}
-                fill="none"
-                opacity={0.8}
-              />
-            </>
-          ) : null}
-
-          {/* price series */}
-          {type === "area" ? (
-            <Path
-              d={
-                `M${xi(i0).toFixed(1)} ${bot} ` +
-                view
-                  .slice(i0, i1 + 1)
-                  .map(
-                    (b, k) => `L${xi(i0 + k).toFixed(1)} ${y(b.c).toFixed(1)}`,
-                  )
-                  .join(" ") +
-                ` L${xi(i1).toFixed(1)} ${bot} Z`
-              }
-              fill="url(#pcArea)"
-            />
-          ) : null}
-          {lineOnly ? (
-            <Polyline
-              points={view
-                .slice(i0, i1 + 1)
-                .map((b, k) => `${xi(i0 + k).toFixed(1)},${y(b.c).toFixed(1)}`)
-                .join(" ")}
-              fill="none"
-              stroke={lastUp ? UP : DN}
-              strokeWidth={1.6}
-              strokeLinejoin="round"
-            />
-          ) : type === "bars" ? (
-            view.slice(i0, i1 + 1).map((b, k) => {
-              const x = xi(i0 + k),
-                col = b.c >= b.o ? UP : DN;
+            {/* grid + price axis */}
+            {grid.map((p) => {
+              const Y = Math.round(y(p)) + 0.5,
+                hide = busy.some((b) => Math.abs(b - Y) < 11);
               return (
-                <Path
-                  key={"b" + k}
-                  d={`M${x} ${y(b.h)}V${y(b.l)}M${x - 3} ${y(b.o)}H${x}M${x} ${y(b.c)}H${x + 3}`}
-                  stroke={col}
-                  strokeWidth={1.2}
-                  fill="none"
-                />
-              );
-            })
-          ) : (
-            view.slice(i0, i1 + 1).map((b, k) => {
-              const x = xi(i0 + k),
-                col = b.c >= b.o ? UP : DN,
-                yo = y(b.o),
-                yc = y(b.c);
-              return (
-                <G key={"c" + k}>
+                <G key={p}>
                   <Line
-                    x1={x}
-                    x2={x}
-                    y1={y(b.h)}
-                    y2={y(b.l)}
-                    stroke={col}
-                    strokeWidth={1}
-                  />
-                  <Rect
-                    x={x - bw * 0.35}
-                    y={Math.min(yo, yc)}
-                    width={bw * 0.7}
-                    height={Math.max(1, Math.abs(yo - yc))}
-                    fill={col}
-                  />
-                </G>
-              );
-            })
-          )}
-          {ind.ma ? (
-            <Path
-              d={pathOf(I.ma)}
-              stroke="#E8A33D"
-              strokeWidth={1.2}
-              fill="none"
-            />
-          ) : null}
-          {ind.ema ? (
-            <Path
-              d={pathOf(I.ema)}
-              stroke="#6FA8F5"
-              strokeWidth={1.2}
-              fill="none"
-            />
-          ) : null}
-          {ind.vwap ? (
-            <Path
-              d={pathOf(I.vwap)}
-              stroke="#F07F9B"
-              strokeWidth={1.2}
-              fill="none"
-            />
-          ) : null}
-
-          {/* last price */}
-          <Line
-            x1={0}
-            x2={PW}
-            y1={y(last.c)}
-            y2={y(last.c)}
-            stroke={lastUp ? UP : DN}
-            strokeWidth={1}
-            strokeDasharray="2 3"
-            opacity={0.7}
-          />
-          <Rect
-            x={PW + 1}
-            y={y(last.c) - 9}
-            width={AX - 2}
-            height={18}
-            rx={4}
-            fill={lastUp ? UP : DN}
-          />
-          <SvgText
-            x={PW + AX / 2}
-            y={y(last.c) + 0.5}
-            fill={lastUp ? "#06120D" : "#1C0805"}
-            fontSize={10}
-            fontFamily={MONO}
-            textAnchor="middle"
-            alignmentBaseline="middle"
-          >
-            {fp(last.c)}
-          </SvgText>
-
-          {/* your positions and orders */}
-          {myPos.map((q) => {
-            const pnl = livePnl(q, mark || q.entry);
-            return (
-              <G key={"p" + q.id}>
-                {lineChip(
-                  "e" + q.id,
-                  q.entry,
-                  `${sideTxt(q.side)} ${q.lev}x  ${sMoney(pnl)}`,
-                  INK,
-                  "#0A0B0E",
-                )}
-                {q.liq != null
-                  ? lineChip("l" + q.id, q.liq, "LIQ", DN, "#1C0805", "2 4")
-                  : null}
-                {q.tp != null
-                  ? lineChip("t" + q.id, q.tp, "TP", UP, "#06120D")
-                  : null}
-                {q.sl != null
-                  ? lineChip("s" + q.id, q.sl, "SL", DN, "#1C0805")
-                  : null}
-              </G>
-            );
-          })}
-          {myOrd.map((o) =>
-            lineChip(
-              "o" + o.id,
-              o.px,
-              `${o.kind.toUpperCase()} ${sideTxt(o.side)}`,
-              AMBER,
-              "#1B1204",
-              "6 3",
-            ),
-          )}
-
-          {/* RSI pane */}
-          {ind.rsi ? (
-            <G>
-              <Line x1={0} x2={W} y1={MH} y2={MH} stroke={C.hair} />
-              {[30, 70].map((v) => {
-                const Y = MH + 8 + ((100 - v) / 100) * (RS - 16);
-                return (
-                  <Line
-                    key={v}
                     x1={0}
                     x2={PW}
                     y1={Y}
                     y2={Y}
-                    stroke="#1C2129"
-                    strokeDasharray="3 3"
+                    stroke="#161A21"
+                    strokeWidth={1}
                   />
-                );
-              })}
-              <Path
-                d={(() => {
-                  let d = "",
-                    pen = false;
-                  for (let i = i0; i <= i1; i++) {
-                    const v = I.rsi![i];
-                    if (v == null) {
-                      pen = false;
-                      continue;
-                    }
-                    d +=
-                      (pen ? "L" : "M") +
-                      xi(i).toFixed(1) +
-                      " " +
-                      (MH + 8 + ((100 - v) / 100) * (RS - 16)).toFixed(1);
-                    pen = true;
+                  {!hide ? (
+                    <SvgText
+                      x={PW + 6}
+                      y={Y}
+                      fill={AXIS}
+                      fontSize={10}
+                      fontFamily={MONO}
+                      alignmentBaseline="middle"
+                    >
+                      {fp(p)}
+                    </SvgText>
+                  ) : null}
+                </G>
+              );
+            })}
+
+            <G clipPath="url(#pcClip)">
+              {/* volume */}
+              {volUp ? <Path d={volUp} fill={UP} opacity={0.32} /> : null}
+              {volDn ? <Path d={volDn} fill={DN} opacity={0.32} /> : null}
+
+              {/* Bollinger */}
+              {ind.bb ? (
+                <>
+                  <Path
+                    d={pathOf(I.bb!.map((v) => (v ? v[0] : null)))}
+                    stroke="#C79BF0"
+                    strokeWidth={1}
+                    fill="none"
+                    opacity={0.8}
+                  />
+                  <Path
+                    d={pathOf(I.bb!.map((v) => (v ? v[1] : null)))}
+                    stroke="#C79BF0"
+                    strokeWidth={1}
+                    fill="none"
+                    opacity={0.8}
+                  />
+                </>
+              ) : null}
+
+              {/* price series */}
+              {type === "area" ? (
+                <Path
+                  d={
+                    `M${f1(xi(i0))} ${bot} ` +
+                    view
+                      .slice(i0, i1 + 1)
+                      .map((b, k) => `L${f1(xi(i0 + k))} ${f1(y(b.c))}`)
+                      .join(" ") +
+                    ` L${f1(xi(i1))} ${bot} Z`
                   }
-                  return d;
-                })()}
-                stroke="#7FD3E0"
-                strokeWidth={1.2}
-                fill="none"
-              />
-              <SvgText
-                x={PW + 6}
-                y={MH + 14}
-                fill="#7FD3E0"
-                fontSize={10}
-                fontFamily={MONO}
-              >
-                {rsiVal != null ? rsiVal.toFixed(1) : ""}
-              </SvgText>
+                  fill="url(#pcArea)"
+                />
+              ) : null}
+              {lineOnly ? (
+                <Polyline
+                  points={view
+                    .slice(i0, i1 + 1)
+                    .map((b, k) => `${f1(xi(i0 + k))},${f1(y(b.c))}`)
+                    .join(" ")}
+                  fill="none"
+                  stroke={lastUp ? UP : DN}
+                  strokeWidth={1.6}
+                  strokeLinejoin="round"
+                />
+              ) : (
+                <>
+                  {wickUp ? (
+                    <Path
+                      d={wickUp}
+                      stroke={UP}
+                      strokeWidth={type === "bars" ? 1.2 : 1}
+                      fill="none"
+                    />
+                  ) : null}
+                  {wickDn ? (
+                    <Path
+                      d={wickDn}
+                      stroke={DN}
+                      strokeWidth={type === "bars" ? 1.2 : 1}
+                      fill="none"
+                    />
+                  ) : null}
+                  {bodyUp ? <Path d={bodyUp} fill={UP} /> : null}
+                  {bodyDn ? <Path d={bodyDn} fill={DN} /> : null}
+                </>
+              )}
+
+              {/* MA / EMA / VWAP */}
+              {ind.ma ? (
+                <Path
+                  d={pathOf(I.ma)}
+                  stroke="#E8A33D"
+                  strokeWidth={1.2}
+                  fill="none"
+                />
+              ) : null}
+              {ind.ema ? (
+                <Path
+                  d={pathOf(I.ema)}
+                  stroke="#6FA8F5"
+                  strokeWidth={1.2}
+                  fill="none"
+                />
+              ) : null}
+              {ind.vwap ? (
+                <Path
+                  d={pathOf(I.vwap)}
+                  stroke="#F07F9B"
+                  strokeWidth={1.2}
+                  fill="none"
+                />
+              ) : null}
             </G>
-          ) : null}
 
-          {/* time axis */}
-          {timeTicks.map((i) => (
-            <SvgText
-              key={"t" + i}
-              x={xi(i)}
-              y={height - 7}
-              fill={AXIS}
-              fontSize={9.5}
-              fontFamily={MONO}
-              textAnchor="middle"
-            >
-              {tLabel(bars[i].t, bars[Math.max(0, i - 10)].t)}
-            </SvgText>
-          ))}
-
-          {/* crosshair */}
-          {cross && ci != null ? (
-            <G>
-              <Line
-                x1={xi(ci)}
-                x2={xi(ci)}
-                y1={0}
-                y2={height - TH}
-                stroke={AXIS}
-                strokeDasharray="3 3"
-              />
+            {/* last price (tag sticks to the edge if the price is out of view) */}
+            {lastIn ? (
               <Line
                 x1={0}
                 x2={PW}
-                y1={cross.y}
-                y2={cross.y}
-                stroke={AXIS}
-                strokeDasharray="3 3"
+                y1={lastY}
+                y2={lastY}
+                stroke={lastUp ? UP : DN}
+                strokeWidth={1}
+                strokeDasharray="2 3"
+                opacity={0.7}
               />
-              <Rect
-                x={PW + 1}
-                y={cross.y - 9}
-                width={AX - 2}
-                height={18}
-                rx={4}
-                fill="#262C36"
-              />
+            ) : null}
+            <Rect
+              x={PW + 1}
+              y={tagY - 9}
+              width={AX - 2}
+              height={18}
+              rx={4}
+              fill={lastUp ? UP : DN}
+            />
+            <SvgText
+              x={PW + AX / 2}
+              y={tagY + 0.5}
+              fill={lastUp ? "#06120D" : "#1C0805"}
+              fontSize={10}
+              fontFamily={MONO}
+              textAnchor="middle"
+              alignmentBaseline="middle"
+            >
+              {fp(last.c)}
+            </SvgText>
+
+            {/* your positions and orders */}
+            {myPos.map((q) => {
+              const pnl = livePnl(q, mark || q.entry);
+              return (
+                <G key={"p" + q.id}>
+                  {lineChip(
+                    "e" + q.id,
+                    q.entry,
+                    `${sideTxt(q.side)} ${q.lev}x  ${sMoney(pnl)}`,
+                    INK,
+                    "#0A0B0E",
+                  )}
+                  {q.liq != null
+                    ? lineChip("l" + q.id, q.liq, "LIQ", DN, "#1C0805", "2 4")
+                    : null}
+                  {q.tp != null
+                    ? lineChip("t" + q.id, q.tp, "TP", UP, "#06120D")
+                    : null}
+                  {q.sl != null
+                    ? lineChip("s" + q.id, q.sl, "SL", DN, "#1C0805")
+                    : null}
+                </G>
+              );
+            })}
+            {myOrd.map((o) =>
+              lineChip(
+                "o" + o.id,
+                o.px,
+                `${o.kind.toUpperCase()} ${sideTxt(o.side)}`,
+                AMBER,
+                "#1B1204",
+                "6 3",
+              ),
+            )}
+
+            {/* RSI pane */}
+            {ind.rsi ? (
+              <G>
+                <Line x1={0} x2={W} y1={MH} y2={MH} stroke={C.hair} />
+                {[30, 70].map((v) => {
+                  const Y = MH + 8 + ((100 - v) / 100) * (RS - 16);
+                  return (
+                    <Line
+                      key={v}
+                      x1={0}
+                      x2={PW}
+                      y1={Y}
+                      y2={Y}
+                      stroke="#1C2129"
+                      strokeDasharray="3 3"
+                    />
+                  );
+                })}
+                <Path
+                  clipPath="url(#pcClip)"
+                  d={(() => {
+                    let d = "",
+                      pen = false;
+                    for (let i = i0; i <= i1; i++) {
+                      const v = I.rsi![i];
+                      if (v == null) {
+                        pen = false;
+                        continue;
+                      }
+                      d +=
+                        (pen ? "L" : "M") +
+                        f1(xi(i)) +
+                        " " +
+                        f1(MH + 8 + ((100 - v) / 100) * (RS - 16));
+                      pen = true;
+                    }
+                    return d;
+                  })()}
+                  stroke="#7FD3E0"
+                  strokeWidth={1.2}
+                  fill="none"
+                />
+                <SvgText
+                  x={PW + 6}
+                  y={MH + 14}
+                  fill="#7FD3E0"
+                  fontSize={10}
+                  fontFamily={MONO}
+                >
+                  {rsiVal != null ? rsiVal.toFixed(1) : ""}
+                </SvgText>
+              </G>
+            ) : null}
+
+            {/* time axis */}
+            {timeTicks.map((i) => (
               <SvgText
-                x={PW + AX / 2}
-                y={cross.y + 0.5}
-                fill={INK}
-                fontSize={10}
-                fontFamily={MONO}
-                textAnchor="middle"
-                alignmentBaseline="middle"
-              >
-                {fp(py(cross.y))}
-              </SvgText>
-              <Rect
-                x={Math.max(2, Math.min(PW - 84, xi(ci) - 42))}
-                y={height - TH + 1}
-                width={84}
-                height={16}
-                rx={4}
-                fill="#262C36"
-              />
-              <SvgText
-                x={Math.max(2, Math.min(PW - 84, xi(ci) - 42)) + 42}
-                y={height - TH + 9.5}
-                fill={INK}
+                key={"t" + i}
+                x={xi(i)}
+                y={height - 7}
+                fill={AXIS}
                 fontSize={9.5}
                 fontFamily={MONO}
                 textAnchor="middle"
-                alignmentBaseline="middle"
               >
-                {tLabel(bars[ci].t)}
+                {tLabel(bars[i].t, bars[Math.max(0, i - every)].t)}
               </SvgText>
-            </G>
-          ) : null}
-        </Svg>
-      ) : null}
-
-      {/* OHLC readout */}
-      <View pointerEvents="none" style={s.ohlc}>
-        <Text style={s.ohlcT} numberOfLines={1}>
-          <Text style={s.k}>O </Text>
-          <Text style={s.b}>{fp(shown.o)} </Text>
-          <Text style={s.k}>H </Text>
-          <Text style={s.b}>{fp(shown.h)} </Text>
-          <Text style={s.k}>L </Text>
-          <Text style={s.b}>{fp(shown.l)} </Text>
-          <Text style={s.k}>C </Text>
-          <Text style={s.b}>{fp(shown.c)} </Text>
-          <Text style={{ color: chg >= 0 ? UP : DN }}>
-            {chg >= 0 ? "+" : "−"}
-            {Math.abs(chg).toFixed(2)}%
-          </Text>
-        </Text>
-        {legend.length ? (
-          <Text style={s.ohlcT} numberOfLines={1}>
-            {legend.map(([k, c, v]) => (
-              <Text key={k} style={{ color: c }}>
-                {k} {v}{" "}
-              </Text>
             ))}
+
+            {/* crosshair */}
+            {cross && ci != null ? (
+              <G>
+                <Line
+                  x1={xi(ci)}
+                  x2={xi(ci)}
+                  y1={0}
+                  y2={height - TH}
+                  stroke={AXIS}
+                  strokeDasharray="3 3"
+                />
+                <Line
+                  x1={0}
+                  x2={PW}
+                  y1={cross.y}
+                  y2={cross.y}
+                  stroke={AXIS}
+                  strokeDasharray="3 3"
+                />
+                <Rect
+                  x={PW + 1}
+                  y={cross.y - 9}
+                  width={AX - 2}
+                  height={18}
+                  rx={4}
+                  fill="#262C36"
+                />
+                <SvgText
+                  x={PW + AX / 2}
+                  y={cross.y + 0.5}
+                  fill={INK}
+                  fontSize={10}
+                  fontFamily={MONO}
+                  textAnchor="middle"
+                  alignmentBaseline="middle"
+                >
+                  {fp(py(cross.y))}
+                </SvgText>
+                <Rect
+                  x={Math.max(2, Math.min(PW - 84, xi(ci) - 42))}
+                  y={height - TH + 1}
+                  width={84}
+                  height={16}
+                  rx={4}
+                  fill="#262C36"
+                />
+                <SvgText
+                  x={Math.max(2, Math.min(PW - 84, xi(ci) - 42)) + 42}
+                  y={height - TH + 9.5}
+                  fill={INK}
+                  fontSize={9.5}
+                  fontFamily={MONO}
+                  textAnchor="middle"
+                  alignmentBaseline="middle"
+                >
+                  {tLabel(bars[ci].t)}
+                </SvgText>
+              </G>
+            ) : null}
+          </Svg>
+        ) : null}
+
+        {/* OHLC readout */}
+        <View pointerEvents="none" style={s.ohlc}>
+          <Text style={s.ohlcT} numberOfLines={1}>
+            <Text style={s.k}>O </Text>
+            <Text style={s.b}>{fp(shown.o)} </Text>
+            <Text style={s.k}>H </Text>
+            <Text style={s.b}>{fp(shown.h)} </Text>
+            <Text style={s.k}>L </Text>
+            <Text style={s.b}>{fp(shown.l)} </Text>
+            <Text style={s.k}>C </Text>
+            <Text style={s.b}>{fp(shown.c)} </Text>
+            <Text style={{ color: chg >= 0 ? UP : DN }}>
+              {chg >= 0 ? "+" : "−"}
+              {Math.abs(chg).toFixed(2)}%
+            </Text>
           </Text>
+          {legend.length ? (
+            <Text style={s.ohlcT} numberOfLines={1}>
+              {legend.map(([k, c, v]) => (
+                <Text key={k} style={{ color: c }}>
+                  {k} {v}{" "}
+                </Text>
+              ))}
+            </Text>
+          ) : null}
+        </View>
+
+        {/* jump back to the latest candle */}
+        {off > 0.5 && W > 0 ? (
+          <Pressable
+            onPress={() => {
+              hTap();
+              stopFling();
+              setVp((v) => ({ ...v, off: 0 }));
+            }}
+            hitSlop={8}
+            accessibilityLabel="Jump to latest candle"
+            style={[s.jump, { left: PW - 38, top: MH - 38 }]}
+          >
+            <Svg
+              width={16}
+              height={16}
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke={INK}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <Path d="M5 5l5 5-5 5M14.5 5v10" />
+            </Svg>
+          </Pressable>
         ) : null}
       </View>
-    </View>
+    </GestureDetector>
   );
 }
 
@@ -952,6 +1134,7 @@ function Stage({
         type={type}
         ind={ind}
         height={height}
+        fs={fs}
         onScrollLock={onScrollLock}
         positions={positions}
         orders={orders}
@@ -1062,7 +1245,8 @@ export function ChartStage({
         statusBarTranslucent
         supportedOrientations={["portrait", "landscape"]}
       >
-        <View style={{ flex: 1, backgroundColor: C.ground }}>
+        {/* a Modal is a separate native window, so gestures need their own root view here */}
+        <GestureHandlerRootView style={{ flex: 1, backgroundColor: C.ground }}>
           {/* phone upright -> rotate the stage to landscape, like the prototype */}
           <View
             style={{
@@ -1091,7 +1275,7 @@ export function ChartStage({
               />
             ) : null}
           </View>
-        </View>
+        </GestureHandlerRootView>
       </Modal>
     </>
   );
@@ -1132,6 +1316,17 @@ const s = StyleSheet.create({
   },
   k: { color: C.ink3 },
   b: { color: INK },
+  jump: {
+    position: "absolute",
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#262C36",
+    borderWidth: 1,
+    borderColor: "#3A404A",
+  },
   menu: {
     position: "absolute",
     top: 44,

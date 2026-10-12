@@ -1,40 +1,19 @@
-// src/screens/PortfolioScreen.tsx — the Folio tab (prototype #s-folio)
-//
-//   ┌──────────── cover ───────────── [share][activity][settings]
-//   (S)                                  ← avatar overlaps the cover, pen badge → Account
-//   Shanu
-//   @shanu
-//   [THE PATIENT BUILDER]
-//   ◷ 3–5 years horizon   ⇄ 3 trades   ▦ Since Sep 2026
-//   ───────────────────────────────────
-//   $1,240.50                     24h 7d 30d All
-//   +$32.10 30d                           ← follows your finger when scrubbing
-//   ····· chart, full width, draws itself ·····
-//   ($) Cash in wallet  $440          [+] [⋯]
-//       + $182 in perps · +$12            ← only when you hold perps
-//   Positions (3)       ( One-time • | Recurring | Perps )
-//   $800 in positions
-//   [All] [Stocks] [Pre-IPOs] [Index funds]   (Perps tab: All · Stocks · Index funds · Commodities)
-//   rows…
-//   HELD AT 4a91…f2c7 · SELF-CUSTODY
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   Pressable,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
+  ActivityIndicator,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
+import * as Clipboard from "expo-clipboard";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { useNavigation, useScrollToTop } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-
 import { useAuth, type OnboardingProfile } from "../context";
 import { useWallet } from "../context/WalletContext";
 import { useIndexFunds, useStocks } from "../hooks";
@@ -42,21 +21,27 @@ import { useRecurringBuys } from "../hooks/useTrade";
 import { useUserTransactions } from "../hooks/useUserRecords";
 import { usePortfolioSeries } from "../hooks/usePortfolioSeries";
 import { useCountUp } from "../hooks/useCountUp";
+import { useWalletBalance } from "../hooks/useWalletBalance";
+import { useSpotToPerpDeposit } from "../hooks/useSpotToPerpDeposit";
+import { toast as perpToast } from "../data/perpsStore";
 import { getOnboardingProfile } from "../lib";
 import type { TabParamList } from "../navigation/RootTabs";
 import { useTabBarSpace } from "../navigation/TabBar";
 import { C, FONT, TYPE, em } from "../theme";
-import { timing } from "../theme/motion";
 import { Chip, IconButton, PressScale, Rise } from "../components/ui";
 import { GearIcon, HistoryIcon, ShareIcon } from "../components/Icons";
 import { AssetAvatar } from "../components/AssetAvatar";
 import { useSheet } from "../components/Sheet";
+import { useToast } from "../components/Toast";
 import { useSplashDone } from "../components/SplashIntro";
+import { TransferSheet } from "../components/TransferSheet";
+import { PerpToast } from "../components/perps/PerpToast";
 import { PortfolioChart } from "../components/folio/PortfolioChart";
+import { ShareSheet } from "../components/ShareSheet";
+import { WithdrawFlow } from "../components/WithdrawFlow";
 import {
   ActivitySheet,
   DepositFlow,
-  MoreSheet,
   shortAddr,
 } from "../components/folio/FolioSheets";
 import {
@@ -64,6 +49,7 @@ import {
   PerpSummaryLine,
   PerpsHeader,
 } from "../components/PerpsPortfolio";
+import { useFollowing } from "../lib/follows";
 import { dayChange, money, pct } from "../lib/format";
 import { fundPositions, useFundLots } from "../lib/fundHoldings";
 import { toFund } from "../lib/indexFunds";
@@ -72,6 +58,7 @@ import { hSelect, hTap } from "../lib/haptics";
 import Animated, { FadeIn } from "react-native-reanimated";
 import type { ChartPeriod } from "../hooks";
 import { usePerpPositions, type PerpCategory } from "../hooks/usePerpPositions";
+import { useAllPositions } from "../hooks/perps";
 
 type Nav = BottomTabNavigationProp<TabParamList, "Portfolio">;
 
@@ -113,12 +100,32 @@ export function PortfolioScreen() {
   const bottom = useTabBarSpace();
   const splashDone = useSplashDone();
   const sheet = useSheet();
+  const toast = useToast();
+  const following = useFollowing();
   const perp = usePerpPositions();
+  const walletBal = useWalletBalance();
+  const bal = {
+    perp: walletBal.perpAvailable,
+    spot: walletBal.wallet?.usdc.balance ?? 0,
+  };
+  const {
+    deposit,
+    phase: depositPhase,
+    amount: depositAmount,
+    error: depositError,
+    reset: resetDeposit,
+  } = useSpotToPerpDeposit();
+  const [xfer, setXfer] = useState(false);
+  const [xferDir, setXferDir] = useState<"in" | "out">("in");
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
 
   const { user, idToken } = useAuth();
+
+  const allPos = useAllPositions(idToken);
+  const perpMargin = allPos.data.reduce((t, p) => t + p.margin, 0);
+  const perpPnl = allPos.data.reduce((t, p) => t + p.pnl, 0);
   const {
     wallet,
     walletAddress,
@@ -147,38 +154,74 @@ export function PortfolioScreen() {
   const [range, setRange] = useState(RANGES[3]);
   const holdings = useMemo(
     () =>
-      tokens.map((t) => ({
-        mint: t.mint,
-        balance: t.balance,
-        price: Number(t.price),
-      })),
+      tokens
+        .map((t) => {
+          const price = Number(t.price);
+          const balance = Number(t.balance);
+
+          return {
+            mint: t.mint,
+            balance,
+            price,
+          };
+        })
+        .filter(
+          (t) =>
+            Number.isFinite(t.balance) &&
+            Number.isFinite(t.price) &&
+            t.price >= 0,
+        ),
     [tokens],
   );
-  const { points } = usePortfolioSeries(holdings, usdcValue, range.period);
-  const [scrubIdx, setScrubIdx] = useState<number | null>(null);
 
-  // Total value = wallet + perp equity (same rule as the prototype's total).
-  // The chart series is wallet-only, so perp equity is added on top as a flat offset.
-  const liveTotal = useCountUp(usdValue + perp.equity);
-  const shownValue =
-    scrubIdx != null
-      ? (points[scrubIdx]?.v ?? usdValue) + perp.equity
-      : liveTotal;
-  const startV = points[0]?.v ?? usdValue;
-  const endV = scrubIdx != null ? (points[scrubIdx]?.v ?? usdValue) : usdValue;
+  // Total value = wallet + perp equity. One source (walletBal.perpTotal) feeds
+  // the hero number, the chart and the delta so they can never disagree.
+  const perpTotal = walletBal.perpTotal;
+  const liveTarget = usdValue + perpTotal; // un-animated, used for delta math
+  const liveTotal = useCountUp(liveTarget);
+
+  const { points: rawPoints } = usePortfolioSeries(
+    holdings,
+    usdcValue,
+    range.period,
+  );
+
+  // Chart = wallet series + flat perp offset, last point pinned to the live total
+  const points = useMemo(() => {
+    if (!rawPoints.length) return rawPoints;
+    const pts = rawPoints.map((p) => ({ ...p, v: p.v + perpTotal }));
+    pts[pts.length - 1] = { ...pts[pts.length - 1], v: liveTarget };
+    return pts;
+  }, [rawPoints, perpTotal, liveTarget]);
+
+  const [scrubIdx, setScrubIdx] = useState<number | null>(null);
+  // the points array changes length with the range, so drop any stale scrub
+  useEffect(() => {
+    setScrubIdx(null);
+  }, [range.key]);
+
+  const safeIdx =
+    scrubIdx != null && scrubIdx >= 0 && scrubIdx < points.length
+      ? scrubIdx
+      : null;
+  const isLatest = safeIdx == null || safeIdx === points.length - 1;
+
+  // hero: animated live total at rest, exact point value while scrubbing
+  const shownValue = isLatest ? liveTotal : points[safeIdx!].v;
+  const startV = points[0]?.v ?? liveTarget;
+  const endV = isLatest ? liveTarget : points[safeIdx!].v;
   const delta = endV - startV;
-  const deltaLabel =
-    scrubIdx == null || scrubIdx === points.length - 1
-      ? range.label
-      : range.period === "1D"
-        ? new Date(points[scrubIdx].t * 1000).toLocaleTimeString("en-GB", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : new Date(points[scrubIdx].t * 1000).toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "short",
-          });
+  const deltaLabel = isLatest
+    ? range.label
+    : range.period === "1D"
+      ? new Date(points[safeIdx!].t * 1000).toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : new Date(points[safeIdx!].t * 1000).toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+        });
 
   const cash = useCountUp(usdcValue);
 
@@ -193,6 +236,18 @@ export function PortfolioScreen() {
       m.set(s.tokenAddress, dayChange(s.price, s.marketOpenPrice));
     return m;
   }, [us.stocks, pre.stocks]);
+
+  useEffect(() => {
+    if (depositPhase === "done") {
+      perpToast(`Moved ${money(depositAmount)} to perp`, "TRANSFER CONFIRMED");
+      refresh(); // this screen's own cash/positions numbers, not just TradeScreen's
+      resetDeposit();
+    } else if (depositPhase === "error" && depositError) {
+      perpToast("Transfer issue", depositError.toUpperCase());
+      resetDeposit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depositPhase]);
 
   const positions = useMemo(
     () =>
@@ -250,10 +305,8 @@ export function PortfolioScreen() {
   const handle = user?.email ? `@${user.email.split("@")[0]}` : "";
   const photo = (user as { photo?: string | null } | null)?.photo ?? null;
   const tradeCount = txs.data?.data?.length ?? 0;
-  const firstTx = txs.data?.data?.length
-    ? new Date(Math.min(...txs.data.data.map((t) => +new Date(t.createdAt))))
-    : null;
-  const horizon = profile?.horizonLabel ?? null;
+  // "US stocks · Pre-IPOs" (what the investor profile says they own)
+  const owns = profile?.owns?.length ? profile.owns.join(" · ") : null;
 
   // ---------- navigation ----------
   const openAsset = (symbol: string, stockType: string) =>
@@ -271,13 +324,17 @@ export function PortfolioScreen() {
       params: { id },
       initial: false,
     });
-  // Trade lives in HomeStack
   const openTrade = (symbol?: string) =>
-    nav.navigate("Home", {
-      screen: "Trade",
-      params: symbol ? { symbol } : undefined,
-      initial: false,
-    });
+    nav.navigate("Trade", symbol ? { symbol } : undefined);
+
+  // PerpPositionList may hand back a position or a symbol; accept both
+  const openPerp = (
+    arg?: string | { sym?: string; symbol?: string; coin?: string },
+  ) => {
+    const raw =
+      typeof arg === "string" ? arg : (arg?.sym ?? arg?.symbol ?? arg?.coin);
+    openTrade(raw?.includes(":") ? raw.split(":")[1] : raw);
+  };
   const toAccount = () => nav.navigate("Profile");
   const toOrders = () =>
     (nav as any).navigate("Profile", {
@@ -287,10 +344,72 @@ export function PortfolioScreen() {
 
   const openActivity = () =>
     sheet.open(<ActivitySheet />, { label: "Activity" });
+  const openTransfer = () => {
+    hTap();
+    setXferDir("in");
+    setXfer(true);
+  };
+  const openTransferOut = () => {
+    // perp -> spot (used by Withdraw: "move it to spot first")
+    sheet.close();
+    setXferDir("out");
+    setXfer(true);
+  };
+  const copyAddress = async () => {
+    if (!walletAddress) return;
+    sheet.close(); // close first: a toast fired under an open sheet stays hidden
+    try {
+      await Clipboard.setStringAsync(walletAddress);
+      toast("Address copied", "SELF-CUSTODY WALLET");
+    } catch {
+      toast("Copy did not work", "SELECT IT BY HAND");
+    }
+  };
+  const openWithdraw = () =>
+    sheet.update(
+      <WithdrawFlow
+        spot={bal.spot}
+        perp={bal.perp}
+        onMoveToSpot={openTransferOut}
+        onDone={() => {
+          sheet.close();
+          refresh();
+        }}
+      />,
+    );
+
+  const openShare = () =>
+    sheet.open(
+      <ShareSheet
+        handle={handle || "@you"}
+        initial={initial}
+        chip={profile?.title ?? ""}
+        refCode={(handle || "you").replace("@", "").toUpperCase()}
+        holdings={holdings}
+        usdcValue={usdcValue}
+        positions={positions.map((p) => ({
+          symbol: p.symbol,
+          imageUrl: p.imageUrl,
+          value: p.value,
+          change: p.change,
+        }))}
+        perp={{ positions: perp.positions, pnl: perp.pnl }}
+      />,
+      { label: "Share" },
+    );
+
   const openMore = () =>
     sheet.open(
-      <MoreSheet
+      <CashMenu
+        spot={bal.spot}
+        perp={bal.perp}
         address={walletAddress}
+        onMove={() => {
+          sheet.close();
+          openTransfer();
+        }}
+        onWithdraw={openWithdraw}
+        onCopy={copyAddress}
         onActivity={() => sheet.update(<ActivitySheet />)}
         onOrders={() => {
           sheet.close();
@@ -331,32 +450,9 @@ export function PortfolioScreen() {
           />
         }
       >
-        {/* cover + tools */}
-        <LinearGradient
-          colors={["#151922", "#11141A"]}
-          style={[s.cover, { height: 96 + insets.top }]}
-        >
-          <View style={[s.tools, { top: insets.top + 16 }]}>
-            <IconButton
-              label="Share your wallet address"
-              onPress={() =>
-                walletAddress && Share.share({ message: walletAddress })
-              }
-            >
-              <ShareIcon />
-            </IconButton>
-            <IconButton label="Activity" onPress={openActivity}>
-              <HistoryIcon />
-            </IconButton>
-            <IconButton label="Settings" onPress={toAccount}>
-              <GearIcon />
-            </IconButton>
-          </View>
-        </LinearGradient>
-
-        <View style={s.page}>
-          {/* identity */}
-          <Rise {...rise(0)} style={s.idRow}>
+        <View style={[s.page, { paddingTop: insets.top + 12 }]}>
+          {/* header: avatar · name · three round buttons */}
+          <Rise {...rise(0)} style={s.head}>
             <PressScale
               scaleTo={0.95}
               onPress={() => {
@@ -372,57 +468,48 @@ export function PortfolioScreen() {
               ) : (
                 <Text style={s.avaText}>{initial}</Text>
               )}
-              <View style={s.pen}>
-                <Svg
-                  width={12}
-                  height={12}
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke={C.ink1}
-                  strokeWidth={1.9}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <Path d="M10.5 2.5l3 3L5 14H2v-3z" />
-                </Svg>
-              </View>
             </PressScale>
+            <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
+              <Text style={s.name} numberOfLines={1}>
+                {name}
+              </Text>
+              {handle ? <Text style={s.handle}>{handle}</Text> : null}
+            </View>
+            <View style={s.tools}>
+              <IconButton label="Share your profile" onPress={openShare}>
+                <ShareIcon />
+              </IconButton>
+              <IconButton label="Activity" onPress={openActivity}>
+                <HistoryIcon />
+              </IconButton>
+              <IconButton label="Settings" onPress={toAccount}>
+                <GearIcon />
+              </IconButton>
+            </View>
           </Rise>
 
-          <Rise {...rise(1)} style={{ gap: 4, marginTop: 14 }}>
-            <Text style={s.name} numberOfLines={1}>
-              {name}
-            </Text>
-            {handle ? <Text style={s.handle}>{handle}</Text> : null}
-          </Rise>
-
-          {profile ? (
-            <Rise
-              {...rise(2)}
-              style={{ marginTop: 14, alignSelf: "flex-start" }}
-            >
+          {/* chip · following · followers · owns · trades */}
+          <Rise {...rise(1)} style={s.meta}>
+            {profile ? (
               <Chip variant="mint" label={profile.title.toUpperCase()} />
-            </Rise>
-          ) : null}
-
-          <Rise {...rise(3)} style={s.meta}>
-            {horizon ? <Meta icon="clock" text={`${horizon} horizon`} /> : null}
+            ) : null}
+            <Text style={s.stat}>
+              <Text style={s.statB}>{following.size}</Text> following
+            </Text>
+            <Text style={s.stat}>
+              <Text style={s.statB}>0</Text> followers
+            </Text>
+            {owns ? <Meta icon="grid" text={owns} /> : null}
             <Meta
               icon="swap"
               text={`${tradeCount} ${tradeCount === 1 ? "trade" : "trades"}`}
             />
-            {firstTx ? (
-              <Meta
-                icon="cal"
-                text={`Since ${firstTx.toLocaleDateString("en-GB", { month: "short", year: "numeric" })}`}
-              />
-            ) : null}
           </Rise>
           <View style={s.hr} />
 
           {/* hero number + ranges */}
           <Rise {...rise(4)} style={s.heroRow}>
-            <View style={{ flex: 1, gap: 8 }}>
+            <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 160, gap: 8 }}>
               <HeroMoney value={loading ? 0 : shownValue} />
               <Text style={s.delta}>
                 <Text style={{ color: delta >= 0 ? C.mint : C.loss }}>
@@ -476,42 +563,94 @@ export function PortfolioScreen() {
             <View style={s.cashIco}>
               <Text style={s.cashIcoText}>$</Text>
             </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={s.cashLbl}>Cash in wallet</Text>
-              <Text style={s.cash}>{loading ? "…" : money(cash)}</Text>
+            <View style={{ flex: 1, gap: 6, minWidth: 0 }}>
+              <View style={s.cashTop}>
+                <Text style={s.cashLbl} numberOfLines={1}>
+                  Cash in wallet
+                </Text>
+                <PressScale
+                  scaleTo={0.95}
+                  onPress={() => {
+                    hTap();
+                    sheet.open(<DepositFlow address={walletAddress} />, {
+                      label: "Deposit",
+                    });
+                  }}
+                  style={s.dep}
+                  accessibilityRole="button"
+                  accessibilityLabel="Deposit"
+                >
+                  <Svg
+                    width={15}
+                    height={15}
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke={C.onMint}
+                    strokeWidth={2.4}
+                    strokeLinecap="round"
+                  >
+                    <Path d="M10 4v12M4 10h12" />
+                  </Svg>
+                  <Text style={s.depText}>Deposit</Text>
+                </PressScale>
+                <SqButton label="More" onPress={openMore}>
+                  <Svg width={18} height={18} viewBox="0 0 20 20" fill={C.ink1}>
+                    <Circle cx="4.5" cy="10" r="1.6" />
+                    <Circle cx="10" cy="10" r="1.6" />
+                    <Circle cx="15.5" cy="10" r="1.6" />
+                  </Svg>
+                </SqButton>
+              </View>
+
+              <View style={s.cashBal}>
+                <Text style={s.cash} numberOfLines={1}>
+                  {loading ? "…" : money(cash)}
+                </Text>
+                <PressScale
+                  scaleTo={0.9}
+                  onPress={() => {
+                    hTap();
+                    refresh();
+                  }}
+                  disabled={refreshing}
+                  style={[s.rf, refreshing && { opacity: 0.4 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Refresh balances"
+                >
+                  <Svg
+                    width={16}
+                    height={16}
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke={C.ink3}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <Path d="M16.2 8.2A6.5 6.5 0 0 0 4.4 6.5" />
+                    <Path d="M4 3.5v3.3h3.3" />
+                    <Path d="M3.8 11.8a6.5 6.5 0 0 0 11.8 1.7" />
+                    <Path d="M16 16.5v-3.3h-3.3" />
+                  </Svg>
+                </PressScale>
+              </View>
+
               <PerpSummaryLine
-                equity={perp.equity}
+                equity={walletBal.perpAvailable}
                 pnl={perp.pnl}
                 count={perp.positions.length}
               />
-            </View>
-            <SqButton
-              label="Add USDC"
-              onPress={() =>
-                sheet.open(<DepositFlow address={walletAddress} />, {
-                  label: "Deposit",
-                })
-              }
-            >
-              <Svg
-                width={20}
-                height={20}
-                viewBox="0 0 20 20"
-                fill="none"
-                stroke={C.ink1}
-                strokeWidth={2}
-                strokeLinecap="round"
+              <PressScale
+                scaleTo={0.97}
+                onPress={openTransfer}
+                style={s.perpLine}
+                accessibilityRole="button"
+                accessibilityLabel={`Perp account ${money(bal.perp)}. Transfer`}
               >
-                <Path d="M10 4v12M4 10h12" />
-              </Svg>
-            </SqButton>
-            <SqButton label="More" onPress={openMore}>
-              <Svg width={20} height={20} viewBox="0 0 20 20" fill={C.ink1}>
-                <Circle cx="4.5" cy="10" r="1.6" />
-                <Circle cx="10" cy="10" r="1.6" />
-                <Circle cx="15.5" cy="10" r="1.6" />
-              </Svg>
-            </SqButton>
+                <Text style={s.perpTxt}>Perp account {money(bal.perp)}</Text>
+                <Text style={s.perpGo}>Transfer ›</Text>
+              </PressScale>
+            </View>
           </Rise>
 
           {/* positions header */}
@@ -520,8 +659,8 @@ export function PortfolioScreen() {
               {tab === "perp" ? (
                 <PerpsHeader
                   count={perp.positions.length}
-                  margin={perp.margin}
-                  pnl={perp.pnl}
+                  margin={perpMargin}
+                  pnl={perpPnl}
                 />
               ) : (
                 <View style={{ gap: 3 }}>
@@ -592,12 +731,25 @@ export function PortfolioScreen() {
             style={{ marginTop: 8 }}
           >
             {tab === "perp" ? (
-              <PerpPositionList
-                positions={perp.positions}
-                category={perpCat}
-                onOpen={(p) => openTrade(p.symbol)}
-                onOpenTrade={() => openTrade()}
-              />
+              allPos.loading ? (
+                <ActivityIndicator
+                  color={C.ink3}
+                  style={{ paddingVertical: 24 }}
+                />
+              ) : allPos.error && !allPos.data.length ? (
+                <Pressable onPress={allPos.refetch} accessibilityRole="button">
+                  <Text style={s.empty}>
+                    Couldn't load perp positions. Tap to retry.
+                  </Text>
+                </Pressable>
+              ) : (
+                <PerpPositionList
+                  positions={allPos.data}
+                  category={perpCat}
+                  onOpen={openPerp}
+                  onOpenTrade={openPerp}
+                />
+              )
             ) : tab === "open" && cat === "index" ? (
               funds.length === 0 ? (
                 <Text style={s.empty}>
@@ -806,6 +958,21 @@ export function PortfolioScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* TransferSheet fires its success toast through perpsStore, so PerpToast must be mounted here */}
+      <PerpToast />
+
+      {xfer ? (
+        <TransferSheet
+          dir={xferDir}
+          onDeposit={deposit}
+          onClose={() => setXfer(false)}
+          onMoved={() => {
+            setXfer(false);
+            refresh(); // re-pull wallet balances after money moves
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -848,13 +1015,7 @@ function SqButton({
   );
 }
 
-function Meta({
-  icon,
-  text,
-}: {
-  icon: "clock" | "swap" | "cal";
-  text: string;
-}) {
+function Meta({ icon, text }: { icon: "grid" | "swap"; text: string }) {
   return (
     <View style={s.metaItem}>
       <Svg
@@ -867,18 +1028,15 @@ function Meta({
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        {icon === "clock" ? (
+        {icon === "grid" ? (
           <>
-            <Circle cx="10" cy="10" r="7" />
-            <Path d="M10 6v4.3l2.8 1.7" />
+            <Rect x="3.5" y="3.5" width="5.5" height="5.5" rx="1.2" />
+            <Rect x="11" y="3.5" width="5.5" height="5.5" rx="1.2" />
+            <Rect x="3.5" y="11" width="5.5" height="5.5" rx="1.2" />
+            <Rect x="11" y="11" width="5.5" height="5.5" rx="1.2" />
           </>
-        ) : icon === "swap" ? (
-          <Path d="M4 7h11l-3-3M16 13H5l3 3" />
         ) : (
-          <>
-            <Rect x="3" y="4.5" width="14" height="12" rx="2" />
-            <Path d="M3 8.5h14M7 3v3M13 3v3" />
-          </>
+          <Path d="M4 7h11l-3-3M16 13H5l3 3" />
         )}
       </Svg>
       <Text style={s.metaText}>{text}</Text>
@@ -886,64 +1044,138 @@ function Meta({
   );
 }
 
+/** The ⋯ drawer: CASH — Move money · Withdraw · Copy address · Activity · Standing orders · Account */
+function CashMenu({
+  spot,
+  perp,
+  address,
+  onMove,
+  onWithdraw,
+  onCopy,
+  onActivity,
+  onOrders,
+  onAccount,
+}: {
+  spot: number;
+  perp: number;
+  address?: string | null;
+  onMove: () => void;
+  onWithdraw: () => void;
+  onCopy: () => void;
+  onActivity: () => void;
+  onOrders: () => void;
+  onAccount: () => void;
+}) {
+  const rows: [string, string, string, () => void][] = [
+    [
+      "move",
+      "Move money",
+      `Spot ${money(spot)} · Perp account ${money(perp)}`,
+      onMove,
+    ],
+    ["wd", "Withdraw", "To a crypto wallet or your bank", onWithdraw],
+    [
+      "addr",
+      "Copy wallet address",
+      `${shortAddr(address!)} · self-custody`,
+      onCopy,
+    ],
+    ["act", "Activity", "Every buy, sale and order", onActivity],
+    ["rec", "Standing orders", "Recurring buys you have set up", onOrders],
+    ["acc", "Account", "Profile, notifications, sign out", onAccount],
+  ];
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={s.menuLbl}>CASH</Text>
+      <View>
+        {rows.map(([k, title, sub, fn], i) => (
+          <PressScale
+            key={k}
+            scaleTo={0.985}
+            onPress={() => {
+              hTap();
+              fn();
+            }}
+            style={[s.menuRow, i < rows.length - 1 && s.menuHair]}
+            accessibilityRole="button"
+            accessibilityLabel={`${title}. ${sub}`}
+          >
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={s.menuTtl}>{title}</Text>
+              <Text style={s.menuSub}>{sub}</Text>
+            </View>
+            <Text style={s.menuChev}>›</Text>
+          </PressScale>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.ground },
-  cover: { position: "relative" },
-  tools: { position: "absolute", right: 16, flexDirection: "row", gap: 10 },
   page: { paddingHorizontal: 20 },
 
-  idRow: { marginTop: -38, flexDirection: "row" },
+  head: { flexDirection: "row", alignItems: "center", gap: 14 },
+  tools: { flexDirection: "row", gap: 6 },
   ava: {
-    width: 84,
-    height: 84,
+    width: 64,
+    height: 64,
     borderRadius: 999,
     backgroundColor: C.mint,
-    borderWidth: 4,
-    borderColor: C.ground,
     alignItems: "center",
     justifyContent: "center",
   },
-  avaImg: { width: 76, height: 76, borderRadius: 999 },
+  avaImg: { width: 64, height: 64, borderRadius: 999 },
   avaText: {
     fontFamily: FONT.sans800,
-    fontSize: 30,
-    letterSpacing: em(30, -0.04),
+    fontSize: 26,
+    letterSpacing: em(26, -0.04),
     color: C.onMint,
-  },
-  pen: {
-    position: "absolute",
-    right: -2,
-    bottom: 0,
-    width: 30,
-    height: 30,
-    borderRadius: 999,
-    backgroundColor: C.raised,
-    borderWidth: 3,
-    borderColor: C.ground,
-    alignItems: "center",
-    justifyContent: "center",
   },
   name: {
     fontFamily: FONT.sans800,
-    fontSize: 28,
-    letterSpacing: em(28, -0.04),
+    fontSize: 21,
+    letterSpacing: em(21, -0.035),
     color: C.ink1,
   },
-  handle: { fontFamily: FONT.sans400, fontSize: 15, color: C.ink3 },
+  handle: { fontFamily: FONT.sans400, fontSize: 13, color: C.ink3 },
 
   meta: {
     flexDirection: "row",
     flexWrap: "wrap",
+    alignItems: "center",
     columnGap: 16,
-    rowGap: 6,
-    marginTop: 14,
+    rowGap: 10,
+    marginTop: 16,
   },
+  stat: { fontFamily: FONT.sans400, fontSize: 15, color: C.ink3 },
+  statB: { fontFamily: FONT.sans800, color: C.ink1 },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  metaText: { fontFamily: FONT.sans400, fontSize: 12.5, color: C.ink4 },
+  metaText: { fontFamily: FONT.sans400, fontSize: 14, color: C.ink3 },
+
+  menuLbl: {
+    fontFamily: FONT.mono400,
+    fontSize: 11,
+    letterSpacing: em(11, 0.28),
+    color: C.mint,
+    marginBottom: 6,
+  },
+  menuRow: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+  },
+  menuHair: { borderBottomWidth: 1, borderBottomColor: C.hair },
+  menuTtl: { fontFamily: FONT.sans800, fontSize: 17, color: C.ink1 },
+  menuSub: { fontFamily: FONT.sans400, fontSize: 14, color: C.ink3 },
+  menuChev: { fontSize: 17, color: C.ink4 },
   hr: {
     height: 1,
     backgroundColor: C.hair,
-    marginTop: 20,
+    marginTop: 18,
     marginHorizontal: -20,
   },
 
@@ -951,7 +1183,6 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     flexWrap: "wrap",
-    rowGap: 12,
     marginTop: 20,
     gap: 12,
   },
@@ -998,17 +1229,46 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   cashIcoText: { fontFamily: FONT.sans700, fontSize: 22, color: C.ink1 },
-  cashLbl: { fontFamily: FONT.sans400, fontSize: 14, color: C.ink3 },
+  cashTop: { flexDirection: "row", alignItems: "center", gap: 8 },
+  cashBal: { flexDirection: "row", alignItems: "center", gap: 6 },
+  cashLbl: { flex: 1, fontFamily: FONT.sans400, fontSize: 14, color: C.ink3 },
+  dep: {
+    height: 40,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: C.mint,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  depText: { fontFamily: FONT.sans700, fontSize: 15, color: C.onMint },
+  rf: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   cash: {
+    flex: 1,
     fontFamily: FONT.sans800,
-    fontSize: 22,
+    fontSize: 26,
     letterSpacing: em(22, -0.03),
     color: C.ink1,
     fontVariant: ["tabular-nums"],
   },
+  perpLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    alignSelf: "flex-start",
+    minHeight: 30,
+  },
+  perpTxt: { fontFamily: FONT.mono400, fontSize: 11.5, color: C.ink3 },
+  perpGo: { fontFamily: FONT.sans700, fontSize: 12.5, color: C.mint },
   sq: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     borderRadius: 14,
     backgroundColor: C.surface,
     borderWidth: 1,

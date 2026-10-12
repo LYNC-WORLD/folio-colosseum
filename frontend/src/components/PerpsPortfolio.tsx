@@ -2,12 +2,10 @@ import { StyleSheet, Text, View } from "react-native";
 import { PressScale } from "./ui";
 import { C, FONT, TYPE, em } from "../theme";
 import { hTap } from "../lib/haptics";
-import {
-  PerpCategory,
-  PerpPosition,
-  pnlOf,
-  roeOf,
-} from "../hooks/usePerpPositions";
+import type { PerpCategory } from "../hooks/usePerpPositions";
+import { UiPosition } from "../hooks/perps";
+
+export type PerpRow = UiPosition & { category?: PerpCategory };
 
 const usd = (n: number) =>
   "$" +
@@ -34,8 +32,8 @@ export function PerpSummaryLine({
     <Text style={s.summary}>
       {"+ "}
       {usd(equity)} in perps
-      {" · "}
-      <Text style={{ color: tone(pnl) }}>{sMoney(pnl)}</Text>
+      {/* {" · "} */}
+      {/* <Text style={{ color: tone(pnl) }}>{sMoney(pnl)}</Text> */}
     </Text>
   );
 }
@@ -74,12 +72,14 @@ export function PerpPositionRow({
   last,
   onPress,
 }: {
-  p: PerpPosition;
+  p: PerpRow;
   last?: boolean;
-  onPress?: (p: PerpPosition) => void;
+  onPress?: (p: PerpRow) => void;
 }) {
-  const pnl = pnlOf(p);
-  const roe = roeOf(p);
+  const name = p.sym;
+  const mark = p.size ? p.value / p.size : p.entry; // mark price = position value / size
+  const pnl = p.pnl;
+  const roe = p.roe;
   const long = p.side > 0;
   return (
     <PressScale
@@ -90,15 +90,15 @@ export function PerpPositionRow({
       }}
       style={[s.row, !last && s.hair]}
       accessibilityRole="button"
-      accessibilityLabel={`${p.name} ${long ? "long" : "short"} ${p.lev}x, ${sMoney(pnl)}`}
+      accessibilityLabel={`${name} ${long ? "long" : "short"} ${p.lev}x, ${sMoney(pnl)}`}
     >
       <View style={s.logo}>
-        <Text style={s.logoText}>{p.name.slice(0, 3).toUpperCase()}</Text>
+        <Text style={s.logoText}>{name.slice(0, 3).toUpperCase()}</Text>
       </View>
       <View style={{ flex: 1, gap: 5, minWidth: 0 }}>
         <View style={s.line}>
           <Text style={TYPE.ttl} numberOfLines={1}>
-            {p.name}
+            {name}
           </Text>
           <View
             style={[
@@ -116,7 +116,7 @@ export function PerpPositionRow({
           </View>
         </View>
         <Text style={s.px} numberOfLines={1}>
-          {usd(p.entry)} → {usd(p.mark)}
+          {usd(p.entry)} → {usd(mark)}
         </Text>
       </View>
       <View style={{ alignItems: "flex-end", gap: 4 }}>
@@ -134,13 +134,13 @@ export function PerpPositionList({
   onOpen,
   onOpenTrade,
 }: {
-  positions: PerpPosition[];
+  positions: PerpRow[];
   category: "all" | PerpCategory;
-  onOpen?: (p: PerpPosition) => void;
+  onOpen?: (p: PerpRow) => void;
   onOpenTrade: () => void;
 }) {
   const rows = positions.filter(
-    (p) => category === "all" || p.category === category,
+    (p) => category === "all" || (p.category ?? "stocks") === category,
   );
   if (!rows.length) {
     return (

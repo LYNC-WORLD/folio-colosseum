@@ -6,16 +6,14 @@
 //       shanu@gmail.com
 //   [ $1,240 ] [ 14 ] [ 2 ]        TOTAL VALUE · TRADES · FOLLOWING
 //   ┌ INVESTOR PROFILE ─────────────────┐
-//   │ The Patient Builder               │
-//   │ US stocks · Pre-IPOs · …          │
-//   │ [ Retake the questions ]          │
 //   WALLET
 //   [ 4a91…f2c7  SELF-CUSTODY      ⧉ ]
-//   $440.00 USDC                [Add funds]
+//   $440.00 USDC                [ Add funds ]
+//   Perp account $0.00  Transfer ›   <- opens TransferSheet (drawer)
 //   Standing orders           2 active  ›
+//   Perp positions              1 open  ›
 //   Every transaction              14  ›
 //   NOTIFY ME WHEN  (switches)
-//   fee disclosure
 //   [ Sign out ]
 
 import { useEffect, useState } from "react";
@@ -48,11 +46,14 @@ import { BackLink } from "../components/BackLink";
 import { useSheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { DepositFlow, shortAddr } from "../components/folio/FolioSheets";
+import { TransferSheet } from "../components/TransferSheet";
+import { PerpToast } from "../components/perps/PerpToast";
 import { useFollowing } from "../lib/follows";
 import { NOTIFY_OPTIONS, setNotify, useNotifyPrefs } from "../lib/notifyPrefs";
 import { money, money0 } from "../lib/format";
 import { hTap } from "../lib/haptics";
 import { usePerpPositions } from "../hooks/usePerpPositions";
+import { useBalances } from "../hooks/useBalances";
 
 const APP_VERSION = "0.9.2";
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
@@ -77,6 +78,7 @@ export function ProfileScreen() {
   } = useWallet();
   const txs = useUserTransactions(idToken ?? undefined);
   const perp = usePerpPositions();
+  const bal = useBalances(); // { spot, perp }
 
   const { recurringBuys, reload: reloadRecurring } = useRecurringBuys();
   const following = useFollowing();
@@ -87,8 +89,9 @@ export function ProfileScreen() {
     getOnboardingProfile().then(setProfile);
   }, []);
 
-  const total = useCountUp(usdValue + perp.equity);
+  const total = useCountUp(bal.perp + usdValue);
   const [signingOut, setSigningOut] = useState(false);
+  const [xfer, setXfer] = useState(false); // Transfer drawer (spot <-> perp)
 
   if (!user) return null;
 
@@ -139,6 +142,11 @@ export function ProfileScreen() {
     } catch {
       toast("Copy did not work", "SELECT IT BY HAND");
     }
+  };
+
+  const openTransfer = () => {
+    hTap();
+    setXfer(true);
   };
 
   const r = (i: number) => ({ delay: i * 55, duration: 440 });
@@ -258,6 +266,7 @@ export function ProfileScreen() {
           </View>
 
           <View>
+            {/* spot balance + Add funds */}
             <View style={[s.row, s.hair]}>
               <View style={{ flex: 1, gap: 3 }}>
                 <Text style={s.balance}>
@@ -266,6 +275,17 @@ export function ProfileScreen() {
                 <Text style={TYPE.sub}>
                   Cash in your wallet, not held by Folio
                 </Text>
+                {/* same as Folio: "Perp account $0.00  Transfer ›" -> opens the drawer */}
+                <PressScale
+                  scaleTo={0.97}
+                  onPress={openTransfer}
+                  style={s.perpLine}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Perp account ${money(bal.perp)}. Transfer`}
+                >
+                  <Text style={s.perpTxt}>Perp account {money(bal.perp)}</Text>
+                  <Text style={s.perpGo}>Transfer ›</Text>
+                </PressScale>
               </View>
               <PressScale
                 scaleTo={0.95}
@@ -277,10 +297,12 @@ export function ProfileScreen() {
                 }}
                 style={s.pill}
                 accessibilityRole="button"
+                accessibilityLabel="Add funds"
               >
                 <Text style={s.pillText}>Add funds</Text>
               </PressScale>
             </View>
+
             <LinkRow
               title="Standing orders"
               value={activeRec ? `${activeRec} active` : "None"}
@@ -329,12 +351,6 @@ export function ProfileScreen() {
         </Rise>
 
         <Rise {...r(8)} style={{ gap: 18 }}>
-          {/* <Text style={s.fee}>
-            Folio charges <Text style={s.feeBold}>1%</Text> on each buy and sell
-            and <Text style={s.feeBold}>5%</Text> of profit when you exit in the
-            green. No monthly fee, no spread markup, no payment for order flow.
-          </Text> */}
-
           <PressScale
             dim
             onPress={async () => {
@@ -361,6 +377,19 @@ export function ProfileScreen() {
           </Text>
         </Rise>
       </ScrollView>
+
+      {/* TransferSheet fires its success toast through perpsStore, so PerpToast must be mounted here */}
+      <PerpToast />
+
+      {xfer ? (
+        <TransferSheet
+          onClose={() => setXfer(false)}
+          onMoved={() => {
+            setXfer(false);
+            refresh(); // re-pull wallet balances after money moves
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -483,6 +512,16 @@ const s = StyleSheet.create({
     color: C.ink1,
     fontVariant: ["tabular-nums"],
   },
+  perpLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    alignSelf: "flex-start",
+    minHeight: 30,
+  },
+  perpTxt: { fontFamily: FONT.mono400, fontSize: 11.5, color: C.ink3 },
+  perpGo: { fontFamily: FONT.sans700, fontSize: 12.5, color: C.mint },
   pill: {
     height: 38,
     paddingHorizontal: 15,
@@ -496,13 +535,6 @@ const s = StyleSheet.create({
   value: { fontFamily: FONT.mono400, fontSize: 13, color: C.ink3 },
   chev: { fontSize: 17, color: C.ink4 },
 
-  fee: {
-    fontFamily: FONT.sans400,
-    fontSize: 12.5,
-    lineHeight: 19,
-    color: C.ink3,
-  },
-  feeBold: { fontFamily: FONT.sans700, color: C.ink1 },
   signOut: {
     height: 54,
     borderRadius: 999,

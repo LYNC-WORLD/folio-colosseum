@@ -82,7 +82,7 @@ export function HomeScreen() {
   const splashDone = useSplashDone();
   const bottom = useTabBarSpace();
 
-  const perps = usePerpMarkets(["NVDA", "XAUT", "SP500"]);
+  const perps = usePerpMarkets(["NVDA", "ORCL", "TSLA"]);
 
   const openPerp = (m: PerpMarket) => {
     nav.getParent<BottomTabNavigationProp<TabParamList>>()?.navigate("Trade", {
@@ -254,7 +254,29 @@ export function HomeScreen() {
             <>
               <Rise when={splashDone} duration={460}>
                 <View style={s.chips}>
-                  <Chip variant="mint" label="● AVAILABLE ANYWHERE" />
+                  {walletLoading ? (
+                    <Skeleton width={150} height={34} radius={999} />
+                  ) : (
+                    <PressScale
+                      scaleTo={0.96}
+                      onPress={() => {
+                        hTap();
+                        nav
+                          .getParent<BottomTabNavigationProp<TabParamList>>()
+                          ?.navigate("Portfolio");
+                      }}
+                      style={s.balChip}
+                      accessibilityRole="button"
+                      accessibilityLabel={`USDC wallet, ${walletError ? "unavailable" : money(usdc)}. Open Folio`}
+                    >
+                      <Text style={s.balText}>
+                        USDC WALLET{" "}
+                        <Text style={s.balAmt}>
+                          {walletError ? "—" : money(shownUsdc)}
+                        </Text>
+                      </Text>
+                    </PressScale>
+                  )}
                 </View>
               </Rise>
 
@@ -712,6 +734,28 @@ function ClockIcon() {
 }
 
 const s = StyleSheet.create({
+  balChip: {
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: C.surface,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  balText: {
+    fontFamily: FONT.mono400,
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: em(10, 0.1),
+    color: C.ink2,
+  },
+  balAmt: {
+    fontFamily: FONT.mono400,
+    fontSize: 12,
+    letterSpacing: 0,
+    color: C.ink1,
+    fontVariant: ["tabular-nums"],
+  },
   safe: { flex: 1, backgroundColor: C.ground },
   page: { paddingTop: 18 },
 
@@ -753,20 +797,20 @@ const s = StyleSheet.create({
   section: { gap: 12 },
 
   chips: { flexDirection: "row", gap: 8, alignItems: "center" },
-  balChip: {
-    height: 34,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    backgroundColor: C.surface,
-    justifyContent: "center",
-  },
-  balText: {
-    fontFamily: FONT.mono400,
-    fontSize: 10,
-    letterSpacing: em(10, 0.1),
-    color: C.ink2,
-    fontVariant: ["tabular-nums"],
-  },
+  // balChip: {
+  //   height: 34,
+  //   paddingHorizontal: 14,
+  //   borderRadius: 999,
+  //   backgroundColor: C.surface,
+  //   justifyContent: "center",
+  // },
+  // balText: {
+  //   fontFamily: FONT.mono400,
+  //   fontSize: 10,
+  //   letterSpacing: em(10, 0.1),
+  //   color: C.ink2,
+  //   fontVariant: ["tabular-nums"],
+  // },
 
   popGrid: {
     flexDirection: "row",

@@ -4,6 +4,53 @@
 
 import { request } from "../api/client";
 
+export interface PlaceOrderBase {
+  stockSymbol: string;
+  dollarSize: number;
+  leverage: number;
+  isBuy: boolean;
+  margin: "ISOLATED" | "CROSS";
+  tpPrice: number | undefined;
+  slPrice: number | undefined;
+  tpPercent: number | undefined;
+  slPercent: number | undefined;
+}
+export type PlaceMarketOrder = PlaceOrderBase;
+export interface PlaceLimitOrder extends PlaceOrderBase {
+  limitPrice: number;
+}
+
+export interface PositionApi {
+  coin: string; // "xyz:NVDA"
+  szi: string; // signed: negative = short
+  leverage: { type: "cross" | "isolated"; value: number };
+  entryPx: string;
+  positionValue: string;
+  unrealizedPnl: string;
+  returnOnEquity: string;
+  liquidationPx: string | null;
+  marginUsed: string;
+  maxLeverage: number;
+  cumFunding: { allTime: string; sinceOpen: string; sinceChange: string };
+}
+
+export interface PositionResponse {
+  type: "oneWay" | string;
+  position: PositionApi | null;
+}
+
+export interface OrderApi {
+  oid: number;
+  coin: string;
+  stockSymbol: string;
+  isBuy: boolean;
+  orderType: "market" | "limit" | "stop";
+  price: string;
+  size: string;
+  reduceOnly?: boolean;
+  timestamp?: number; // ms
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   message?: string;
@@ -26,6 +73,15 @@ export interface PlaceOrderPayload {
   tp?: string | null; // attached as normalTpsl trigger orders
   sl?: string | null;
   cloid: `0x${string}`;
+}
+
+export interface PlaceTpSlPayload {
+  stockSymbol: string;
+  orderSize?: number; // omit = whole position
+  tpPrice?: number;
+  slPrice?: number;
+  tpPercent?: number;
+  slPercent?: number;
 }
 
 export interface OrderResult {
@@ -53,9 +109,46 @@ export interface AgentStatus {
   approved: boolean;
 }
 
+export interface OpenOrderInner {
+  coin: string; // "xyz:NVDA"
+  side: "A" | "B"; // A = ask (sell), B = bid (buy)
+  limitPx: string;
+  sz: string; // "0.0" can mean "whole position" for positionTpsl orders
+  oid: number;
+  timestamp: number; // ms
+  triggerCondition: string; // "Price above 296.4" or "N/A"
+  isTrigger: boolean;
+  triggerPx: string;
+  children: unknown[];
+  isPositionTpsl: boolean;
+  reduceOnly: boolean;
+  orderType: string; // "Limit" | "Stop Market" | "Stop Limit" | "Take Profit Market" | "Take Profit Limit" | ...
+  origSz: string;
+  tif: string | null;
+  cloid: string | null;
+}
+
+export interface OrderApi {
+  status: string; // "order"
+  order: {
+    order: OpenOrderInner;
+    status: string; // "open"
+    statusTimestamp: number;
+  };
+}
+
+export interface CancelPerpOrderPayload {
+  assetSymbol: string;
+  orderId: string;
+}
+
 export const tradeService = {
   placeOrder: (payload: PlaceOrderPayload, idToken: string) =>
-    request<ApiResponse<OrderResult>>("/api/perps/order", { method: "POST", token: idToken, body: payload }),
+    request<ApiResponse<OrderResult>>("/api/perps/order", {
+      method: "POST",
+      token: idToken,
+      body: payload,
+    }),
 
   cancelOrder: (payload: { coin: string; oid: number }, idToken: string) =>
     request<ApiResponse<{ status: "success" }>>("/api/perps/order/cancel", {
@@ -64,33 +157,128 @@ export const tradeService = {
       body: payload,
     }),
 
-  modifyOrder: (payload: { coin: string; oid: number; price: string; size: string; isBuy: boolean }, idToken: string) =>
-    request<ApiResponse<OrderResult>>("/api/perps/order/modify", { method: "POST", token: idToken, body: payload }),
+  getAllPositions: (idToken: string) =>
+    request<ApiResponse<PositionResponse[]>>("/api/perp-trade/positions", {
+      method: "GET",
+      token: idToken,
+    }),
+
+  modifyOrder: (
+    payload: {
+      coin: string;
+      oid: number;
+      price: string;
+      size: string;
+      isBuy: boolean;
+    },
+    idToken: string,
+  ) =>
+    request<ApiResponse<OrderResult>>("/api/perps/order/modify", {
+      method: "POST",
+      token: idToken,
+      body: payload,
+    }),
 
   setTpsl: (payload: TpslPayload, idToken: string) =>
-    request<ApiResponse<{ oids: number[] }>>("/api/perps/tpsl", { method: "POST", token: idToken, body: payload }),
+    request<ApiResponse<{ oids: number[] }>>("/api/perps/tpsl", {
+      method: "POST",
+      token: idToken,
+      body: payload,
+    }),
 
-  updateLeverage: (payload: { coin: string; leverage: number; isCross: boolean }, idToken: string) =>
-    request<ApiResponse<null>>("/api/perps/leverage", { method: "POST", token: idToken, body: payload }),
+  updateLeverage: (
+    payload: { coin: string; leverage: number; isCross: boolean },
+    idToken: string,
+  ) =>
+    request<ApiResponse<null>>("/api/perps/leverage", {
+      method: "POST",
+      token: idToken,
+      body: payload,
+    }),
 
   /** amountUsd > 0 adds margin, < 0 removes it. Isolated positions only. */
-  updateIsolatedMargin: (payload: { coin: string; isBuy: boolean; amountUsd: number }, idToken: string) =>
-    request<ApiResponse<null>>("/api/perps/margin", { method: "POST", token: idToken, body: payload }),
+  updateIsolatedMargin: (
+    payload: { coin: string; isBuy: boolean; amountUsd: number },
+    idToken: string,
+  ) =>
+    request<ApiResponse<null>>("/api/perps/margin", {
+      method: "POST",
+      token: idToken,
+      body: payload,
+    }),
 
   // ---- agent wallet lifecycle (onboarding)
   getAgentStatus: (idToken: string) =>
-    request<ApiResponse<AgentStatus>>("/api/perps/agent", { method: "GET", token: idToken }),
+    request<ApiResponse<AgentStatus>>("/api/perps/agent", {
+      method: "GET",
+      token: idToken,
+    }),
 
   /** Backend generates + stores a fresh agent key, returns only its address. */
   createAgent: (idToken: string) =>
-    request<ApiResponse<{ agentAddress: `0x${string}`; agentName: string }>>("/api/perps/agent", {
+    request<ApiResponse<{ agentAddress: `0x${string}`; agentName: string }>>(
+      "/api/perps/agent",
+      {
+        method: "POST",
+        token: idToken,
+      },
+    ),
+
+  placeMarketOrder: (payload: PlaceMarketOrder, idToken: string) =>
+    request<ApiResponse<OrderResult>>("/api/perp-trade/market-order", {
       method: "POST",
       token: idToken,
+      body: payload,
+    }),
+
+  placeLimitOrder: (payload: PlaceLimitOrder, idToken: string) =>
+    request<ApiResponse<OrderResult>>("/api/perp-trade/limit-order", {
+      method: "POST",
+      token: idToken,
+      body: payload,
     }),
 
   /** Called after the user signed approveAgent, so the backend can verify via extraAgents. */
   confirmAgent: (idToken: string) =>
-    request<ApiResponse<AgentStatus>>("/api/perps/agent/confirm", { method: "POST", token: idToken }),
+    request<ApiResponse<AgentStatus>>("/api/perps/agent/confirm", {
+      method: "POST",
+      token: idToken,
+    }),
+  getPositionsBySymbol: (stock: string, idToken: string) =>
+    request<ApiResponse<PositionResponse | null>>(
+      `/api/perp-trade/positions-by-symbol/${encodeURIComponent(stock)}`,
+      { method: "GET", token: idToken },
+    ),
+
+  closePosition: (payload: { stockSymbol: string }, idToken: string) =>
+    request<ApiResponse<{ status: string }>>("/api/perp-trade/close-position", {
+      method: "POST",
+      token: idToken,
+      body: payload,
+    }),
+
+  getOrdersBySymbol: (stock: string, idToken: string) =>
+    request<ApiResponse<OrderApi[]>>(
+      `/api/perp-trade/orders-by-symbol/${encodeURIComponent(stock)}`,
+      { method: "GET", token: idToken },
+    ),
+
+  placeTpSlOrders: (payload: PlaceTpSlPayload, idToken: string) =>
+    request<ApiResponse<{ status: string }>>(
+      "/api/perp-trade/place-tp-sl-orders",
+      { method: "POST", token: idToken, body: payload },
+    ),
+  getAllOrders: (idToken: string) =>
+    request<ApiResponse<OrderApi[]>>("/api/perp-trade/open-orders", {
+      method: "GET",
+      token: idToken,
+    }),
+  cancelPerpOrder: (payload: CancelPerpOrderPayload, idToken: string) =>
+    request<ApiResponse<unknown>>("/api/perp-trade/cancel-order", {
+      method: "POST",
+      token: idToken,
+      body: payload,
+    }),
 };
 
 /** Throws on success:false so hooks can just await. */
